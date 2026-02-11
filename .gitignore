@@ -51,3 +51,4 @@ firebase-debug.log
 .vscode/
 *.swp
 *.swo
+.claude/
