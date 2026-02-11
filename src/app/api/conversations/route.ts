@@ -3,6 +3,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { sendMessage, type ChatMessage } from '@/lib/ai/anthropic'
 import { getSystemPrompt, getSpecGenerationPrompt } from '@/lib/ai/system-prompts'
 import { sendMessageSchema } from '@/lib/utils/validation'
+import { checkRateLimit } from '@/lib/utils/rate-limit'
 import type { ProjectType, ConversationMetadata } from '@/types/database'
 
 interface AIResponse {
@@ -37,6 +38,19 @@ function parseAIResponse(text: string): AIResponse {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') ?? 'unknown'
+    const rateLimit = checkRateLimit(`conversations:${ip}`, {
+      maxRequests: 20,
+      windowMs: 60000,
+    })
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'リクエスト制限を超えました。しばらくお待ちください。' },
+        { status: 429 }
+      )
+    }
+
     const body = await request.json()
     const validated = sendMessageSchema.parse(body)
 
