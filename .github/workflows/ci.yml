@@ -20,8 +20,9 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
       SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ci_dummy
-      CLERK_SECRET_KEY: sk_test_ci_dummy
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY }}
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || secrets.CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
       NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
       NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
       NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: /dashboard
@@ -39,6 +40,21 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate Clerk keys
+        run: |
+          if [ -z "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" ]; then
+            echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is not set. Add it in GitHub Secrets."
+            exit 1
+          fi
+          if [ -z "${CLERK_SECRET_KEY}" ]; then
+            echo "CLERK_SECRET_KEY is not set. Add it in GitHub Secrets."
+            exit 1
+          fi
+          if [[ "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" == "pk_test_ci_dummy" ]]; then
+            echo "Invalid Clerk publishable key detected."
+            exit 1
+          fi
 
       - name: Lint
         run: npm run lint
