@@ -13,6 +13,27 @@ export const projectTypeSchema = z.enum([
   'feature_addition',
 ])
 
+export const changeRequestCategorySchema = z.enum([
+  'bug_report',
+  'fix_request',
+  'feature_addition',
+  'scope_change',
+  'other',
+])
+
+export const changeRequestResponsibilitySchema = z.enum([
+  'our_fault',
+  'customer_fault',
+  'third_party',
+  'unknown',
+])
+
+export const changeRequestReproducibilitySchema = z.enum([
+  'confirmed',
+  'not_confirmed',
+  'unknown',
+])
+
 export const projectPrioritySchema = z.enum(['low', 'medium', 'high', 'critical'])
 
 export const createProjectSchema = z.object({
@@ -61,14 +82,10 @@ export const changeRequestSchema = z.object({
   project_id: z.string().uuid(),
   title: z.string().min(1).max(200),
   description: z.string().min(10).max(10000),
-  category: z.enum([
-    'bug_report',
-    'fix_request',
-    'feature_addition',
-    'scope_change',
-    'other',
-  ]),
+  category: changeRequestCategorySchema,
   impact_level: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
+  responsibility_type: changeRequestResponsibilitySchema.default('unknown'),
+  reproducibility: changeRequestReproducibilitySchema.default('unknown'),
   requested_by_name: z.string().min(1).max(120).optional(),
   requested_by_email: z.string().email().optional(),
 })
@@ -120,6 +137,20 @@ export const approvalRequestUpdateSchema = z.object({
   assigned_to_clerk_user_id: z.string().min(1).max(120).optional(),
 })
 
+export const changeRequestBillableRuleSchema = z.object({
+  id: z.string().uuid().optional(),
+  rule_name: z.string().min(3).max(200),
+  active: z.boolean().default(true),
+  priority: z.number().int().min(0).max(10000).default(100),
+  applies_to_categories: z.array(changeRequestCategorySchema).min(1),
+  max_warranty_days: z.number().int().min(0).max(3650).nullable().optional(),
+  responsibility_required: z.array(changeRequestResponsibilitySchema).default([]),
+  reproducibility_required: z.array(changeRequestReproducibilitySchema).default([]),
+  result_is_billable: z.boolean(),
+  reason_template: z.string().min(3).max(1000),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+})
+
 export const repositoryAnalysisRequestSchema = z.object({
   project_id: z.string().uuid(),
   repository_url: z.string().url(),
@@ -141,5 +172,6 @@ export type ChangeRequestEstimateInput = z.infer<typeof changeRequestEstimateSch
 export type DataSourceInput = z.infer<typeof dataSourceSchema>
 export type ApprovalRequestCreateInput = z.infer<typeof approvalRequestCreateSchema>
 export type ApprovalRequestUpdateInput = z.infer<typeof approvalRequestUpdateSchema>
+export type ChangeRequestBillableRuleInput = z.infer<typeof changeRequestBillableRuleSchema>
 export type RepositoryAnalysisRequestInput = z.infer<typeof repositoryAnalysisRequestSchema>
 export type SourceAnalysisRunRequestInput = z.infer<typeof sourceAnalysisRunRequestSchema>

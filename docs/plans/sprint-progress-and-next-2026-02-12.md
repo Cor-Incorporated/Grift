@@ -8,11 +8,11 @@
 |---|---:|---:|---:|---:|---:|
 | EPIC-REQ | 5 | 0 | 2 | 3 | 20% |
 | EPIC-DATA | 10 | 3 | 3 | 4 | 45% |
-| EPIC-PRICE | 4 | 3 | 1 | 0 | 88% |
-| EPIC-CHG | 6 | 3 | 2 | 1 | 67% |
+| EPIC-PRICE | 4 | 4 | 0 | 0 | 100% |
+| EPIC-CHG | 6 | 4 | 1 | 1 | 75% |
 | EPIC-GOV | 2 | 0 | 2 | 0 | 50% |
 | EPIC-OUT | 4 | 0 | 0 | 4 | 0% |
-| **Total** | **31** | **9** | **10** | **12** | **45%** |
+| **Total** | **31** | **11** | **8** | **12** | **48%** |
 
 ## 2. Story別更新ステータス
 
@@ -36,9 +36,9 @@
 | PRICE-101 | **Done** | 価格ポリシー版管理実装 |
 | PRICE-102 | **Done** | 市場想定計算（人数×期間×単価）実装 |
 | PRICE-103 | **Done** | 当社提示額算定/下限比較実装 |
-| PRICE-104 | Partial | リスクフラグは実装。承認必須ゲート連動は未完成 |
+| PRICE-104 | **Done** | 下限割れ・低粗利・高リスク差分で承認リクエスト自動起票、承認状態で見積確定可否を制御 |
 | CHG-101 | **Done** | 変更要求受付API/UI実装 |
-| CHG-102 | Partial | 初期判定あり。保証期間/責任区分の詳細ルール未完成 |
+| CHG-102 | **Done** | 保証期間/責任区分/再現性のルールテーブル + API + UI入力 + 判定根拠保存を実装 |
 | CHG-103 | **Done** | 追加工数4区分算定実装 |
 | CHG-104 | **Done** | 追加料金算定実装 |
 | CHG-105 | Partial | 変更見積り生成あり。顧客提出差分文書の完成度不足 |
@@ -72,6 +72,17 @@
 - ジョブ実行の定期化（Cron/Worker常駐化）  
 - PDF OCR（画像PDF対応）  
 - 非公開リポジトリ（GitHub Appトークン経由）対応  
+
+### 3.3 Day3実装結果（今回）
+- PRICE-104-T1/T2 を実装
+  - `estimates` に `approval_required / approval_status / approval_block_reason` を追加
+  - `risk_flags` から承認トリガー生成し、`approval_requests` を自動起票
+  - 承認ステータス反映時に見積ステータスを再計算して `draft/ready` を同期
+- CHG-102-T1 を実装
+  - `change_request_billable_rules` テーブルを新設し、保証期間/責任区分/再現性で有償判定
+  - `change_requests` に判定入力（`responsibility_type`,`reproducibility`）と評価結果（`billable_rule_id`,`billable_evaluation`）を保存
+  - 管理API `/api/admin/change-request-billable-rules` を追加
+  - 管理UIで責任区分/再現性入力を追加
 
 ## 4. 既存チケットへの紐付け更新
 
@@ -122,7 +133,7 @@
 
 - Day1: DATA-109-T1/T2（usage ledger + hard quota）✅
 - Day2: DATA-110-T1/T2（evidence appendix + 2ソースガード）✅
-- Day3: PRICE-104-T1/T2 + CHG-102-T1
+- Day3: PRICE-104-T1/T2 + CHG-102-T1 ✅
 - Day4: CHG-106-T1 + GOV-101-T1
 - Day5: GOV-102-T1 + OPS-ANL-01 の最小運用化
 

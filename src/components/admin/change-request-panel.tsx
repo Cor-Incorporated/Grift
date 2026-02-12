@@ -29,6 +29,8 @@ export function ChangeRequestPanel({ projectId, changeRequests }: ChangeRequestP
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState<'bug_report' | 'fix_request' | 'feature_addition' | 'scope_change' | 'other'>('feature_addition')
   const [impactLevel, setImpactLevel] = useState<ImpactLevel>('medium')
+  const [responsibilityType, setResponsibilityType] = useState<'our_fault' | 'customer_fault' | 'third_party' | 'unknown'>('unknown')
+  const [reproducibility, setReproducibility] = useState<'confirmed' | 'not_confirmed' | 'unknown'>('unknown')
   const [hourlyRateById, setHourlyRateById] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -47,6 +49,8 @@ export function ChangeRequestPanel({ projectId, changeRequests }: ChangeRequestP
           description,
           category,
           impact_level: impactLevel,
+          responsibility_type: responsibilityType,
+          reproducibility,
         }),
       })
 
@@ -142,6 +146,41 @@ export function ChangeRequestPanel({ projectId, changeRequests }: ChangeRequestP
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="space-y-2">
+              <Label>責任区分</Label>
+              <Select
+                value={responsibilityType}
+                onValueChange={(value) => setResponsibilityType(value as typeof responsibilityType)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="our_fault">当社責任</SelectItem>
+                  <SelectItem value="customer_fault">顧客責任</SelectItem>
+                  <SelectItem value="third_party">第三者責任</SelectItem>
+                  <SelectItem value="unknown">不明</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>再現性</Label>
+              <Select
+                value={reproducibility}
+                onValueChange={(value) => setReproducibility(value as typeof reproducibility)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="confirmed">再現確認済み</SelectItem>
+                  <SelectItem value="not_confirmed">未再現</SelectItem>
+                  <SelectItem value="unknown">不明</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -172,6 +211,12 @@ export function ChangeRequestPanel({ projectId, changeRequests }: ChangeRequestP
                   <div className="flex flex-wrap gap-2 text-xs">
                     <Badge variant="secondary">{item.category}</Badge>
                     <Badge variant={item.is_billable ? 'default' : 'outline'}>{item.is_billable ? '有償' : '無償'}</Badge>
+                    {item.responsibility_type && (
+                      <Badge variant="outline">責任: {item.responsibility_type}</Badge>
+                    )}
+                    {item.reproducibility && (
+                      <Badge variant="outline">再現: {item.reproducibility}</Badge>
+                    )}
                     {item.billable_reason && <span className="text-muted-foreground">{item.billable_reason}</span>}
                   </div>
                   <div className="flex items-center gap-2">

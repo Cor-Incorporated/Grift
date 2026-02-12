@@ -9,6 +9,12 @@ import { buildProjectAttachmentContext } from '@/lib/source-analysis/project-con
 import { fetchActivePricingPolicy } from '@/lib/pricing/policies'
 import { calculatePrice, type MarketAssumption } from '@/lib/pricing/engine'
 import { buildEstimateEvidenceAppendix } from '@/lib/market/evidence-appendix'
+import {
+  buildApprovalTriggersFromRiskFlags,
+  deriveApprovalStatus,
+  resolveEstimateStatus,
+} from '@/lib/approval/gate'
+import { ensureApprovalRequests } from '@/lib/approval/requests'
 import { writeAuditLog } from '@/lib/audit/log'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
 import type { EstimateMode, ProjectType } from '@/types/database'
@@ -323,6 +329,26 @@ export async function POST(request: NextRequest) {
       riskFlags.push('insufficient_evidence_sources')
     }
 
+    const approvalTriggers = buildApprovalTriggersFromRiskFlags({
+      riskFlags,
+      projectType,
+      pricingContext: {
+        market_total: pricing.marketTotal,
+        our_price: pricing.ourPrice,
+        cost_floor: pricing.costFloor,
+        margin_percent: pricing.marginPercent,
+      },
+    })
+    const approvalRequired = approvalTriggers.length > 0
+    const approvalStatus = approvalRequired
+      ? deriveApprovalStatus(['pending'])
+      : deriveApprovalStatus([])
+    const statusDecision = resolveEstimateStatus({
+      evidenceRequirementMet,
+      evidenceReason: evidenceBlockReason,
+      approvalStatus,
+    })
+
     const hoursBasedCost = validated.your_hourly_rate * hours.total
     const recommendedTotalCost = Math.max(
       pricing.ourPrice,
@@ -353,6 +379,14 @@ export async function POST(request: NextRequest) {
       .insert({
         project_id: validated.project_id,
         estimate_mode: estimateMode,
+        estimate_status: statusDecision.estimateStatus,
+        approval_required: approvalRequired,
+        approval_status: approvalStatus,
+        approval_block_reason: statusDecision.approvalBlockReason,
+        evidence_requirement_met: evidenceRequirementMet,
+        evidence_source_count: evidenceSourceCount,
+        evidence_appendix: evidenceAppendix,
+        evidence_block_reason: evidenceBlockReason,
         your_hourly_rate: validated.your_hourly_rate,
         your_estimated_hours: hours.total,
         hours_investigation: hours.investigation,
@@ -376,11 +410,6 @@ export async function POST(request: NextRequest) {
         },
         risk_flags: riskFlags,
         market_evidence_id: marketEvidenceRecordId,
-        estimate_status: evidenceRequirementMet ? 'ready' : 'draft',
-        evidence_requirement_met: evidenceRequirementMet,
-        evidence_source_count: evidenceSourceCount,
-        evidence_appendix: evidenceAppendix,
-        evidence_block_reason: evidenceBlockReason,
       })
       .select()
       .single()
@@ -390,6 +419,28 @@ export async function POST(request: NextRequest) {
         { success: false, error: '見積りの保存に失敗しました' },
         { status: 500 }
       )
+    }
+
+    if (approvalRequired) {
+      const ensured = await ensureApprovalRequests({
+        supabase,
+        projectId: estimate.project_id,
+        estimateId: estimate.id,
+        actorClerkUserId: authUser.clerkUserId,
+        triggers: approvalTriggers,
+      })
+
+      await writeAuditLog(supabase, {
+        actorClerkUserId: authUser.clerkUserId,
+        action: 'estimate.approval_gate_enabled',
+        resourceType: 'estimate',
+        resourceId: estimate.id,
+        projectId: estimate.project_id,
+        payload: {
+          triggerCount: approvalTriggers.length,
+          createdApprovalRequestCount: ensured.createdIds.length,
+        },
+      })
     }
 
     await supabase
@@ -421,6 +472,8 @@ export async function POST(request: NextRequest) {
         recommendedTotalCost,
         evidenceRequirementMet,
         evidenceSourceCount,
+        approvalRequired,
+        approvalStatus,
       },
     })
 
@@ -430,6 +483,7 @@ export async function POST(request: NextRequest) {
         ...estimate,
         recommended_total_cost: recommendedTotalCost,
         blocked_by_evidence: !evidenceRequirementMet,
+        blocked_by_approval: approvalRequired,
       },
     })
   } catch (error) {

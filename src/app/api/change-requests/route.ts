@@ -4,36 +4,10 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { getAuthenticatedUser, canAccessProject } from '@/lib/auth/authorization'
 import { writeAuditLog } from '@/lib/audit/log'
 import { changeRequestSchema } from '@/lib/utils/validation'
-
-function initialBillableAssessment(category: string, description: string): {
-  isBillable: boolean
-  reason: string
-} {
-  const normalized = description.toLowerCase()
-
-  if (category === 'bug_report') {
-    if (
-      normalized.includes('仕様変更') ||
-      normalized.includes('追加要件') ||
-      normalized.includes('運用変更')
-    ) {
-      return {
-        isBillable: true,
-        reason: '不具合ではなく要件変更の可能性が高いため有償判定',
-      }
-    }
-
-    return {
-      isBillable: false,
-      reason: '既存不具合として初期判定（保証条件は管理者が最終確認）',
-    }
-  }
-
-  return {
-    isBillable: true,
-    reason: '仕様追加・修正要求として有償判定',
-  }
-}
+import {
+  evaluateBillableDecision,
+  loadActiveBillableRules,
+} from '@/lib/change-requests/billable-rules'
 
 export async function GET(request: NextRequest) {
   try {
@@ -114,7 +88,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const billable = initialBillableAssessment(validated.category, validated.description)
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id, created_at')
+      .eq('id', validated.project_id)
+      .maybeSingle()
+
+    const rules = await loadActiveBillableRules(supabase)
+    const billable = evaluateBillableDecision({
+      rules,
+      request: {
+        category: validated.category,
+        projectCreatedAt: project?.created_at ?? new Date().toISOString(),
+        responsibilityType: validated.responsibility_type,
+        reproducibility: validated.reproducibility,
+      },
+    })
 
     const { data, error } = await supabase
       .from('change_requests')
@@ -124,9 +113,13 @@ export async function POST(request: NextRequest) {
         description: validated.description,
         category: validated.category,
         impact_level: validated.impact_level,
+        responsibility_type: validated.responsibility_type,
+        reproducibility: validated.reproducibility,
         status: 'triaged',
         is_billable: billable.isBillable,
         billable_reason: billable.reason,
+        billable_rule_id: billable.matchedRuleId,
+        billable_evaluation: billable.evaluation,
         requested_by_name: validated.requested_by_name ?? authUser.fullName,
         requested_by_email: validated.requested_by_email ?? authUser.email,
         created_by_clerk_user_id: authUser.clerkUserId,
@@ -150,6 +143,9 @@ export async function POST(request: NextRequest) {
       payload: {
         category: data.category,
         isBillable: data.is_billable,
+        responsibilityType: data.responsibility_type,
+        reproducibility: data.reproducibility,
+        matchedRuleId: data.billable_rule_id,
       },
     })
 

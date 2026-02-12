@@ -11,6 +11,12 @@ import { changeRequestEstimateSchema } from '@/lib/utils/validation'
 import { fetchActivePricingPolicy } from '@/lib/pricing/policies'
 import { calculateChangeOrder } from '@/lib/pricing/engine'
 import { buildEstimateEvidenceAppendix } from '@/lib/market/evidence-appendix'
+import {
+  buildApprovalTriggersFromRiskFlags,
+  deriveApprovalStatus,
+  resolveEstimateStatus,
+} from '@/lib/approval/gate'
+import { ensureApprovalRequests } from '@/lib/approval/requests'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
 import type { EstimateMode, ProjectType } from '@/types/database'
 
@@ -252,12 +258,40 @@ export async function POST(
       riskFlags.push('insufficient_evidence_sources')
     }
 
+    const approvalTriggers = buildApprovalTriggersFromRiskFlags({
+      riskFlags,
+      projectType,
+      pricingContext: {
+        delta_hours: changePricing.deltaHours,
+        hours_based_fee: changePricing.hoursBasedFee,
+        floor_guard_fee: changePricing.floorGuardFee,
+        final_delta_fee: changePricing.finalDeltaFee,
+      },
+    })
+    const approvalRequired = approvalTriggers.length > 0
+    const approvalStatus = approvalRequired
+      ? deriveApprovalStatus(['pending'])
+      : deriveApprovalStatus([])
+    const statusDecision = resolveEstimateStatus({
+      evidenceRequirementMet,
+      evidenceReason: evidenceBlockReason,
+      approvalStatus,
+    })
+
     const { data: estimate, error: estimateError } = await supabase
       .from('estimates')
       .insert({
         project_id: project.id,
         change_request_id: changeRequest.id,
         estimate_mode: modeFromType(projectType),
+        estimate_status: statusDecision.estimateStatus,
+        approval_required: approvalRequired,
+        approval_status: approvalStatus,
+        approval_block_reason: statusDecision.approvalBlockReason,
+        evidence_requirement_met: evidenceRequirementMet,
+        evidence_source_count: evidenceSourceCount,
+        evidence_appendix: evidenceAppendix,
+        evidence_block_reason: evidenceBlockReason,
         your_hourly_rate: validated.your_hourly_rate,
         your_estimated_hours: changePricing.deltaHours,
         hours_investigation: deltaHours.investigation,
@@ -284,11 +318,6 @@ export async function POST(
         },
         risk_flags: riskFlags,
         market_evidence_id: marketEvidenceId,
-        estimate_status: evidenceRequirementMet ? 'ready' : 'draft',
-        evidence_requirement_met: evidenceRequirementMet,
-        evidence_source_count: evidenceSourceCount,
-        evidence_appendix: evidenceAppendix,
-        evidence_block_reason: evidenceBlockReason,
       })
       .select('*')
       .single()
@@ -298,6 +327,30 @@ export async function POST(
         { success: false, error: '追加見積りの保存に失敗しました' },
         { status: 500 }
       )
+    }
+
+    if (approvalRequired) {
+      const ensured = await ensureApprovalRequests({
+        supabase,
+        projectId: project.id,
+        estimateId: estimate.id,
+        changeRequestId: changeRequest.id,
+        actorClerkUserId: authUser.clerkUserId,
+        triggers: approvalTriggers,
+      })
+
+      await writeAuditLog(supabase, {
+        actorClerkUserId: authUser.clerkUserId,
+        action: 'change_request.approval_gate_enabled',
+        resourceType: 'change_request',
+        resourceId: changeRequest.id,
+        projectId: project.id,
+        payload: {
+          estimateId: estimate.id,
+          triggerCount: approvalTriggers.length,
+          createdApprovalRequestCount: ensured.createdIds.length,
+        },
+      })
     }
 
     const { count } = await supabase
@@ -339,6 +392,8 @@ export async function POST(
         riskFlags,
         evidenceRequirementMet,
         evidenceSourceCount,
+        approvalRequired,
+        approvalStatus,
       },
     })
 

@@ -30,6 +30,12 @@ export type ChangeRequestStatus =
   | 'rejected'
   | 'implemented'
 export type ImpactLevel = 'low' | 'medium' | 'high' | 'critical'
+export type ChangeRequestResponsibility =
+  | 'our_fault'
+  | 'customer_fault'
+  | 'third_party'
+  | 'unknown'
+export type ChangeRequestReproducibility = 'confirmed' | 'not_confirmed' | 'unknown'
 
 export interface Customer {
   id: string
@@ -110,6 +116,9 @@ export interface Estimate {
   estimate_mode: EstimateMode
   change_request_id?: string | null
   estimate_status?: 'draft' | 'ready'
+  approval_required?: boolean
+  approval_status?: 'not_required' | 'pending' | 'approved' | 'rejected'
+  approval_block_reason?: string | null
   evidence_requirement_met?: boolean
   evidence_source_count?: number | null
   evidence_appendix?: Record<string, unknown> | null
@@ -187,12 +196,33 @@ export interface ChangeRequest {
   category: ChangeRequestCategory
   status: ChangeRequestStatus
   impact_level: ImpactLevel
+  responsibility_type?: ChangeRequestResponsibility
+  reproducibility?: ChangeRequestReproducibility
   is_billable: boolean | null
   billable_reason: string | null
+  billable_rule_id?: string | null
+  billable_evaluation?: Record<string, unknown>
   requested_by_name: string | null
   requested_by_email: string | null
   base_estimate_id: string | null
   latest_estimate_id: string | null
+  created_by_clerk_user_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ChangeRequestBillableRule {
+  id: string
+  rule_name: string
+  active: boolean
+  priority: number
+  applies_to_categories: ChangeRequestCategory[]
+  max_warranty_days: number | null
+  responsibility_required: ChangeRequestResponsibility[]
+  reproducibility_required: ChangeRequestReproducibility[]
+  result_is_billable: boolean
+  reason_template: string
+  metadata: Record<string, unknown>
   created_by_clerk_user_id: string | null
   created_at: string
   updated_at: string

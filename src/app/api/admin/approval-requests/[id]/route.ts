@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { getAuthenticatedUser, isAdminUser } from '@/lib/auth/authorization'
 import { writeAuditLog } from '@/lib/audit/log'
+import { refreshEstimateApprovalState } from '@/lib/approval/requests'
 import { approvalRequestUpdateSchema } from '@/lib/utils/validation'
 
 export async function PATCH(
@@ -59,6 +60,25 @@ export async function PATCH(
         resolutionComment: validated.resolution_comment ?? null,
       },
     })
+
+    if (data.estimate_id) {
+      const refreshed = await refreshEstimateApprovalState({
+        supabase,
+        estimateId: data.estimate_id,
+      })
+
+      await writeAuditLog(supabase, {
+        actorClerkUserId: authUser.clerkUserId,
+        action: 'estimate.approval_state_synced',
+        resourceType: 'estimate',
+        resourceId: data.estimate_id,
+        projectId: data.project_id,
+        payload: {
+          approvalStatus: refreshed.approvalStatus,
+          estimateStatus: refreshed.estimateStatus,
+        },
+      })
+    }
 
     return NextResponse.json({ success: true, data })
   } catch (error) {
