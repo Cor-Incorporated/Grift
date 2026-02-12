@@ -1,31 +1,28 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { usePathname } from 'next/navigation'
+import { SignOutButton } from '@clerk/nextjs'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import type { User } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { href: '/admin', label: 'ダッシュボード', icon: '📊' },
   { href: '/admin/projects', label: '案件一覧', icon: '📋' },
   { href: '/admin/estimates', label: '見積り', icon: '💰' },
+  { href: '/admin/pricing', label: '価格ポリシー', icon: '📈' },
   { href: '/admin/github', label: 'GitHub連携', icon: '🔗' },
   { href: '/admin/settings', label: '設定', icon: '⚙️' },
 ]
 
-export function AdminSidebar({ user }: { user: User }) {
-  const pathname = usePathname()
-  const router = useRouter()
+interface AdminSidebarProps {
+  userEmail: string
+  userName: string
+}
 
-  const handleLogout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
-  }
+export function AdminSidebar({ userEmail, userName }: AdminSidebarProps) {
+  const pathname = usePathname()
 
   return (
     <aside className="flex w-64 flex-col border-r bg-card">
@@ -55,17 +52,15 @@ export function AdminSidebar({ user }: { user: User }) {
       <Separator />
 
       <div className="p-4">
-        <p className="mb-2 truncate text-xs text-muted-foreground">
-          {user.email}
+        <p className="mb-1 truncate text-sm font-medium">{userName}</p>
+        <p className="mb-3 truncate text-xs text-muted-foreground">
+          {userEmail}
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={handleLogout}
-        >
-          ログアウト
-        </Button>
+        <SignOutButton redirectUrl="/">
+          <Button variant="outline" size="sm" className="w-full">
+            ログアウト
+          </Button>
+        </SignOutButton>
       </div>
     </aside>
   )

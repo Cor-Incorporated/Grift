@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { auth } from '@clerk/nextjs/server'
+import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -40,7 +42,9 @@ const projectTypes = [
   },
 ]
 
-export default function HomePage() {
+export default async function HomePage() {
+  const { userId } = await auth()
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
       <header className="border-b bg-background/80 backdrop-blur-sm">
@@ -49,11 +53,28 @@ export default function HomePage() {
             <span className="text-2xl">🎩</span>
             <h1 className="text-xl font-bold">The Benevolent Dictator</h1>
           </div>
-          <Link href="/login">
-            <Button variant="outline" size="sm">
-              管理者ログイン
-            </Button>
-          </Link>
+          <div className="flex items-center gap-3">
+            <SignedOut>
+              <SignInButton mode="modal">
+                <Button variant="outline" size="sm">
+                  ログイン
+                </Button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <Button size="sm">
+                  新規登録
+                </Button>
+              </SignUpButton>
+            </SignedOut>
+            <SignedIn>
+              <Link href="/dashboard">
+                <Button variant="outline" size="sm">
+                  マイページ
+                </Button>
+              </Link>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
+          </div>
         </div>
       </header>
 
@@ -74,7 +95,10 @@ export default function HomePage() {
 
         <div className="mx-auto grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-2">
           {projectTypes.map((pt) => (
-            <Link key={pt.type} href={`/projects/new?type=${pt.type}`}>
+            <Link
+              key={pt.type}
+              href={userId ? `/projects/new?type=${pt.type}` : `/sign-up?redirect_url=/projects/new?type=${pt.type}`}
+            >
               <Card className="group h-full cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1">
                 <CardHeader>
                   <div className="flex items-center gap-3">

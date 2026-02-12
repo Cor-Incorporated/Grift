@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Conversation } from '@/types/database'
 
@@ -14,7 +14,10 @@ export function useRealtimeConversations({
   onNewMessage,
 }: UseRealtimeConversationsProps) {
   const callbackRef = useRef(onNewMessage)
-  callbackRef.current = onNewMessage
+
+  useEffect(() => {
+    callbackRef.current = onNewMessage
+  }, [onNewMessage])
 
   useEffect(() => {
     const supabase = createClient()

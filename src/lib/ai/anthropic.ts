@@ -1,4 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk'
+import {
+  logApiUsage,
+  prepareApiUsage,
+  type UsageCallContext,
+  isExternalApiQuotaError,
+} from '@/lib/usage/api-usage'
 
 let client: Anthropic | null = null
 
@@ -24,22 +30,67 @@ export async function sendMessage(
   options?: {
     maxTokens?: number
     temperature?: number
+    model?: string
+    usageContext?: UsageCallContext
   }
 ): Promise<string> {
   const anthropic = getAnthropicClient()
-
-  const response = await anthropic.messages.create({
-    model: 'claude-opus-4-6',
-    max_tokens: options?.maxTokens ?? 4096,
-    temperature: options?.temperature ?? 0.7,
-    system: systemPrompt,
-    messages,
+  const model = options?.model ?? process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-5-20250929'
+  const usage = await prepareApiUsage({
+    sourceKey: 'anthropic_messages',
+    provider: 'anthropic',
+    endpoint: '/v1/messages',
+    model,
+    context: options?.usageContext,
   })
 
-  const textBlock = response.content.find((block) => block.type === 'text')
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude')
-  }
+  try {
+    const response = await anthropic.messages.create({
+      model,
+      max_tokens: options?.maxTokens ?? 4096,
+      temperature: options?.temperature ?? 0.7,
+      system: systemPrompt,
+      messages,
+    })
 
-  return textBlock.text
+    const textBlock = response.content.find((block) => block.type === 'text')
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('No text response from Claude')
+    }
+
+    await logApiUsage(usage, {
+      status: 'success',
+      metrics: {
+        inputTokens:
+          typeof response.usage.input_tokens === 'number'
+            ? response.usage.input_tokens
+            : undefined,
+        outputTokens:
+          typeof response.usage.output_tokens === 'number'
+            ? response.usage.output_tokens
+            : undefined,
+      },
+      metadata: {
+        max_tokens: options?.maxTokens ?? 4096,
+      },
+    })
+
+    return textBlock.text
+  } catch (error) {
+    if (!isExternalApiQuotaError(error)) {
+      const message =
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message.slice(0, 1200)
+          : 'Unknown Anthropic API error'
+
+      await logApiUsage(usage, {
+        status: 'error',
+        errorMessage: message,
+        metadata: {
+          max_tokens: options?.maxTokens ?? 4096,
+        },
+      })
+    }
+    throw error
+  }
 }

@@ -32,9 +32,114 @@ export const estimateParamsSchema = z.object({
   project_id: z.string().uuid(),
   your_hourly_rate: z.number().positive('時給は正の数で入力してください'),
   multiplier: z.number().min(1).max(5).default(1.5),
+  coefficient: z.number().min(0.3).max(1.2).optional(),
+  region: z.string().min(1).max(100).optional(),
+})
+
+export const pricingPolicySchema = z.object({
+  project_type: projectTypeSchema,
+  name: z.string().min(1).max(120),
+  coefficient_min: z.number().positive(),
+  coefficient_max: z.number().positive(),
+  default_coefficient: z.number().positive(),
+  minimum_project_fee: z.number().nonnegative(),
+  minimum_margin_percent: z.number().min(0).max(100),
+  avg_internal_cost_per_member_month: z.number().positive(),
+  default_team_size: z.number().int().min(1).max(20),
+  default_duration_months: z.number().positive().max(36),
+  active: z.boolean().default(true),
+})
+
+export const marketEvidenceRequestSchema = z.object({
+  project_id: z.string().uuid().optional(),
+  project_type: projectTypeSchema,
+  context: z.string().min(10).max(6000),
+  region: z.string().min(1).max(100).optional(),
+})
+
+export const changeRequestSchema = z.object({
+  project_id: z.string().uuid(),
+  title: z.string().min(1).max(200),
+  description: z.string().min(10).max(10000),
+  category: z.enum([
+    'bug_report',
+    'fix_request',
+    'feature_addition',
+    'scope_change',
+    'other',
+  ]),
+  impact_level: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
+  requested_by_name: z.string().min(1).max(120).optional(),
+  requested_by_email: z.string().email().optional(),
+})
+
+export const changeRequestEstimateSchema = z.object({
+  your_hourly_rate: z.number().positive(),
+  include_market_context: z.boolean().default(false),
+  region: z.string().min(1).max(100).optional(),
+})
+
+export const dataSourceSchema = z.object({
+  source_key: z.string().min(1).max(120),
+  provider: z.string().min(1).max(120),
+  source_type: z.enum(['search', 'public_stats', 'internal', 'manual']),
+  display_name: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  docs_url: z.string().url().optional(),
+  terms_url: z.string().url().optional(),
+  trust_level: z.number().min(0).max(1).default(0.7),
+  freshness_ttl_hours: z.number().int().min(1).max(24 * 365).default(168),
+  update_frequency_minutes: z.number().int().min(1).max(24 * 60 * 365).default(1440),
+  estimated_cost_per_call: z.number().min(0).default(0),
+  currency: z.string().min(3).max(10).default('JPY'),
+  quota_daily: z.number().int().min(0).optional(),
+  quota_monthly: z.number().int().min(0).optional(),
+  active: z.boolean().default(true),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+})
+
+export const approvalRequestCreateSchema = z.object({
+  project_id: z.string().uuid(),
+  estimate_id: z.string().uuid().optional(),
+  change_request_id: z.string().uuid().optional(),
+  request_type: z.enum([
+    'floor_breach',
+    'low_margin',
+    'manual_override',
+    'high_risk_change',
+  ]),
+  severity: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
+  reason: z.string().min(3).max(3000),
+  context: z.record(z.string(), z.unknown()).default({}),
+  assigned_to_clerk_user_id: z.string().min(1).max(120).optional(),
+})
+
+export const approvalRequestUpdateSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected', 'cancelled']),
+  resolution_comment: z.string().max(3000).optional(),
+  assigned_to_clerk_user_id: z.string().min(1).max(120).optional(),
+})
+
+export const repositoryAnalysisRequestSchema = z.object({
+  project_id: z.string().uuid(),
+  repository_url: z.string().url(),
+})
+
+export const sourceAnalysisRunRequestSchema = z.object({
+  project_id: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(10).default(2),
 })
 
 export type CustomerInput = z.infer<typeof customerSchema>
 export type CreateProjectInput = z.infer<typeof createProjectSchema>
 export type SendMessageInput = z.infer<typeof sendMessageSchema>
 export type EstimateParamsInput = z.infer<typeof estimateParamsSchema>
+export type PricingPolicyInput = z.infer<typeof pricingPolicySchema>
+export type MarketEvidenceRequestInput = z.infer<typeof marketEvidenceRequestSchema>
+export type ChangeRequestInput = z.infer<typeof changeRequestSchema>
+export type ChangeRequestEstimateInput = z.infer<typeof changeRequestEstimateSchema>
+export type DataSourceInput = z.infer<typeof dataSourceSchema>
+export type ApprovalRequestCreateInput = z.infer<typeof approvalRequestCreateSchema>
+export type ApprovalRequestUpdateInput = z.infer<typeof approvalRequestUpdateSchema>
+export type RepositoryAnalysisRequestInput = z.infer<typeof repositoryAnalysisRequestSchema>
+export type SourceAnalysisRunRequestInput = z.infer<typeof sourceAnalysisRunRequestSchema>

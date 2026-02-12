@@ -2,17 +2,17 @@ import { notFound } from 'next/navigation'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EstimateActions } from '@/components/estimates/estimate-actions'
 import { ConversationLog } from '@/components/chat/conversation-log'
 import { SpecViewer } from '@/components/estimates/spec-viewer'
+import { ChangeRequestPanel } from '@/components/admin/change-request-panel'
+import { ProjectFilesPanel } from '@/components/admin/project-files-panel'
 
 export default async function ProjectDetailPage({
   params,
@@ -40,6 +40,18 @@ export default async function ProjectDetailPage({
 
   const { data: estimates } = await supabase
     .from('estimates')
+    .select('*')
+    .eq('project_id', id)
+    .order('created_at', { ascending: false })
+
+  const { data: changeRequests } = await supabase
+    .from('change_requests')
+    .select('*')
+    .eq('project_id', id)
+    .order('created_at', { ascending: false })
+
+  const { data: projectFiles } = await supabase
+    .from('project_files')
     .select('*')
     .eq('project_id', id)
     .order('created_at', { ascending: false })
@@ -104,7 +116,9 @@ export default async function ProjectDetailPage({
         <TabsList>
           <TabsTrigger value="spec">仕様書</TabsTrigger>
           <TabsTrigger value="conversations">対話ログ</TabsTrigger>
+          <TabsTrigger value="attachments">添付資料</TabsTrigger>
           <TabsTrigger value="estimates">見積り</TabsTrigger>
+          <TabsTrigger value="changes">変更要求</TabsTrigger>
         </TabsList>
 
         <TabsContent value="spec">
@@ -118,12 +132,22 @@ export default async function ProjectDetailPage({
           <ConversationLog conversations={conversations ?? []} />
         </TabsContent>
 
+        <TabsContent value="attachments">
+          <ProjectFilesPanel files={projectFiles ?? []} />
+        </TabsContent>
+
         <TabsContent value="estimates">
           <EstimateActions
             projectId={project.id}
-            projectType={project.type}
             hasSpec={!!project.spec_markdown}
             estimates={estimates ?? []}
+          />
+        </TabsContent>
+
+        <TabsContent value="changes">
+          <ChangeRequestPanel
+            projectId={project.id}
+            changeRequests={changeRequests ?? []}
           />
         </TabsContent>
       </Tabs>

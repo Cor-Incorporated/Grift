@@ -25,6 +25,7 @@ export default function ChatPage() {
   const [isComplete, setIsComplete] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const initialMessageSentRef = useRef(false)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -56,7 +57,8 @@ export default function ChatPage() {
   }, [conversations, scrollToBottom])
 
   useEffect(() => {
-    if (conversations.length === 0 && !isLoading && !isSending) {
+    if (conversations.length === 0 && !isLoading && !initialMessageSentRef.current) {
+      initialMessageSentRef.current = true
       sendInitialMessage()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,7 +203,9 @@ export default function ChatPage() {
       </div>
 
       <ChatInput
+        projectId={projectId}
         onSend={handleSendMessage}
+        onAttachmentUpdated={reloadConversations}
         disabled={isSending || isComplete}
         choices={choices}
         isComplete={isComplete}

@@ -13,11 +13,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import type { Estimate, ProjectType } from '@/types/database'
+import type { Estimate } from '@/types/database'
 
 interface EstimateActionsProps {
   projectId: string
-  projectType: string
   hasSpec: boolean
   estimates: Estimate[]
 }
@@ -28,9 +27,39 @@ const modeLabels: Record<string, string> = {
   hybrid: 'ハイブリッド',
 }
 
+function getDisplayedTotalCost(estimate: Estimate): number {
+  const snapshot = estimate.pricing_snapshot as
+    | { recommended_total_cost?: unknown; pricing?: { finalDeltaFee?: unknown } }
+    | null
+    | undefined
+
+  const recommendedTotal =
+    snapshot && typeof snapshot.recommended_total_cost === 'number'
+      ? snapshot.recommended_total_cost
+      : null
+
+  if (recommendedTotal && recommendedTotal > 0) {
+    return recommendedTotal
+  }
+
+  const changeOrderTotal =
+    snapshot?.pricing && typeof snapshot.pricing.finalDeltaFee === 'number'
+      ? snapshot.pricing.finalDeltaFee
+      : null
+
+  if (changeOrderTotal && changeOrderTotal > 0) {
+    return changeOrderTotal
+  }
+
+  if (typeof estimate.total_your_cost === 'number' && estimate.total_your_cost > 0) {
+    return estimate.total_your_cost
+  }
+
+  return estimate.your_hourly_rate * estimate.your_estimated_hours
+}
+
 export function EstimateActions({
   projectId,
-  projectType,
   hasSpec,
   estimates,
 }: EstimateActionsProps) {
@@ -104,8 +133,10 @@ export function EstimateActions({
           </CardContent>
         </Card>
       ) : (
-        estimates.map((estimate) => (
-          <Card key={estimate.id}>
+        estimates.map((estimate) => {
+          const displayedTotal = getDisplayedTotalCost(estimate)
+          return (
+            <Card key={estimate.id}>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>見積り結果</CardTitle>
@@ -156,7 +187,7 @@ export function EstimateActions({
                     <div className="flex justify-between font-bold text-lg">
                       <span>見積総額</span>
                       <span>
-                        ¥{estimate.total_your_cost.toLocaleString()}
+                        ¥{displayedTotal.toLocaleString()}
                       </span>
                     </div>
                     {estimate.total_market_cost && (
@@ -171,7 +202,7 @@ export function EstimateActions({
                         <div className="flex justify-between text-green-600">
                           <span>削減額</span>
                           <span>
-                            ¥{(estimate.total_market_cost - estimate.total_your_cost).toLocaleString()}
+                            ¥{(estimate.total_market_cost - displayedTotal).toLocaleString()}
                           </span>
                         </div>
                       </>
@@ -192,8 +223,9 @@ export function EstimateActions({
                 </>
               )}
             </CardContent>
-          </Card>
-        ))
+            </Card>
+          )
+        })
       )}
     </div>
   )

@@ -1,9 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { sendMessage, type ChatMessage } from '@/lib/ai/anthropic'
+import { parseJsonFromResponse } from '@/lib/ai/xai'
 import { getSystemPrompt, getSpecGenerationPrompt } from '@/lib/ai/system-prompts'
 import { sendMessageSchema } from '@/lib/utils/validation'
 import { checkRateLimit } from '@/lib/utils/rate-limit'
+import { buildProjectAttachmentContext } from '@/lib/source-analysis/project-context'
+import { getAuthenticatedUser, canAccessProject } from '@/lib/auth/authorization'
+import { writeAuditLog } from '@/lib/audit/log'
+import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
 import type { ProjectType, ConversationMetadata } from '@/types/database'
 
 interface AIResponse {
@@ -17,13 +22,8 @@ interface AIResponse {
 }
 
 function parseAIResponse(text: string): AIResponse {
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/)
-  if (jsonMatch) {
-    return JSON.parse(jsonMatch[1])
-  }
-
   try {
-    return JSON.parse(text)
+    return parseJsonFromResponse<AIResponse>(text)
   } catch {
     return {
       message: text,
@@ -38,8 +38,16 @@ function parseAIResponse(text: string): AIResponse {
 
 export async function POST(request: NextRequest) {
   try {
-    const ip = request.headers.get('x-forwarded-for') ?? 'unknown'
-    const rateLimit = checkRateLimit(`conversations:${ip}`, {
+    const authUser = await getAuthenticatedUser()
+
+    if (!authUser) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      )
+    }
+
+    const rateLimit = checkRateLimit(`conversations:${authUser.clerkUserId}`, {
       maxRequests: 20,
       windowMs: 60000,
     })
@@ -55,6 +63,20 @@ export async function POST(request: NextRequest) {
     const validated = sendMessageSchema.parse(body)
 
     const supabase = await createServiceRoleClient()
+
+    const accessible = await canAccessProject(
+      supabase,
+      validated.project_id,
+      authUser.clerkUserId,
+      authUser.email
+    )
+
+    if (!accessible) {
+      return NextResponse.json(
+        { success: false, error: 'この案件にアクセスできません' },
+        { status: 403 }
+      )
+    }
 
     const { data: project, error: projectError } = await supabase
       .from('projects')
@@ -89,8 +111,17 @@ export async function POST(request: NextRequest) {
         content: msg.content,
       }))
 
-    const systemPrompt = getSystemPrompt(project.type as ProjectType)
-    const aiResponseText = await sendMessage(systemPrompt, messages)
+    const attachmentContext = await buildProjectAttachmentContext(supabase, validated.project_id)
+    const baseSystemPrompt = getSystemPrompt(project.type as ProjectType)
+    const systemPrompt = attachmentContext
+      ? `${baseSystemPrompt}\n\n${attachmentContext}`
+      : baseSystemPrompt
+    const aiResponseText = await sendMessage(systemPrompt, messages, {
+      usageContext: {
+        projectId: validated.project_id,
+        actorClerkUserId: authUser.clerkUserId,
+      },
+    })
     const aiResponse = parseAIResponse(aiResponseText)
 
     const metadata: ConversationMetadata = {
@@ -121,12 +152,22 @@ export async function POST(request: NextRequest) {
         }))
 
       const specPrompt = getSpecGenerationPrompt(project.type as ProjectType)
+      const attachmentContextBlock = attachmentContext
+        ? `\n\n添付資料の解析要約:\n${attachmentContext}`
+        : ''
       const specMarkdown = await sendMessage(specPrompt, [
         {
           role: 'user',
-          content: `以下の対話記録を基に文書を生成してください:\n\n${allMessages.map((m) => `${m.role}: ${m.content}`).join('\n\n')}`,
+          content: `以下の対話記録を基に文書を生成してください:\n\n${allMessages
+            .map((m) => `${m.role}: ${m.content}`)
+            .join('\n\n')}${attachmentContextBlock}`,
         },
-      ])
+      ], {
+        usageContext: {
+          projectId: validated.project_id,
+          actorClerkUserId: authUser.clerkUserId,
+        },
+      })
 
       await supabase
         .from('projects')
@@ -135,6 +176,18 @@ export async function POST(request: NextRequest) {
           spec_markdown: specMarkdown,
         })
         .eq('id', validated.project_id)
+
+      await writeAuditLog(supabase, {
+        actorClerkUserId: authUser.clerkUserId,
+        action: 'conversation.spec_generated',
+        resourceType: 'project',
+        resourceId: validated.project_id,
+        projectId: validated.project_id,
+        payload: {
+          conversationCount: allMessages.length,
+          projectType: project.type,
+        },
+      })
     }
 
     return NextResponse.json({
@@ -155,6 +208,14 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    if (isExternalApiQuotaError(error)) {
+      return NextResponse.json(
+        { success: false, error: '外部APIのクォータ上限に達しました。しばらくしてから再試行してください。' },
+        { status: 429 }
+      )
+    }
+
     const message = error instanceof Error ? error.message : 'サーバーエラー'
     return NextResponse.json(
       { success: false, error: message },
@@ -165,6 +226,15 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const authUser = await getAuthenticatedUser()
+
+    if (!authUser) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get('project_id')
 
@@ -176,6 +246,20 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = await createServiceRoleClient()
+
+    const accessible = await canAccessProject(
+      supabase,
+      projectId,
+      authUser.clerkUserId,
+      authUser.email
+    )
+
+    if (!accessible) {
+      return NextResponse.json(
+        { success: false, error: 'この案件にアクセスできません' },
+        { status: 403 }
+      )
+    }
 
     const { data: conversations, error } = await supabase
       .from('conversations')

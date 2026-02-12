@@ -1,8 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { sendMessage } from '@/lib/ai/anthropic'
-import { queryGrok } from '@/lib/ai/grok'
-import type { ProjectType, EstimateMode } from '@/types/database'
+import { parseJsonFromResponse } from '@/lib/ai/xai'
+import { fetchMarketEvidenceFromXai } from '@/lib/market/evidence'
+import { estimateParamsSchema } from '@/lib/utils/validation'
+import { getAuthenticatedUser, isAdminUser, canAccessProject } from '@/lib/auth/authorization'
+import { buildProjectAttachmentContext } from '@/lib/source-analysis/project-context'
+import { fetchActivePricingPolicy } from '@/lib/pricing/policies'
+import { calculatePrice, type MarketAssumption } from '@/lib/pricing/engine'
+import { writeAuditLog } from '@/lib/audit/log'
+import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
+import type { EstimateMode, ProjectType } from '@/types/database'
 
 function getEstimateMode(projectType: ProjectType): EstimateMode {
   switch (projectType) {
@@ -16,17 +24,27 @@ function getEstimateMode(projectType: ProjectType): EstimateMode {
   }
 }
 
-async function estimateHours(
-  specMarkdown: string,
-  projectType: ProjectType
-): Promise<{
+interface HoursEstimate {
   investigation: number
   implementation: number
   testing: number
   buffer: number
   total: number
   breakdown: string
-}> {
+}
+
+async function estimateHoursWithClaude(
+  specMarkdown: string,
+  projectType: ProjectType,
+  attachmentContext?: string,
+  usageContext?: {
+    projectId?: string | null
+    actorClerkUserId?: string | null
+  }
+): Promise<HoursEstimate> {
+  const attachmentBlock = attachmentContext
+    ? `\n\n添付資料解析の要約:\n${attachmentContext}`
+    : ''
   const prompt = `あなたはシニアソフトウェアエンジニアです。以下の仕様書を読み、工数を見積もってください。
 
 案件タイプ: ${projectType}
@@ -47,74 +65,127 @@ async function estimateHours(
 - bug_report: 20-30%
 - fix_request: 10-20%
 - feature_addition: 15-25%
-- new_project: 15-25%`
+- new_project: 15-25%
 
-  const response = await sendMessage(prompt, [
-    { role: 'user', content: specMarkdown },
-  ])
+制約:
+- 回答は必ずJSONのみで返す
+- total は各項目の合計と一致させる`
 
-  const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/)
-  if (jsonMatch) {
-    return JSON.parse(jsonMatch[1])
+  const response = await sendMessage(prompt, [{ role: 'user', content: `${specMarkdown}${attachmentBlock}` }], {
+    temperature: 0.2,
+    maxTokens: 2048,
+    usageContext,
+  })
+
+  const parsed = parseJsonFromResponse<Partial<HoursEstimate>>(response)
+
+  const investigation = Math.max(0, Number(parsed.investigation ?? 0))
+  const implementation = Math.max(0, Number(parsed.implementation ?? 0))
+  const testing = Math.max(0, Number(parsed.testing ?? 0))
+  const buffer = Math.max(0, Number(parsed.buffer ?? 0))
+  const total = Number(parsed.total ?? investigation + implementation + testing + buffer)
+
+  return {
+    investigation,
+    implementation,
+    testing,
+    buffer,
+    total,
+    breakdown:
+      typeof parsed.breakdown === 'string' && parsed.breakdown.length > 0
+        ? parsed.breakdown
+        : '工数内訳の詳細は生成できませんでした。',
   }
-  return JSON.parse(response)
 }
 
-async function getMarketData(techStack: string) {
-  try {
-    const response = await queryGrok(
-      `あなたは IT 市場調査のスペシャリストです。技術トレンドと単価相場の情報を提供してください。`,
-      `以下の技術スタックについて、日本市場での開発単価相場、トレンド情報を教えてください。
-JSON形式で回答してください:
-\`\`\`json
-{
-  "market_hourly_rate": 時給の市場平均(円),
-  "market_rate_range": { "min": 最低時給, "max": 最高時給 },
-  "market_estimated_hours_multiplier": 一般的な工数の倍率(実力者比),
-  "trends": ["トレンド1", "トレンド2"],
-  "risks": ["リスク1", "リスク2"],
-  "summary": "市場概況のサマリー"
-}
-\`\`\`
-
-技術スタック: ${techStack}`
-    )
-
-    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/)
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[1])
-    }
-    return JSON.parse(response)
-  } catch (error) {
-    return {
-      market_hourly_rate: 8000,
-      market_rate_range: { min: 5000, max: 15000 },
-      market_estimated_hours_multiplier: 2.0,
-      trends: [],
-      risks: [],
-      summary: '市場データの取得に失敗しました。デフォルト値を使用しています。',
-    }
+function buildComparisonReport(params: {
+  hourlyRate: number
+  hoursTotal: number
+  totalMarketCost: number | null
+  marketHours: number | null
+  marketHourlyRate: number | null
+  summary: string
+  citations: { url: string }[]
+}): string | null {
+  if (!params.totalMarketCost || !params.marketHours || !params.marketHourlyRate) {
+    return null
   }
+
+  const yourTotalCost = params.hourlyRate * params.hoursTotal
+  const diff = params.totalMarketCost - yourTotalCost
+  const reduction = params.totalMarketCost > 0
+    ? Math.round((diff / params.totalMarketCost) * 100)
+    : 0
+
+  const citationLines = params.citations.length > 0
+    ? params.citations.slice(0, 5).map((citation, index) => `${index + 1}. ${citation.url}`).join('\n')
+    : '引用URLは取得できませんでした。'
+
+  return `# 市場比較レポート
+
+## あなたの見積り
+- 時給: ¥${params.hourlyRate.toLocaleString()}
+- 推定工数: ${params.hoursTotal}時間
+- **合計: ¥${yourTotalCost.toLocaleString()}**
+
+## 市場平均の見積り
+- 市場平均時給: ¥${params.marketHourlyRate.toLocaleString()}
+- 市場推定工数: ${params.marketHours.toFixed(1)}時間
+- **合計: ¥${params.totalMarketCost.toLocaleString()}**
+
+## コスト比較
+- **差額: ¥${diff.toLocaleString()}**
+- **削減率: ${reduction}%**
+
+## 市場概況
+${params.summary}
+
+## 引用ソース
+${citationLines}
+`
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { project_id, your_hourly_rate, multiplier = 1.5 } = body
-
-    if (!project_id || !your_hourly_rate) {
+    const authUser = await getAuthenticatedUser()
+    if (!authUser) {
       return NextResponse.json(
-        { success: false, error: 'project_id と your_hourly_rate は必須です' },
-        { status: 400 }
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
       )
     }
 
+    const body = await request.json()
+    const validated = estimateParamsSchema.parse(body)
+
     const supabase = await createServiceRoleClient()
+
+    const admin = await isAdminUser(supabase, authUser.clerkUserId, authUser.email)
+    if (!admin) {
+      return NextResponse.json(
+        { success: false, error: '見積り生成は管理者のみ実行できます' },
+        { status: 403 }
+      )
+    }
+
+    const accessible = await canAccessProject(
+      supabase,
+      validated.project_id,
+      authUser.clerkUserId,
+      authUser.email
+    )
+
+    if (!accessible) {
+      return NextResponse.json(
+        { success: false, error: 'この案件にアクセスできません' },
+        { status: 403 }
+      )
+    }
 
     const { data: project, error: projectError } = await supabase
       .from('projects')
       .select('*')
-      .eq('id', project_id)
+      .eq('id', validated.project_id)
       .single()
 
     if (projectError || !project) {
@@ -131,54 +202,138 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const estimateMode = getEstimateMode(project.type as ProjectType)
-    const hours = await estimateHours(
+    const projectType = project.type as ProjectType
+    const estimateMode = getEstimateMode(projectType)
+
+    const [attachmentContext, policy] = await Promise.all([
+      buildProjectAttachmentContext(supabase, project.id),
+      fetchActivePricingPolicy(supabase, projectType),
+    ])
+    const hours = await estimateHoursWithClaude(
       project.spec_markdown,
-      project.type as ProjectType
+      projectType,
+      attachmentContext || undefined,
+      {
+        projectId: project.id,
+        actorClerkUserId: authUser.clerkUserId,
+      }
     )
 
-    let marketData = null
-    let comparisonReport = null
-    let totalMarketCost = null
+    let marketEvidenceRecordId: string | null = null
+    let marketData: {
+      market_hourly_rate: number
+      market_rate_range: { min: number; max: number }
+      market_estimated_hours_multiplier: number
+      trends: string[]
+      risks: string[]
+      summary: string
+      typical_team_size: number
+      typical_duration_months: number
+      monthly_unit_price: number
+      confidence_score: number
+      citations: Array<{ url: string; type: string }>
+    } | null = null
+
+    let marketAssumption: MarketAssumption = {
+      teamSize: policy.defaultTeamSize,
+      durationMonths: policy.defaultDurationMonths,
+      monthlyUnitPrice: policy.avgInternalCostPerMemberMonth,
+    }
 
     if (estimateMode === 'market_comparison' || estimateMode === 'hybrid') {
-      marketData = await getMarketData(project.spec_markdown.slice(0, 2000))
+      const marketEvidence = await fetchMarketEvidenceFromXai({
+        projectType,
+        context: attachmentContext
+          ? `${project.spec_markdown}\n\n${attachmentContext}`
+          : project.spec_markdown,
+        region: validated.region,
+        usageContext: {
+          projectId: project.id,
+          actorClerkUserId: authUser.clerkUserId,
+        },
+      })
 
-      const marketHours = hours.total * (marketData.market_estimated_hours_multiplier ?? 2.0)
-      totalMarketCost = marketData.market_hourly_rate * marketHours
+      marketAssumption = {
+        teamSize: marketEvidence.evidence.typicalTeamSize,
+        durationMonths: marketEvidence.evidence.typicalDurationMonths,
+        monthlyUnitPrice: marketEvidence.evidence.monthlyUnitPrice,
+      }
 
-      const yourTotalCost = your_hourly_rate * hours.total
+      const { data: savedEvidence } = await supabase
+        .from('market_evidence')
+        .insert({
+          project_id: project.id,
+          project_type: projectType,
+          source: 'xai',
+          query: project.spec_markdown.slice(0, 4000),
+          summary: marketEvidence.evidence.summary,
+          data: marketEvidence.evidence,
+          citations: marketEvidence.citations,
+          confidence_score: marketEvidence.confidenceScore,
+          usage: marketEvidence.usage,
+          created_by_clerk_user_id: authUser.clerkUserId,
+        })
+        .select('id')
+        .maybeSingle()
 
-      comparisonReport = `# 市場比較レポート
+      marketEvidenceRecordId = savedEvidence?.id ?? null
 
-## あなたの見積り
-- 時給: ¥${your_hourly_rate.toLocaleString()}
-- 推定工数: ${hours.total}時間
-- **合計: ¥${yourTotalCost.toLocaleString()}**
-
-## 市場平均の見積り
-- 市場平均時給: ¥${marketData.market_hourly_rate.toLocaleString()}
-- 市場推定工数: ${marketHours}時間（一般的なエンジニアの場合）
-- **合計: ¥${totalMarketCost.toLocaleString()}**
-
-## コスト比較
-- **差額: ¥${(totalMarketCost - yourTotalCost).toLocaleString()}**
-- **削減率: ${Math.round(((totalMarketCost - yourTotalCost) / totalMarketCost) * 100)}%**
-
-> 高い時給単価でも、実績に基づく圧倒的な開発速度により、
-> トータルコストでは市場平均を大幅に下回ります。
-
-## 市場概況
-${marketData.summary}
-`
+      marketData = {
+        market_hourly_rate: marketEvidence.evidence.marketHourlyRate,
+        market_rate_range: marketEvidence.evidence.marketRateRange,
+        market_estimated_hours_multiplier:
+          marketEvidence.evidence.marketEstimatedHoursMultiplier,
+        trends: marketEvidence.evidence.trends,
+        risks: marketEvidence.evidence.risks,
+        summary: marketEvidence.evidence.summary,
+        typical_team_size: marketEvidence.evidence.typicalTeamSize,
+        typical_duration_months: marketEvidence.evidence.typicalDurationMonths,
+        monthly_unit_price: marketEvidence.evidence.monthlyUnitPrice,
+        confidence_score: marketEvidence.confidenceScore,
+        citations: marketEvidence.citations.map((citation) => ({
+          url: citation.url,
+          type: citation.type,
+        })),
+      }
     }
+
+    const pricing = calculatePrice({
+      policy,
+      market: marketAssumption,
+      selectedCoefficient: validated.coefficient,
+    })
+
+    const hoursBasedCost = validated.your_hourly_rate * hours.total
+    const recommendedTotalCost = Math.max(
+      pricing.ourPrice,
+      hoursBasedCost,
+      policy.minimumProjectFee
+    )
+
+    const marketHours = marketData
+      ? hours.total * (marketData.market_estimated_hours_multiplier ?? 1.8)
+      : null
+    const totalMarketCost = marketData
+      ? marketData.market_hourly_rate * (marketHours ?? 0)
+      : null
+
+    const comparisonReport = buildComparisonReport({
+      hourlyRate: validated.your_hourly_rate,
+      hoursTotal: hours.total,
+      totalMarketCost,
+      marketHours,
+      marketHourlyRate: marketData?.market_hourly_rate ?? null,
+      summary: marketData?.summary ?? '',
+      citations:
+        marketData?.citations?.map((citation) => ({ url: citation.url })) ?? [],
+    })
 
     const { data: estimate, error: estimateError } = await supabase
       .from('estimates')
       .insert({
-        project_id,
+        project_id: validated.project_id,
         estimate_mode: estimateMode,
-        your_hourly_rate,
+        your_hourly_rate: validated.your_hourly_rate,
         your_estimated_hours: hours.total,
         hours_investigation: hours.investigation,
         hours_implementation: hours.implementation,
@@ -186,19 +341,26 @@ ${marketData.summary}
         hours_buffer: hours.buffer,
         hours_breakdown_report: hours.breakdown,
         market_hourly_rate: marketData?.market_hourly_rate ?? null,
-        market_estimated_hours: marketData
-          ? hours.total * (marketData.market_estimated_hours_multiplier ?? 2.0)
-          : null,
-        multiplier,
+        market_estimated_hours: marketHours,
+        multiplier: validated.multiplier,
         total_market_cost: totalMarketCost,
         comparison_report: comparisonReport,
         grok_market_data: marketData,
         similar_projects: null,
+        pricing_snapshot: {
+          policy,
+          market_assumption: marketAssumption,
+          calculated: pricing,
+          recommended_total_cost: recommendedTotalCost,
+          hours_based_cost: hoursBasedCost,
+        },
+        risk_flags: pricing.riskFlags,
+        market_evidence_id: marketEvidenceRecordId,
       })
       .select()
       .single()
 
-    if (estimateError) {
+    if (estimateError || !estimate) {
       return NextResponse.json(
         { success: false, error: '見積りの保存に失敗しました' },
         { status: 500 }
@@ -206,15 +368,57 @@ ${marketData.summary}
     }
 
     await supabase
+      .from('estimate_versions')
+      .insert({
+        estimate_id: estimate.id,
+        project_id: estimate.project_id,
+        change_request_id: null,
+        version: 1,
+        version_type: 'initial',
+        snapshot: estimate,
+        created_by_clerk_user_id: authUser.clerkUserId,
+      })
+
+    await supabase
       .from('projects')
       .update({ status: 'estimating' })
-      .eq('id', project_id)
+      .eq('id', validated.project_id)
+
+    await writeAuditLog(supabase, {
+      actorClerkUserId: authUser.clerkUserId,
+      action: 'estimate.create',
+      resourceType: 'estimate',
+      resourceId: estimate.id,
+      projectId: estimate.project_id,
+      payload: {
+        estimateMode,
+        riskFlags: pricing.riskFlags,
+        recommendedTotalCost,
+      },
+    })
 
     return NextResponse.json({
       success: true,
-      data: estimate,
+      data: {
+        ...estimate,
+        recommended_total_cost: recommendedTotalCost,
+      },
     })
   } catch (error) {
+    if (error instanceof Error && error.name === 'ZodError') {
+      return NextResponse.json(
+        { success: false, error: '入力データが不正です' },
+        { status: 400 }
+      )
+    }
+
+    if (isExternalApiQuotaError(error)) {
+      return NextResponse.json(
+        { success: false, error: '外部APIのクォータ上限に達しました。設定をご確認ください。' },
+        { status: 429 }
+      )
+    }
+
     const message = error instanceof Error ? error.message : 'サーバーエラー'
     return NextResponse.json(
       { success: false, error: message },

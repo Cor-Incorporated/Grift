@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { useUser } from '@clerk/nextjs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,15 +29,19 @@ const typeLabels: Record<ProjectType, { title: string; icon: string }> = {
   feature_addition: { title: '機能追加', icon: '✨' },
 }
 
+interface CustomerProfile {
+  company: string | null
+  name: string
+}
+
 function NewProjectForm() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { user } = useUser()
   const defaultType = (searchParams.get('type') ?? 'new_project') as ProjectType
 
+  const [profile, setProfile] = useState<CustomerProfile | null>(null)
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    company: '',
     title: '',
     type: defaultType,
     priority: '',
@@ -44,6 +49,21 @@ function NewProjectForm() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const response = await fetch('/api/customers/profile')
+        const result = await response.json()
+        if (result.success && result.data) {
+          setProfile(result.data)
+        }
+      } catch {
+        // Profile not found yet - that's ok
+      }
+    }
+    loadProfile()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -55,11 +75,6 @@ function NewProjectForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer: {
-            name: formData.name,
-            email: formData.email,
-            company: formData.company || undefined,
-          },
           project: {
             title: formData.title,
             type: formData.type,
@@ -87,6 +102,8 @@ function NewProjectForm() {
   const typeInfo = typeLabels[formData.type]
   const showPriority = formData.type === 'bug_report' || formData.type === 'fix_request'
   const showExistingUrl = formData.type !== 'new_project'
+  const displayName = profile?.name ?? [user?.firstName, user?.lastName].filter(Boolean).join(' ') ?? ''
+  const companyName = profile?.company ?? ''
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 py-12">
@@ -95,58 +112,34 @@ function NewProjectForm() {
           <span className="text-4xl">{typeInfo.icon}</span>
           <h1 className="mt-2 text-2xl font-bold">{typeInfo.title}のご相談</h1>
           <p className="text-muted-foreground">
-            基本情報をご入力ください。AI 執事が詳細をお伺いします。
+            案件情報をご入力ください。AI 執事が詳細をお伺いします。
           </p>
         </div>
 
+        {(displayName || companyName) && (
+          <Card className="mb-6">
+            <CardContent className="flex items-center gap-4 pt-6">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                {displayName.charAt(0) || '?'}
+              </div>
+              <div>
+                <p className="font-medium">{displayName}</p>
+                {companyName && (
+                  <p className="text-sm text-muted-foreground">{companyName}</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
-            <CardTitle>基本情報</CardTitle>
-            <CardDescription>お客様と案件の基本情報を入力してください</CardDescription>
+            <CardTitle>案件情報</CardTitle>
+            <CardDescription>案件の基本情報を入力してください</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-4">
-                <h3 className="text-sm font-medium text-muted-foreground">お客様情報</h3>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">お名前</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) =>
-                        setFormData({ ...formData, name: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">メールアドレス</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) =>
-                        setFormData({ ...formData, email: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="company">会社名（任意）</Label>
-                  <Input
-                    id="company"
-                    value={formData.company}
-                    onChange={(e) =>
-                      setFormData({ ...formData, company: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-sm font-medium text-muted-foreground">案件情報</h3>
                 <div className="space-y-2">
                   <Label htmlFor="title">案件タイトル</Label>
                   <Input
