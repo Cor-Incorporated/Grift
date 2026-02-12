@@ -10,6 +10,7 @@ import { writeAuditLog } from '@/lib/audit/log'
 import { changeRequestEstimateSchema } from '@/lib/utils/validation'
 import { fetchActivePricingPolicy } from '@/lib/pricing/policies'
 import { calculateChangeOrder } from '@/lib/pricing/engine'
+import { buildEstimateEvidenceAppendix } from '@/lib/market/evidence-appendix'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
 import type { EstimateMode, ProjectType } from '@/types/database'
 
@@ -180,6 +181,10 @@ export async function POST(
 
     let marketData: Record<string, unknown> | null = null
     let marketEvidenceId: string | null = null
+    let evidenceAppendix: Record<string, unknown> | null = null
+    let evidenceRequirementMet = true
+    let evidenceSourceCount: number | null = null
+    let evidenceBlockReason: string | null = null
 
     if (validated.include_market_context) {
       const evidence = await fetchMarketEvidenceFromXai({
@@ -208,10 +213,21 @@ export async function POST(
           usage: evidence.usage,
           created_by_clerk_user_id: authUser.clerkUserId,
         })
-        .select('id')
+        .select('id, retrieved_at')
         .maybeSingle()
 
       marketEvidenceId = savedEvidence?.id ?? null
+      const appendix = buildEstimateEvidenceAppendix({
+        citations: evidence.citations,
+        confidenceScore: evidence.confidenceScore,
+        summary: evidence.evidence.summary,
+        retrievedAt: savedEvidence?.retrieved_at ?? new Date().toISOString(),
+      })
+
+      evidenceAppendix = appendix as unknown as Record<string, unknown>
+      evidenceRequirementMet = appendix.requirement.met
+      evidenceSourceCount = appendix.requirement.unique_source_count
+      evidenceBlockReason = appendix.requirement.reason
       marketData = {
         ...evidence.evidence,
         citations: evidence.citations,
@@ -231,6 +247,10 @@ export async function POST(
       durationMonths: deltaHours.duration_months,
       teamSize: deltaHours.team_size,
     })
+    const riskFlags = [...changePricing.riskFlags]
+    if (!evidenceRequirementMet) {
+      riskFlags.push('insufficient_evidence_sources')
+    }
 
     const { data: estimate, error: estimateError } = await supabase
       .from('estimates')
@@ -262,8 +282,13 @@ export async function POST(
           duration_months: deltaHours.duration_months,
           team_size: deltaHours.team_size,
         },
-        risk_flags: changePricing.riskFlags,
+        risk_flags: riskFlags,
         market_evidence_id: marketEvidenceId,
+        estimate_status: evidenceRequirementMet ? 'ready' : 'draft',
+        evidence_requirement_met: evidenceRequirementMet,
+        evidence_source_count: evidenceSourceCount,
+        evidence_appendix: evidenceAppendix,
+        evidence_block_reason: evidenceBlockReason,
       })
       .select('*')
       .single()
@@ -311,7 +336,9 @@ export async function POST(
       payload: {
         estimateId: estimate.id,
         finalDeltaFee: changePricing.finalDeltaFee,
-        riskFlags: changePricing.riskFlags,
+        riskFlags,
+        evidenceRequirementMet,
+        evidenceSourceCount,
       },
     })
 

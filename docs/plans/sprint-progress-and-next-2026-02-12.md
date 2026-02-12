@@ -7,12 +7,12 @@
 | Epic | Stories | Done | Partial | Not Started | 進捗率 |
 |---|---:|---:|---:|---:|---:|
 | EPIC-REQ | 5 | 0 | 2 | 3 | 20% |
-| EPIC-DATA | 10 | 2 | 4 | 4 | 40% |
+| EPIC-DATA | 10 | 3 | 3 | 4 | 45% |
 | EPIC-PRICE | 4 | 3 | 1 | 0 | 88% |
 | EPIC-CHG | 6 | 3 | 2 | 1 | 67% |
 | EPIC-GOV | 2 | 0 | 2 | 0 | 50% |
 | EPIC-OUT | 4 | 0 | 0 | 4 | 0% |
-| **Total** | **31** | **8** | **11** | **12** | **44%** |
+| **Total** | **31** | **9** | **10** | **12** | **45%** |
 
 ## 2. Story別更新ステータス
 
@@ -32,7 +32,7 @@
 | DATA-107 | Partial | 市場根拠の正規化は実装。通貨/職種標準化は未完成 |
 | DATA-108 | Partial | confidence score算出あり。一次情報比率の厳密評価は未完成 |
 | DATA-109 | Partial | `api_usage_logs` 実装、xAI/Claude 呼び出しの usage 記録と hard quota ガードを導入。予兆通知は未実装 |
-| DATA-110 | Partial | URL/取得時刻/信頼度の保存あり。顧客向け付録自動生成は未完成 |
+| DATA-110 | **Done** | Evidence Appendix を見積へ保存・表示し、2ソース未達時は `draft` 固定ガードを実装 |
 | PRICE-101 | **Done** | 価格ポリシー版管理実装 |
 | PRICE-102 | **Done** | 市場想定計算（人数×期間×単価）実装 |
 | PRICE-103 | **Done** | 当社提示額算定/下限比較実装 |
@@ -65,6 +65,8 @@
 - xAI Responses / Anthropic Messages に日次・月次クォータガードを導入
 - クォータ超過時に API ルートを 429 応答へ統一（見積り/会話/変更見積り）
 - `market_evidence.usage` へ xAI usage を保存
+- 見積りへ Evidence Appendix（source_url/retrieved_at/confidence）を自動保存
+- 2ソース未達時は `estimate_status=draft` とし顧客提示をガード
 
 ### 3.2 残件（Day2繰越）
 - ジョブ実行の定期化（Cron/Worker常駐化）  
@@ -104,8 +106,8 @@
 | DATA-109-T1 | Task | P0 | API usage ledger 実装 | xAI/Claude 呼び出しの tokens/cost/quota を `api_usage_logs` へ保存（完了） | DATA-101 |
 | DATA-109-T2 | Task | P0 | クォータ制限ガード | xAI/Claude の日次/月次上限超過で呼び出し停止・429応答・fallback（完了） | DATA-109-T1 |
 | DATA-109-T3 | Task | P1 | クォータ予兆通知 | 80%/95% 到達で Slack/メール通知 | DATA-109-T1 |
-| DATA-110-T1 | Task | P0 | Evidence Appendix 生成 | 見積りごとに source_url/retrieved_at/confidence を添付 | DATA-108 |
-| DATA-110-T2 | Task | P0 | 2ソース確定ガード | 要件未達時に見積りを `draft` のままブロック | DATA-110-T1 |
+| DATA-110-T1 | Task | P0 | Evidence Appendix 生成 | 見積りごとに source_url/retrieved_at/confidence を添付（完了） | DATA-108 |
+| DATA-110-T2 | Task | P0 | 2ソース確定ガード | 要件未達時に見積りを `draft` のままブロック（完了） | DATA-110-T1 |
 | PRICE-104-T1 | Task | P0 | 下限割れ時承認リクエスト自動作成 | floor breach で `approval_requests` を起票 | PRICE-103 |
 | PRICE-104-T2 | Task | P0 | 承認完了まで確定禁止 | 承認ステータスが `approved` 以外は送付不可 | PRICE-104-T1 |
 | CHG-102-T1 | Task | P0 | 無償/有償判定ルールエンジン | ルール表を設定可能にし、判定根拠を保存 | CHG-101 |
@@ -119,16 +121,15 @@
 ### 5.3 日次計画（Sprint N+2）
 
 - Day1: DATA-109-T1/T2（usage ledger + hard quota）✅
-- Day2: DATA-110-T1/T2（evidence appendix + 2ソースガード）
+- Day2: DATA-110-T1/T2（evidence appendix + 2ソースガード）✅
 - Day3: PRICE-104-T1/T2 + CHG-102-T1
 - Day4: CHG-106-T1 + GOV-101-T1
 - Day5: GOV-102-T1 + OPS-ANL-01 の最小運用化
 
 ## 6. 既知リスク
 
-- Vitest起動エラー（ESM/CJS）でユニットテストが実行不能  
-- Google Fonts外部依存で一部環境の build が失敗  
 - 解析ジョブは現状APIトリガー実行中心で、定期バッチ未導入  
+- 画像PDFのOCRは未実装で、本文抽出の精度に制限あり  
 
 ## 7. 最新ドキュメント整合チェック（2026-02-12）
 

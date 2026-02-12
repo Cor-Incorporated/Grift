@@ -27,6 +27,29 @@ const modeLabels: Record<string, string> = {
   hybrid: 'ハイブリッド',
 }
 
+interface EvidenceAppendixSourceView {
+  source_url: string
+  retrieved_at?: string
+  confidence_score?: number
+  source_type?: string
+}
+
+interface EvidenceAppendixView {
+  requirement?: {
+    met?: boolean
+    reason?: string | null
+    unique_source_count?: number
+  }
+  sources?: EvidenceAppendixSourceView[]
+}
+
+function parseEvidenceAppendix(value: unknown): EvidenceAppendixView | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  return value as EvidenceAppendixView
+}
+
 function getDisplayedTotalCost(estimate: Estimate): number {
   const snapshot = estimate.pricing_snapshot as
     | { recommended_total_cost?: unknown; pricing?: { finalDeltaFee?: unknown } }
@@ -135,18 +158,32 @@ export function EstimateActions({
       ) : (
         estimates.map((estimate) => {
           const displayedTotal = getDisplayedTotalCost(estimate)
+          const appendix = parseEvidenceAppendix(estimate.evidence_appendix)
+          const evidenceBlocked = estimate.evidence_requirement_met === false
           return (
             <Card key={estimate.id}>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <CardTitle>見積り結果</CardTitle>
-                <Badge>{modeLabels[estimate.estimate_mode] ?? estimate.estimate_mode}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge>{modeLabels[estimate.estimate_mode] ?? estimate.estimate_mode}</Badge>
+                  <Badge variant={estimate.estimate_status === 'ready' ? 'default' : 'secondary'}>
+                    {estimate.estimate_status === 'ready' ? '顧客提示可能' : 'ドラフト'}
+                  </Badge>
+                </div>
               </div>
               <CardDescription>
                 {new Date(estimate.created_at).toLocaleString('ja-JP')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {evidenceBlocked && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                  根拠ソースが不足しているため、この見積りはドラフト状態です。
+                  {estimate.evidence_block_reason ? ` ${estimate.evidence_block_reason}` : ''}
+                </div>
+              )}
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <h4 className="mb-2 text-sm font-medium">工数内訳</h4>
@@ -218,6 +255,39 @@ export function EstimateActions({
                     <h4 className="mb-2 text-sm font-medium">市場比較レポート</h4>
                     <div className="rounded-lg bg-muted/50 p-4 text-sm whitespace-pre-wrap">
                       {estimate.comparison_report}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {appendix && Array.isArray(appendix.sources) && appendix.sources.length > 0 && (
+                <>
+                  <Separator />
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium">根拠付録（Evidence Appendix）</h4>
+                    <div className="text-xs text-muted-foreground">
+                      ソース数: {appendix.requirement?.unique_source_count ?? appendix.sources.length}
+                    </div>
+                    <div className="space-y-2">
+                      {appendix.sources.map((source, index) => (
+                        <div key={`${source.source_url}-${index}`} className="rounded border p-2 text-sm">
+                          <a
+                            href={source.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="break-all text-blue-600 underline"
+                          >
+                            {source.source_url}
+                          </a>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            取得日時: {source.retrieved_at ? new Date(source.retrieved_at).toLocaleString('ja-JP') : '-'}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            信頼度: {typeof source.confidence_score === 'number' ? source.confidence_score : '-'}
+                            {source.source_type ? ` / 種別: ${source.source_type}` : ''}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </>

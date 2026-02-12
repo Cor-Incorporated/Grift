@@ -39,7 +39,7 @@ export default async function EstimatesPage() {
               key={estimate.id}
               href={`/admin/projects/${estimate.project_id}`}
             >
-              <Card className="transition-colors hover:bg-muted/50">
+                <Card className="transition-colors hover:bg-muted/50">
                 <CardContent className="flex items-center justify-between p-4">
                   <div>
                     <p className="font-medium">
@@ -53,6 +53,9 @@ export default async function EstimatesPage() {
                   <div className="flex items-center gap-4">
                     <Badge variant="outline">
                       {estimate.estimate_mode}
+                    </Badge>
+                    <Badge variant={estimate.estimate_status === 'ready' ? 'default' : 'secondary'}>
+                      {estimate.estimate_status === 'ready' ? 'ready' : 'draft'}
                     </Badge>
                     <span className="text-lg font-bold">
                       ¥{estimate.total_your_cost?.toLocaleString() ?? 0}

@@ -8,6 +8,7 @@ import { getAuthenticatedUser, isAdminUser, canAccessProject } from '@/lib/auth/
 import { buildProjectAttachmentContext } from '@/lib/source-analysis/project-context'
 import { fetchActivePricingPolicy } from '@/lib/pricing/policies'
 import { calculatePrice, type MarketAssumption } from '@/lib/pricing/engine'
+import { buildEstimateEvidenceAppendix } from '@/lib/market/evidence-appendix'
 import { writeAuditLog } from '@/lib/audit/log'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
 import type { EstimateMode, ProjectType } from '@/types/database'
@@ -239,6 +240,10 @@ export async function POST(request: NextRequest) {
       durationMonths: policy.defaultDurationMonths,
       monthlyUnitPrice: policy.avgInternalCostPerMemberMonth,
     }
+    let evidenceAppendix: Record<string, unknown> | null = null
+    let evidenceRequirementMet = true
+    let evidenceSourceCount: number | null = null
+    let evidenceBlockReason: string | null = null
 
     if (estimateMode === 'market_comparison' || estimateMode === 'hybrid') {
       const marketEvidence = await fetchMarketEvidenceFromXai({
@@ -273,10 +278,21 @@ export async function POST(request: NextRequest) {
           usage: marketEvidence.usage,
           created_by_clerk_user_id: authUser.clerkUserId,
         })
-        .select('id')
+        .select('id, retrieved_at')
         .maybeSingle()
 
       marketEvidenceRecordId = savedEvidence?.id ?? null
+      const appendix = buildEstimateEvidenceAppendix({
+        citations: marketEvidence.citations,
+        confidenceScore: marketEvidence.confidenceScore,
+        summary: marketEvidence.evidence.summary,
+        retrievedAt: savedEvidence?.retrieved_at ?? new Date().toISOString(),
+      })
+
+      evidenceAppendix = appendix as unknown as Record<string, unknown>
+      evidenceRequirementMet = appendix.requirement.met
+      evidenceSourceCount = appendix.requirement.unique_source_count
+      evidenceBlockReason = appendix.requirement.reason
 
       marketData = {
         market_hourly_rate: marketEvidence.evidence.marketHourlyRate,
@@ -302,6 +318,10 @@ export async function POST(request: NextRequest) {
       market: marketAssumption,
       selectedCoefficient: validated.coefficient,
     })
+    const riskFlags = [...pricing.riskFlags]
+    if (!evidenceRequirementMet) {
+      riskFlags.push('insufficient_evidence_sources')
+    }
 
     const hoursBasedCost = validated.your_hourly_rate * hours.total
     const recommendedTotalCost = Math.max(
@@ -354,8 +374,13 @@ export async function POST(request: NextRequest) {
           recommended_total_cost: recommendedTotalCost,
           hours_based_cost: hoursBasedCost,
         },
-        risk_flags: pricing.riskFlags,
+        risk_flags: riskFlags,
         market_evidence_id: marketEvidenceRecordId,
+        estimate_status: evidenceRequirementMet ? 'ready' : 'draft',
+        evidence_requirement_met: evidenceRequirementMet,
+        evidence_source_count: evidenceSourceCount,
+        evidence_appendix: evidenceAppendix,
+        evidence_block_reason: evidenceBlockReason,
       })
       .select()
       .single()
@@ -392,8 +417,10 @@ export async function POST(request: NextRequest) {
       projectId: estimate.project_id,
       payload: {
         estimateMode,
-        riskFlags: pricing.riskFlags,
+        riskFlags,
         recommendedTotalCost,
+        evidenceRequirementMet,
+        evidenceSourceCount,
       },
     })
 
@@ -402,6 +429,7 @@ export async function POST(request: NextRequest) {
       data: {
         ...estimate,
         recommended_total_cost: recommendedTotalCost,
+        blocked_by_evidence: !evidenceRequirementMet,
       },
     })
   } catch (error) {

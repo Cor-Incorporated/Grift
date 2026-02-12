@@ -109,6 +109,11 @@ export interface Estimate {
   project_id: string
   estimate_mode: EstimateMode
   change_request_id?: string | null
+  estimate_status?: 'draft' | 'ready'
+  evidence_requirement_met?: boolean
+  evidence_source_count?: number | null
+  evidence_appendix?: Record<string, unknown> | null
+  evidence_block_reason?: string | null
   your_hourly_rate: number
   your_estimated_hours: number
   total_your_cost: number
