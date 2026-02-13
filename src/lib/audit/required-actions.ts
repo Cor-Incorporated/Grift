@@ -16,6 +16,11 @@ export const REQUIRED_AUDIT_ACTIONS: RequiredAuditAction[] = [
     category: 'estimate',
   },
   {
+    action: 'change_request.estimate_batch_run_log',
+    file: 'src/app/api/change-requests/estimate-batch-runs/route.ts',
+    category: 'estimate',
+  },
+  {
     action: 'intake.parse',
     file: 'src/app/api/intake/parse/route.ts',
     category: 'intake',
@@ -28,6 +33,11 @@ export const REQUIRED_AUDIT_ACTIONS: RequiredAuditAction[] = [
   {
     action: 'change_request.ready_packet_view',
     file: 'src/app/api/change-requests/[id]/ready-packet/route.ts',
+    category: 'intake',
+  },
+  {
+    action: 'change_request.taskize',
+    file: 'src/app/api/change-requests/[id]/taskize/route.ts',
     category: 'intake',
   },
   {

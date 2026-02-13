@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { sortIntakeQueue } from '@/lib/intake/queue-order'
 import { cn } from '@/lib/utils'
 
 interface IntakeProject {
@@ -57,8 +58,12 @@ interface IntakeQueueItem {
   source_channel: string | null
   requested_by_name: string | null
   requested_by_email: string | null
+  requested_deadline: string | null
+  requested_deadline_at: string | null
   latest_estimate_id: string | null
   latest_estimate_status: string | null
+  latest_execution_task_id: string | null
+  latest_execution_task_status: string | null
   created_at: string
 }
 
@@ -71,6 +76,7 @@ interface ParsedIntentView {
   requirement_completeness: number
   missing_fields: string[]
   follow_up_question: string
+  dueDate: string | null
 }
 
 interface ParseResultView {
@@ -102,6 +108,8 @@ interface ReadyPacketView {
     source_event_at: string | null
     requested_by_name: string | null
     requested_by_email: string | null
+    requested_deadline: string | null
+    requested_deadline_at: string | null
     intake_intent: string
     follow_up_question: string | null
   }
@@ -114,6 +122,13 @@ interface ReadyPacketView {
     total_cost: number | null
     estimated_hours: number | null
     hourly_rate: number | null
+    created_at: string | null
+  } | null
+  execution_task: {
+    id: string | null
+    status: string
+    priority: string
+    due_at: string | null
     created_at: string | null
   } | null
   next_actions: string[]
@@ -153,6 +168,15 @@ function estimateStatusLabel(status: string | null): string {
   return `見積: ${status}`
 }
 
+function taskStatusLabel(status: string | null): string {
+  if (!status) return 'タスク未起票'
+  if (status === 'todo') return 'タスク: todo'
+  if (status === 'in_progress') return 'タスク: in_progress'
+  if (status === 'done') return 'タスク: done'
+  if (status === 'blocked') return 'タスク: blocked'
+  return `タスク: ${status}`
+}
+
 export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
   const router = useRouter()
   const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
@@ -177,6 +201,8 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
   const [packetError, setPacketError] = useState<string | null>(null)
   const [packet, setPacket] = useState<ReadyPacketView | null>(null)
   const [packetOpen, setPacketOpen] = useState(false)
+  const [taskizeLoading, setTaskizeLoading] = useState(false)
+  const [taskizeMessage, setTaskizeMessage] = useState<string | null>(null)
 
   const queueStats = useMemo(() => {
     const needsInfo = queue.filter((item) => item.intake_status === 'needs_info').length
@@ -184,17 +210,21 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
     const readyWithoutEstimate = queue.filter(
       (item) => item.intake_status === 'ready_to_start' && !item.latest_estimate_id
     ).length
+    const readyWithoutTask = queue.filter(
+      (item) => item.intake_status === 'ready_to_start' && !item.latest_execution_task_id
+    ).length
     return {
       all: queue.length,
       needsInfo,
       ready,
       readyWithoutEstimate,
+      readyWithoutTask,
     }
   }, [queue])
 
   const filteredQueue = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    return queue.filter((item) => {
+    const matched = queue.filter((item) => {
       if (queueTab !== 'all' && item.intake_status !== queueTab) {
         return false
       }
@@ -212,6 +242,7 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
         .toLowerCase()
       return corpus.includes(keyword)
     })
+    return sortIntakeQueue(matched)
   }, [queue, queueTab, query])
 
   const selectedProject = projects.find((item) => item.id === projectId) ?? null
@@ -359,26 +390,70 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
     let succeeded = 0
     let failed = 0
     let lastError: string | null = null
+    const succeededIds: string[] = []
+    const failedItems: Array<{ change_request_id: string; error: string }> = []
+    let runId: string | null = null
+    let logError: string | null = null
 
     try {
       for (const item of targets) {
         const result = await requestEstimate(item.id)
         if (result.ok) {
           succeeded += 1
+          succeededIds.push(item.id)
         } else {
           failed += 1
-          lastError = result.error ?? null
+          const errorMessage = result.error ?? '概算見積りの生成に失敗しました'
+          lastError = errorMessage
+          failedItems.push({
+            change_request_id: item.id,
+            error: errorMessage.slice(0, 500),
+          })
         }
       }
 
-      if (succeeded > 0) {
-        setSuccess(`${succeeded}件の概算見積りを生成しました`)
+      try {
+        const logResponse = await fetch('/api/change-requests/estimate-batch-runs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scope: 'intake_queue',
+            request_params: {
+              hourly_rate: Number(hourlyRate),
+              include_market_context: true,
+              limit: targets.length,
+            },
+            target_change_request_ids: targets.map((item) => item.id),
+            succeeded_change_request_ids: succeededIds,
+            failed_items: failedItems,
+          }),
+        })
+        const logPayload = await logResponse.json()
+        if (!logResponse.ok || !logPayload.success) {
+          logError = logPayload.error ?? '一括概算ログの保存に失敗しました'
+        } else if (typeof logPayload.data?.id === 'string') {
+          runId = logPayload.data.id
+        }
+      } catch {
+        logError = '一括概算ログの保存中にエラーが発生しました'
       }
+
+      if (succeeded > 0) {
+        setSuccess(
+          `${succeeded}件の概算見積りを生成しました${runId ? ` (run: ${runId})` : ''}`
+        )
+      } else {
+        setSuccess(`一括概算を実行しました${runId ? ` (run: ${runId})` : ''}`)
+      }
+
       if (failed > 0) {
         setError(
           `${failed}件の概算見積りに失敗しました${lastError ? ` (${lastError})` : ''}`
         )
+      } else if (logError) {
+        setError(`概算は完了しましたがログ保存に失敗しました: ${logError}`)
       }
+
       router.refresh()
     } catch {
       setError('一括概算生成中にエラーが発生しました')
@@ -425,6 +500,7 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
 
   const openPacket = async (id: string) => {
     setPacketError(null)
+    setTaskizeMessage(null)
     setPacketLoadingId(id)
 
     try {
@@ -447,6 +523,39 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
     }
   }
 
+  const taskizeFromPacket = async () => {
+    if (!packet) return
+    setTaskizeLoading(true)
+    setPacketError(null)
+    setTaskizeMessage(null)
+
+    try {
+      const response = await fetch(`/api/change-requests/${packet.change_request.id}/taskize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.success) {
+        setPacketError(payload.error ?? 'タスク化に失敗しました')
+        return
+      }
+
+      const created = payload.data?.created === true
+      const taskId = payload.data?.task?.id
+      setTaskizeMessage(
+        created
+          ? `実行タスクを作成しました${taskId ? ` (task: ${taskId})` : ''}`
+          : `既存の実行タスクを使用します${taskId ? ` (task: ${taskId})` : ''}`
+      )
+      setSuccess('着手パケットをタスク化しました')
+      router.refresh()
+    } catch {
+      setPacketError('タスク化中にエラーが発生しました')
+    } finally {
+      setTaskizeLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-8">
       <section className="space-y-4">
@@ -457,7 +566,7 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>全件</CardDescription>
@@ -480,6 +589,12 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
             <CardHeader className="pb-2">
               <CardDescription>概算未生成</CardDescription>
               <CardTitle className="text-3xl tabular-nums">{queueStats.readyWithoutEstimate}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>タスク未起票</CardDescription>
+              <CardTitle className="text-3xl tabular-nums">{queueStats.readyWithoutTask}</CardTitle>
             </CardHeader>
           </Card>
         </div>
@@ -614,6 +729,9 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
                       </div>
                       <p className="mt-2 font-medium text-pretty">{intent.title}</p>
                       <p className="mt-1 text-sm text-muted-foreground text-pretty">{intent.summary}</p>
+                      {intent.dueDate && (
+                        <p className="mt-1 text-xs text-muted-foreground">期限ヒント: {intent.dueDate}</p>
+                      )}
                       <div className="mt-3 space-y-1">
                         <div className="flex items-center justify-between text-xs">
                           <span>要件充足率</span>
@@ -682,7 +800,7 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
           </div>
         </div>
         <p className="text-xs text-muted-foreground text-pretty">
-          一括概算は、見積未生成の `ready_to_start` を最大10件まで順次処理します。
+          一括概算は、見積未生成の `ready_to_start` を最大10件まで順次処理します。キューは緊急度・期限・不足量の順で並び替えています。
         </p>
 
         {packetError && (
@@ -717,6 +835,12 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
                         </Badge>
                         <Badge variant={item.latest_estimate_id ? 'default' : 'outline'}>
                           {estimateStatusLabel(item.latest_estimate_status)}
+                        </Badge>
+                        <Badge variant={item.latest_execution_task_id ? 'default' : 'outline'}>
+                          {taskStatusLabel(item.latest_execution_task_status)}
+                        </Badge>
+                        <Badge variant={item.requested_deadline_at ? 'secondary' : 'outline'}>
+                          期限: {item.requested_deadline ?? '-'}
                         </Badge>
                         <Badge variant="secondary">
                           影響: {IMPACT_LABELS[item.impact_level] ?? item.impact_level}
@@ -803,6 +927,20 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
               エンジニアへの受け渡しに必要な情報をまとめています。
             </DialogDescription>
           </DialogHeader>
+          {packet && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Button
+                size="sm"
+                onClick={taskizeFromPacket}
+                disabled={taskizeLoading}
+              >
+                {taskizeLoading ? 'タスク化中...' : 'このパケットをタスク化'}
+              </Button>
+              {taskizeMessage && (
+                <p className="text-xs text-emerald-700">{taskizeMessage}</p>
+              )}
+            </div>
+          )}
 
           {!packet ? (
             <p className="text-sm text-muted-foreground">データがありません。</p>
@@ -822,6 +960,8 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
                     <div>充足率: {packet.change_request.requirement_completeness ?? 0}%</div>
                     <div>依頼者: {packet.change_request.requested_by_name ?? '-'}</div>
                     <div>チャネル: {packet.change_request.source_channel ?? '-'}</div>
+                    <div>希望期限: {packet.change_request.requested_deadline ?? '-'}</div>
+                    <div>期限日時: {formatDate(packet.change_request.requested_deadline_at)}</div>
                   </div>
                 </CardContent>
               </Card>
@@ -865,6 +1005,27 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
                       <p>概算金額: {packet.estimate.total_cost ? `¥${packet.estimate.total_cost.toLocaleString()}` : '-'}</p>
                       <p className="text-xs text-muted-foreground">
                         generated at: {formatDate(packet.estimate.created_at)}
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">実行タスク</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1">
+                  {!packet.execution_task ? (
+                    <p className="text-muted-foreground">タスクは未起票です。</p>
+                  ) : (
+                    <>
+                      <p>task_id: {packet.execution_task.id ?? '-'}</p>
+                      <p>status: {packet.execution_task.status}</p>
+                      <p>priority: {packet.execution_task.priority}</p>
+                      <p>due: {formatDate(packet.execution_task.due_at)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        created at: {formatDate(packet.execution_task.created_at)}
                       </p>
                     </>
                   )}

@@ -68,6 +68,7 @@ function buildNextActions(input: {
   intakeStatus: string | null
   missingFields: string[]
   estimate: Record<string, unknown> | null
+  executionTask: Record<string, unknown> | null
 }): string[] {
   const actions: string[] = []
 
@@ -99,6 +100,18 @@ function buildNextActions(input: {
       : 'not_required'
   if (approvalRequired && approvalStatus !== 'approved') {
     actions.push('承認キューで承認処理を完了する')
+  }
+
+  if (!input.executionTask) {
+    actions.push('着手パケットから実行タスクを起票する')
+  } else {
+    const taskStatus =
+      typeof input.executionTask.status === 'string'
+        ? input.executionTask.status
+        : 'todo'
+    if (taskStatus !== 'done') {
+      actions.push(`実行タスクを進行する（status: ${taskStatus}）`)
+    }
   }
 
   if (actions.length === 0) {
@@ -183,6 +196,28 @@ export async function GET(
       estimate = (fallbackEstimate ?? null) as Record<string, unknown> | null
     }
 
+    let executionTask: Record<string, unknown> | null = null
+    if (changeRequest.latest_execution_task_id) {
+      const { data: linkedTask } = await supabase
+        .from('execution_tasks')
+        .select('*')
+        .eq('id', changeRequest.latest_execution_task_id)
+        .maybeSingle()
+      executionTask = (linkedTask ?? null) as Record<string, unknown> | null
+    }
+
+    if (!executionTask) {
+      const { data: activeTask } = await supabase
+        .from('execution_tasks')
+        .select('*')
+        .eq('change_request_id', id)
+        .in('status', ['todo', 'in_progress', 'blocked'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      executionTask = (activeTask ?? null) as Record<string, unknown> | null
+    }
+
     const missingFields = normalizeStringArray(changeRequest.missing_fields)
     const intakeIntent = toIntakeIntent(changeRequest.intake_intent)
     const followUpQuestion = missingFields.length > 0
@@ -196,6 +231,7 @@ export async function GET(
       intakeStatus: changeRequest.intake_status ?? null,
       missingFields,
       estimate,
+      executionTask,
     })
 
     await writeAuditLog(supabase, {
@@ -204,12 +240,13 @@ export async function GET(
       resourceType: 'change_request',
       resourceId: changeRequest.id,
       projectId: changeRequest.project_id,
-      payload: {
-        intakeStatus: changeRequest.intake_status,
-        completeness: changeRequest.requirement_completeness,
-        hasEstimate: Boolean(estimate),
-      },
-    })
+        payload: {
+          intakeStatus: changeRequest.intake_status,
+          completeness: changeRequest.requirement_completeness,
+          hasEstimate: Boolean(estimate),
+          hasExecutionTask: Boolean(executionTask),
+        },
+      })
 
     return NextResponse.json({
       success: true,
@@ -236,6 +273,8 @@ export async function GET(
           source_event_at: changeRequest.source_event_at,
           requested_by_name: changeRequest.requested_by_name,
           requested_by_email: changeRequest.requested_by_email,
+          requested_deadline: changeRequest.requested_deadline,
+          requested_deadline_at: changeRequest.requested_deadline_at,
           intake_intent: intakeIntent,
           follow_up_question: followUpQuestion,
         },
@@ -258,6 +297,24 @@ export async function GET(
               created_at:
                 typeof estimate.created_at === 'string'
                   ? estimate.created_at
+                  : null,
+            }
+          : null,
+        execution_task: executionTask
+          ? {
+              id: typeof executionTask.id === 'string' ? executionTask.id : null,
+              status: typeof executionTask.status === 'string' ? executionTask.status : 'todo',
+              priority:
+                typeof executionTask.priority === 'string'
+                  ? executionTask.priority
+                  : 'medium',
+              due_at:
+                typeof executionTask.due_at === 'string'
+                  ? executionTask.due_at
+                  : null,
+              created_at:
+                typeof executionTask.created_at === 'string'
+                  ? executionTask.created_at
                   : null,
             }
           : null,

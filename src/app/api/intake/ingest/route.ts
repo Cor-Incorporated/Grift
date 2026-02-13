@@ -10,6 +10,7 @@ import {
   buildFollowUpQuestion,
 } from '@/lib/intake/completeness'
 import { parseIntakeMessage } from '@/lib/intake/parser'
+import { resolveRequestedDeadline } from '@/lib/intake/deadline'
 import {
   evaluateBillableDecision,
   loadActiveBillableRules,
@@ -94,6 +95,10 @@ export async function POST(request: NextRequest) {
     const minimumCompleteness = validated.minimum_completeness
 
     const rows = parsed.intents.map((intent) => {
+      const deadline = resolveRequestedDeadline({
+        dueDate: intent.dueDate,
+        details: intent.details,
+      })
       const completeness = calculateCompleteness({
         intentType: intent.intentType,
         details: intent.details,
@@ -142,6 +147,8 @@ export async function POST(request: NextRequest) {
         source_actor_name: source?.actor_name ?? null,
         source_actor_email: source?.actor_email ?? null,
         source_event_at: source?.event_at ?? null,
+        requested_deadline: deadline.raw,
+        requested_deadline_at: deadline.dueAt,
         intake_group_id: intakeGroupId,
         intake_intent: intent.intentType,
         is_billable: billable.isBillable,

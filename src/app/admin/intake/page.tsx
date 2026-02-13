@@ -28,13 +28,21 @@ interface ChangeRequestRow {
   source_channel: string | null
   requested_by_name: string | null
   requested_by_email: string | null
+  requested_deadline: string | null
+  requested_deadline_at: string | null
   latest_estimate_id: string | null
+  latest_execution_task_id: string | null
   created_at: string
 }
 
 interface EstimateRow {
   id: string
   estimate_status: string
+}
+
+interface ExecutionTaskRow {
+  id: string
+  status: string
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -56,7 +64,7 @@ export default async function IntakePage() {
     supabase
       .from('change_requests')
       .select(
-        'id, project_id, title, category, impact_level, status, intake_status, requirement_completeness, missing_fields, intake_intent, source_channel, requested_by_name, requested_by_email, latest_estimate_id, created_at'
+        'id, project_id, title, category, impact_level, status, intake_status, requirement_completeness, missing_fields, intake_intent, source_channel, requested_by_name, requested_by_email, requested_deadline, requested_deadline_at, latest_estimate_id, latest_execution_task_id, created_at'
       )
       .order('created_at', { ascending: false })
       .limit(200),
@@ -78,6 +86,9 @@ export default async function IntakePage() {
   const estimateIds = ((changeRequests ?? []) as ChangeRequestRow[])
     .map((item) => item.latest_estimate_id)
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
+  const executionTaskIds = ((changeRequests ?? []) as ChangeRequestRow[])
+    .map((item) => item.latest_execution_task_id)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
 
   let estimateStatusById = new Map<string, string>()
   if (estimateIds.length > 0) {
@@ -87,6 +98,17 @@ export default async function IntakePage() {
       .in('id', estimateIds)
     estimateStatusById = new Map(
       ((estimates ?? []) as EstimateRow[]).map((item) => [item.id, item.estimate_status])
+    )
+  }
+
+  let executionTaskStatusById = new Map<string, string>()
+  if (executionTaskIds.length > 0) {
+    const { data: executionTasks } = await supabase
+      .from('execution_tasks')
+      .select('id, status')
+      .in('id', executionTaskIds)
+    executionTaskStatusById = new Map(
+      ((executionTasks ?? []) as ExecutionTaskRow[]).map((item) => [item.id, item.status])
     )
   }
 
@@ -109,9 +131,15 @@ export default async function IntakePage() {
       source_channel: item.source_channel,
       requested_by_name: item.requested_by_name,
       requested_by_email: item.requested_by_email,
+      requested_deadline: item.requested_deadline,
+      requested_deadline_at: item.requested_deadline_at,
       latest_estimate_id: item.latest_estimate_id,
       latest_estimate_status: item.latest_estimate_id
         ? estimateStatusById.get(item.latest_estimate_id) ?? null
+        : null,
+      latest_execution_task_id: item.latest_execution_task_id,
+      latest_execution_task_status: item.latest_execution_task_id
+        ? executionTaskStatusById.get(item.latest_execution_task_id) ?? null
         : null,
       created_at: item.created_at,
     }

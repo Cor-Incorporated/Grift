@@ -33,6 +33,7 @@ export type ChangeRequestStatus =
   | 'implemented'
 export type ChangeRequestIntakeStatus = 'needs_info' | 'ready_to_start'
 export type ImpactLevel = 'low' | 'medium' | 'high' | 'critical'
+export type ExecutionTaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked'
 export type ChangeRequestResponsibility =
   | 'our_fault'
   | 'customer_fault'
@@ -215,6 +216,8 @@ export interface ChangeRequest {
   source_actor_name?: string | null
   source_actor_email?: string | null
   source_event_at?: string | null
+  requested_deadline?: string | null
+  requested_deadline_at?: string | null
   intake_group_id?: string | null
   intake_intent?: IntakeIntentType | string | null
   impact_level: ImpactLevel
@@ -228,7 +231,37 @@ export interface ChangeRequest {
   requested_by_email: string | null
   base_estimate_id: string | null
   latest_estimate_id: string | null
+  latest_execution_task_id?: string | null
   created_by_clerk_user_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EstimateBatchRun {
+  id: string
+  actor_clerk_user_id: string
+  scope: string
+  request_params: Record<string, unknown>
+  target_change_request_ids: string[]
+  succeeded_change_request_ids: string[]
+  failed_items: Array<Record<string, unknown>>
+  requested_count: number
+  succeeded_count: number
+  failed_count: number
+  created_at: string
+}
+
+export interface ExecutionTask {
+  id: string
+  project_id: string
+  change_request_id: string
+  title: string
+  summary: string
+  status: ExecutionTaskStatus
+  priority: ImpactLevel
+  due_at: string | null
+  created_by_clerk_user_id: string | null
+  metadata: Record<string, unknown>
   created_at: string
   updated_at: string
 }
