@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
@@ -32,6 +33,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { INTAKE_DEMO_CASES, getIntakeDemoCaseById } from '@/lib/intake/demo-cases'
 import { buildFailureActionHints, toFailureSummaryText } from '@/lib/intake/batch-run-failures'
+import {
+  buildLatestDemoRunByCase,
+  evaluateDemoReadiness,
+  resolveDemoRunStatus,
+  toStringArray,
+  type DemoRunStatus,
+} from '@/lib/intake/demo-readiness'
 import { sortIntakeQueue } from '@/lib/intake/queue-order'
 import { cn } from '@/lib/utils'
 
@@ -158,6 +166,7 @@ interface IntakeWorkspaceProps {
     intake_group_id: string | null
     created_count: number
     created_change_request_ids: string[]
+    payload: Record<string, unknown>
     created_at: string
   }>
 }
@@ -200,6 +209,18 @@ function taskStatusLabel(status: string | null): string {
   return `タスク: ${status}`
 }
 
+function demoRunStatusLabel(status: DemoRunStatus): string {
+  if (status === 'succeeded') return '成功'
+  if (status === 'failed') return '失敗'
+  return '不明'
+}
+
+function demoRunStatusVariant(status: DemoRunStatus): 'secondary' | 'destructive' | 'outline' {
+  if (status === 'succeeded') return 'secondary'
+  if (status === 'failed') return 'destructive'
+  return 'outline'
+}
+
 export function IntakeWorkspace({ projects, queue, batchRuns, demoRuns }: IntakeWorkspaceProps) {
   const router = useRouter()
   const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
@@ -212,6 +233,7 @@ export function IntakeWorkspace({ projects, queue, batchRuns, demoRuns }: Intake
   const [parseLoading, setParseLoading] = useState(false)
   const [ingestLoading, setIngestLoading] = useState(false)
   const [demoRunLoading, setDemoRunLoading] = useState(false)
+  const [demoBatchLoading, setDemoBatchLoading] = useState(false)
   const [estimateLoadingId, setEstimateLoadingId] = useState<string | null>(null)
   const [bulkEstimateLoading, setBulkEstimateLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -272,6 +294,16 @@ export function IntakeWorkspace({ projects, queue, batchRuns, demoRuns }: Intake
   }, [queue, queueTab, query])
 
   const selectedProject = projects.find((item) => item.id === projectId) ?? null
+  const latestDemoRunByCase = useMemo(() => buildLatestDemoRunByCase(demoRuns), [demoRuns])
+
+  const demoReadiness = useMemo(
+    () =>
+      evaluateDemoReadiness({
+        demoCases: INTAKE_DEMO_CASES,
+        latestDemoRunByCase,
+      }),
+    [latestDemoRunByCase]
+  )
 
   const runParse = async () => {
     if (!projectId || message.trim().length < 3) return
@@ -375,6 +407,7 @@ export function IntakeWorkspace({ projects, queue, batchRuns, demoRuns }: Intake
         body: JSON.stringify({
           project_id: projectId,
           demo_case_id: demoCaseId,
+          parser_mode: parserMode,
           requested_by_name: actorName || undefined,
           requested_by_email: actorEmail || undefined,
         }),
@@ -395,6 +428,63 @@ export function IntakeWorkspace({ projects, queue, batchRuns, demoRuns }: Intake
       setError('デモケース起票中にエラーが発生しました')
     } finally {
       setDemoRunLoading(false)
+    }
+  }
+
+  const runDemoBatch = async () => {
+    if (!projectId) return
+    setDemoBatchLoading(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const settled = await Promise.all(
+        INTAKE_DEMO_CASES.map(async (demoCase) => {
+          const response = await fetch('/api/intake/demo-run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              project_id: projectId,
+              demo_case_id: demoCase.id,
+              parser_mode: parserMode,
+              requested_by_name: actorName || undefined,
+              requested_by_email: actorEmail || undefined,
+            }),
+          })
+
+          const payload = await response.json()
+          const createdCount = Array.isArray(payload.data?.created) ? payload.data.created.length : 0
+          const runId = typeof payload.data?.run_id === 'string' ? payload.data.run_id : null
+          return {
+            caseId: demoCase.id,
+            title: demoCase.title,
+            ok: response.ok && Boolean(payload.success),
+            createdCount,
+            runId,
+            error: payload.error as string | undefined,
+          }
+        })
+      )
+
+      const succeeded = settled.filter((item) => item.ok)
+      const failed = settled.filter((item) => !item.ok)
+      const createdTotal = succeeded.reduce((sum, item) => sum + item.createdCount, 0)
+
+      const summary = `デモ一括実行: ${succeeded.length}/${settled.length} ケース成功, 起票 ${createdTotal} 件`
+      if (failed.length > 0) {
+        const failureText = failed
+          .map((item) => `${item.title}: ${item.error ?? '起票失敗'}`)
+          .join(' / ')
+        setError(`${summary} / ${failureText}`)
+      } else {
+        setSuccess(summary)
+      }
+
+      router.refresh()
+    } catch {
+      setError('デモ一括実行中にエラーが発生しました')
+    } finally {
+      setDemoBatchLoading(false)
     }
   }
 
@@ -760,8 +850,15 @@ export function IntakeWorkspace({ projects, queue, batchRuns, demoRuns }: Intake
               >
                 {demoRunLoading ? 'デモ起票中...' : 'デモケースを即起票'}
               </Button>
+              <Button
+                type="button"
+                onClick={runDemoBatch}
+                disabled={demoBatchLoading || !projectId}
+              >
+                {demoBatchLoading ? '一括実行中...' : '3ケースを一括起票'}
+              </Button>
               <p className="text-xs text-muted-foreground self-center">
-                parse→ingest を heuristic 固定で実行し、キューに投入します。
+                parse→ingest を指定 Parser Mode で実行し、キューに投入します。
               </p>
             </div>
 
@@ -935,6 +1032,60 @@ export function IntakeWorkspace({ projects, queue, batchRuns, demoRuns }: Intake
 
         <Card>
           <CardHeader className="pb-3">
+            <CardTitle className="text-base">登壇デモ準備ゲート</CardTitle>
+            <CardDescription>
+              3ケースの直近実行結果と期待意図の一致で準備状態を判定します。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={demoReadiness.allReady ? 'secondary' : 'destructive'}>
+                {demoReadiness.allReady ? 'READY' : 'NOT READY'}
+              </Badge>
+              <span className="text-sm text-muted-foreground tabular-nums">
+                {demoReadiness.readyCount} / {demoReadiness.total} ケース合格
+              </span>
+            </div>
+            <div className="space-y-2">
+              {demoReadiness.checks.map((item) => (
+                <div
+                  key={item.caseId}
+                  className={cn(
+                    'rounded-md border px-3 py-2 text-sm',
+                    item.status === 'ready' && 'border-emerald-200 bg-emerald-50',
+                    item.status === 'warning' && 'border-amber-200 bg-amber-50',
+                    item.status === 'failed' && 'border-destructive/30 bg-destructive/10'
+                  )}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-pretty">{item.title}</span>
+                    <Badge
+                      variant={
+                        item.status === 'ready'
+                          ? 'secondary'
+                          : item.status === 'missing'
+                            ? 'outline'
+                            : 'destructive'
+                      }
+                    >
+                      {item.status === 'ready'
+                        ? '合格'
+                        : item.status === 'missing'
+                          ? '未実行'
+                          : item.status === 'failed'
+                            ? '失敗'
+                            : '要確認'}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground text-pretty">{item.hint}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">一括概算 実行履歴</CardTitle>
             <CardDescription>直近20件の run を表示します。</CardDescription>
           </CardHeader>
@@ -977,35 +1128,54 @@ export function IntakeWorkspace({ projects, queue, batchRuns, demoRuns }: Intake
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">デモランナー 実行履歴</CardTitle>
-            <CardDescription>直近20件のデモ run を表示します。</CardDescription>
+            <CardDescription>直近20件のデモ run と成否を表示します。</CardDescription>
           </CardHeader>
           <CardContent>
             {demoRuns.length === 0 ? (
               <p className="text-sm text-muted-foreground">履歴はまだありません。</p>
             ) : (
               <div className="space-y-2">
-                {demoRuns.slice(0, 8).map((run) => (
-                  <div
-                    key={run.id}
-                    className="rounded-md border px-3 py-2 text-sm"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-mono text-xs">{run.id}</div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">{run.demo_case_id}</Badge>
-                        <Badge variant="secondary">{run.project_title}</Badge>
-                        <Badge variant="outline">parser: {run.parser}</Badge>
-                        <Badge variant="secondary">created: {run.created_count}</Badge>
-                        <span className="text-xs text-muted-foreground">{formatDate(run.created_at)}</span>
+                {demoRuns.slice(0, 8).map((run) => {
+                  const status = resolveDemoRunStatus(run)
+                  const detectedIntentTypes = toStringArray(run.payload?.detected_intent_types)
+                  return (
+                    <div
+                      key={run.id}
+                      className="rounded-md border px-3 py-2 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-mono text-xs">{run.id}</div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">{run.demo_case_id}</Badge>
+                          <Badge variant={demoRunStatusVariant(status)}>
+                            {demoRunStatusLabel(status)}
+                          </Badge>
+                          <Badge variant="outline">parser: {run.parser}</Badge>
+                          <Badge variant="secondary">created: {run.created_count}</Badge>
+                          <span className="text-xs text-muted-foreground">{formatDate(run.created_at)}</span>
+                        </div>
                       </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <Link href={`/admin/projects/${run.project_id}`} className="underline underline-offset-2">
+                          案件: {run.project_title}
+                        </Link>
+                        {run.intake_group_id && (
+                          <span className="text-muted-foreground">group: {run.intake_group_id}</span>
+                        )}
+                      </div>
+                      {detectedIntentTypes.length > 0 && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          detected: {detectedIntentTypes.join(', ')}
+                        </p>
+                      )}
+                      {status === 'failed' && typeof run.payload?.error === 'string' && (
+                        <p className="mt-2 text-xs text-destructive text-pretty">
+                          error: {run.payload.error}
+                        </p>
+                      )}
                     </div>
-                    {run.intake_group_id && (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        intake_group: {run.intake_group_id}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </CardContent>

@@ -62,6 +62,7 @@ interface IntakeDemoRunRow {
   intake_group_id: string | null
   created_count: number
   created_change_request_ids: string[]
+  payload: Record<string, unknown> | null
   created_at: string
 }
 
@@ -95,7 +96,9 @@ export default async function IntakePage() {
       .limit(20),
     supabase
       .from('intake_demo_runs')
-      .select('id, project_id, demo_case_id, parser, intake_group_id, created_count, created_change_request_ids, created_at')
+      .select(
+        'id, project_id, demo_case_id, parser, intake_group_id, created_count, created_change_request_ids, payload, created_at'
+      )
       .order('created_at', { ascending: false })
       .limit(20),
   ])
@@ -197,6 +200,7 @@ export default async function IntakePage() {
       created_change_request_ids: Array.isArray(row.created_change_request_ids)
         ? row.created_change_request_ids
         : [],
+      payload: row.payload && typeof row.payload === 'object' ? row.payload : {},
       created_at: row.created_at,
     }))
 

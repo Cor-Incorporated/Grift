@@ -19,6 +19,7 @@ import {
 const requestSchema = z.object({
   project_id: z.string().uuid(),
   demo_case_id: z.string().min(1).max(120),
+  parser_mode: z.enum(['auto', 'heuristic']).optional(),
   requested_by_name: z.string().min(1).max(120).optional(),
   requested_by_email: z.string().email().optional(),
 })
@@ -83,6 +84,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const parserMode = validated.parser_mode ?? 'heuristic'
     const [{ data: project }, rules, parsed] = await Promise.all([
       supabase
         .from('projects')
@@ -90,7 +92,7 @@ export async function POST(request: NextRequest) {
         .eq('id', validated.project_id)
         .maybeSingle(),
       loadActiveBillableRules(supabase),
-      parseIntakeMessage(demoCase.message, { mode: 'heuristic' }),
+      parseIntakeMessage(demoCase.message, { mode: parserMode }),
     ])
 
     const projectCreatedAt = project?.created_at ?? new Date().toISOString()
@@ -173,26 +175,51 @@ export async function POST(request: NextRequest) {
       .select('id, title, intake_status, requirement_completeness')
 
     if (insertError || !created) {
+      const failedRun = await supabase
+        .from('intake_demo_runs')
+        .insert({
+          project_id: validated.project_id,
+          demo_case_id: demoCase.id,
+          parser: parsed.parser,
+          intake_group_id: intakeGroupId,
+          created_count: 0,
+          created_change_request_ids: [],
+          actor_clerk_user_id: authUser.clerkUserId,
+          payload: {
+            status: 'failed',
+            parser_mode: parserMode,
+            expected_intent_types: demoCase.expectedIntentTypes,
+            detected_intent_types: parsed.intents.map((intent) => intent.intentType),
+            error: insertError?.message ?? 'change_requests insert failed',
+          },
+        })
+        .select('id')
+        .maybeSingle()
+
+      await writeAuditLog(supabase, {
+        actorClerkUserId: authUser.clerkUserId,
+        action: 'intake.demo_run',
+        resourceType: 'project',
+        resourceId: validated.project_id,
+        projectId: validated.project_id,
+        payload: {
+          demoCaseId: demoCase.id,
+          parser: parsed.parser,
+          parserMode,
+          intentCount: rows.length,
+          createdCount: 0,
+          intakeGroupId,
+          runId: failedRun.data?.id ?? null,
+          outcome: 'failed',
+          error: insertError?.message ?? null,
+        },
+      })
+
       return NextResponse.json(
         { success: false, error: 'デモケース起票に失敗しました' },
         { status: 500 }
       )
     }
-
-    await writeAuditLog(supabase, {
-      actorClerkUserId: authUser.clerkUserId,
-      action: 'intake.demo_run',
-      resourceType: 'project',
-      resourceId: validated.project_id,
-      projectId: validated.project_id,
-      payload: {
-        demoCaseId: demoCase.id,
-        parser: parsed.parser,
-        intentCount: rows.length,
-        createdCount: created.length,
-        intakeGroupId,
-      },
-    })
 
     const createdIds = created.map((item) => item.id)
     const { data: demoRunLog } = await supabase
@@ -206,11 +233,34 @@ export async function POST(request: NextRequest) {
         created_change_request_ids: createdIds,
         actor_clerk_user_id: authUser.clerkUserId,
         payload: {
+          status: 'succeeded',
+          parser_mode: parserMode,
+          expected_intent_types: demoCase.expectedIntentTypes,
+          detected_intent_types: parsed.intents.map((intent) => intent.intentType),
+          intent_count: parsed.intents.length,
           created_titles: created.map((item) => item.title),
         },
       })
       .select('id, created_at')
       .maybeSingle()
+
+    await writeAuditLog(supabase, {
+      actorClerkUserId: authUser.clerkUserId,
+      action: 'intake.demo_run',
+      resourceType: 'project',
+      resourceId: validated.project_id,
+      projectId: validated.project_id,
+      payload: {
+        demoCaseId: demoCase.id,
+        parser: parsed.parser,
+        parserMode,
+        intentCount: rows.length,
+        createdCount: created.length,
+        intakeGroupId,
+        runId: demoRunLog?.id ?? null,
+        outcome: 'succeeded',
+      },
+    })
 
     return NextResponse.json({
       success: true,
