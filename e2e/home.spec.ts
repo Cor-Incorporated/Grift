@@ -19,10 +19,10 @@ test.describe('Home Page', () => {
     await expect(page).toHaveURL(/\/projects\/new\?type=new_project/)
   })
 
-  test('should have admin login link', async ({ page }) => {
+  test('should have login button', async ({ page }) => {
     await page.goto('/')
 
-    const loginButton = page.locator('text=管理者ログイン')
+    const loginButton = page.locator('text=ログイン')
     await expect(loginButton).toBeVisible()
   })
 })

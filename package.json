@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "ci:migrations": "node scripts/check-migrations.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

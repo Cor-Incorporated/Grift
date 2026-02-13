@@ -1,0 +1,71 @@
+name: Source Analysis Cron
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: 'Optional project id to run targeted queue processing'
+        required: false
+        type: string
+      limit:
+        description: 'Optional max queued jobs to process'
+        required: false
+        type: string
+
+concurrency:
+  group: source-analysis-cron
+  cancel-in-progress: false
+
+jobs:
+  run-queue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate schedule configuration
+        run: |
+          if [ -z "${SOURCE_ANALYSIS_RUN_URL}" ]; then
+            echo "SOURCE_ANALYSIS_RUN_URL is not set. Skipping."
+            exit 0
+          fi
+          if [ -z "${SOURCE_ANALYSIS_CRON_SECRET}" ]; then
+            echo "SOURCE_ANALYSIS_CRON_SECRET is not set. Skipping."
+            exit 0
+          fi
+        env:
+          SOURCE_ANALYSIS_RUN_URL: ${{ secrets.SOURCE_ANALYSIS_RUN_URL }}
+          SOURCE_ANALYSIS_CRON_SECRET: ${{ secrets.SOURCE_ANALYSIS_CRON_SECRET }}
+
+      - name: Trigger queued source analysis
+        env:
+          SOURCE_ANALYSIS_RUN_URL: ${{ secrets.SOURCE_ANALYSIS_RUN_URL }}
+          SOURCE_ANALYSIS_CRON_SECRET: ${{ secrets.SOURCE_ANALYSIS_CRON_SECRET }}
+          INPUT_PROJECT_ID: ${{ github.event.inputs.project_id }}
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+        run: |
+          BODY='{}'
+          if [ -n "${INPUT_PROJECT_ID}" ] || [ -n "${INPUT_LIMIT}" ]; then
+            PROJECT_JSON='null'
+            LIMIT_JSON='null'
+            if [ -n "${INPUT_PROJECT_ID}" ]; then
+              PROJECT_JSON="\"${INPUT_PROJECT_ID}\""
+            fi
+            if [ -n "${INPUT_LIMIT}" ]; then
+              LIMIT_JSON="${INPUT_LIMIT}"
+            fi
+            BODY="{\"project_id\":${PROJECT_JSON},\"limit\":${LIMIT_JSON}}"
+          fi
+
+          HTTP_CODE=$(curl -sS -o response.json -w "%{http_code}" \
+            -X POST "${SOURCE_ANALYSIS_RUN_URL}" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${SOURCE_ANALYSIS_CRON_SECRET}" \
+            --data "${BODY}")
+
+          cat response.json
+
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "Source analysis cron failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi

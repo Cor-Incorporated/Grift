@@ -10,9 +10,9 @@
 | EPIC-DATA | 10 | 3 | 3 | 4 | 45% |
 | EPIC-PRICE | 4 | 4 | 0 | 0 | 100% |
 | EPIC-CHG | 6 | 5 | 0 | 1 | 83% |
-| EPIC-GOV | 2 | 0 | 2 | 0 | 50% |
+| EPIC-GOV | 2 | 1 | 1 | 0 | 75% |
 | EPIC-OUT | 4 | 0 | 0 | 4 | 0% |
-| **Total** | **31** | **12** | **7** | **12** | **50%** |
+| **Total** | **31** | **13** | **6** | **12** | **52%** |
 
 ## 2. Story別更新ステータス
 
@@ -44,7 +44,7 @@
 | CHG-105 | Partial | 変更見積り生成あり。顧客提出差分文書の完成度不足 |
 | CHG-106 | **Done** | 承認リクエストに `required_role` を追加し、該当ロール（またはadmin）以外の承認操作を禁止 |
 | GOV-101 | Partial | Admin/案件所有者検証あり。sales/dev/customerの多ロール未実装 |
-| GOV-102 | Partial | 監査ログ基盤あり。全操作網羅/改ざん耐性の詰め未完 |
+| GOV-102 | **Done** | 主要mutationの監査アクションをテストで網羅検証し、CIゲート化 |
 | OUT-101 | Not Started | 顧客向けPDF出力未実装 |
 | OUT-102 | Not Started | 経営ダッシュボード未実装 |
 | OUT-103 | Not Started | 通知未実装 |
@@ -95,6 +95,19 @@
   - `/admin/approvals` 承認キュー画面を追加
   - 見積生成APIを role-based 制御へ変更（新規見積: admin/sales、変更見積: admin/sales/dev）
   - `team_members` 管理APIを追加（`/api/admin/team-members`）
+
+### 3.5 Day5実装結果（今回）
+- GOV-102-T1 を実装
+  - 主要監査ログアクションの必須リストを追加（`src/lib/audit/required-actions.ts`）
+  - 必須監査アクションの網羅性テストを追加（`src/lib/audit/__tests__/required-actions.test.ts`）
+- OPS-ANL-01 を最小運用で実装
+  - cron専用実行APIを追加（`/api/source-analysis/jobs/cron`）
+  - cronシークレット検証ロジックとユニットテストを追加
+  - GitHub Actions の schedule で30分間隔実行できる workflow を追加
+- CI品質ゲートを強化
+  - CIを `lint/type-check/unit-tests/migration-check/build/e2e-smoke/quality-gate` に分割
+  - unit-test coverage artifact と playwright report artifact を保存
+  - dependency-review をPRで実行
 
 ## 4. 既存チケットへの紐付け更新
 
@@ -147,7 +160,7 @@
 - Day2: DATA-110-T1/T2（evidence appendix + 2ソースガード）✅
 - Day3: PRICE-104-T1/T2 + CHG-102-T1 ✅
 - Day4: CHG-106-T1 + GOV-101-T1 ✅（GOV-101は残りAPI境界テストをDay5へ）
-- Day5: GOV-102-T1 + OPS-ANL-01 の最小運用化
+- Day5: GOV-102-T1 + OPS-ANL-01 の最小運用化 ✅
 
 ## 6. 既知リスク
 
