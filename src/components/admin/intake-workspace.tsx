@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { toFailureSummaryText } from '@/lib/intake/batch-run-failures'
+import { buildFailureActionHints, toFailureSummaryText } from '@/lib/intake/batch-run-failures'
 import { sortIntakeQueue } from '@/lib/intake/queue-order'
 import { cn } from '@/lib/utils'
 
@@ -833,20 +833,27 @@ export function IntakeWorkspace({ projects, queue, batchRuns }: IntakeWorkspaceP
                 {batchRuns.slice(0, 8).map((run) => (
                   <div
                     key={run.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+                    className="rounded-md border px-3 py-2 text-sm"
                   >
-                    <div className="font-mono text-xs">{run.id}</div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline">target: {run.requested_count}</Badge>
-                      <Badge variant="secondary">ok: {run.succeeded_count}</Badge>
-                      <Badge variant={run.failed_count > 0 ? 'destructive' : 'outline'}>
-                        ng: {run.failed_count}
-                      </Badge>
-                      <Badge variant={run.failed_count > 0 ? 'secondary' : 'outline'}>
-                        {toFailureSummaryText(run.failed_items)}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">{formatDate(run.created_at)}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-mono text-xs">{run.id}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">target: {run.requested_count}</Badge>
+                        <Badge variant="secondary">ok: {run.succeeded_count}</Badge>
+                        <Badge variant={run.failed_count > 0 ? 'destructive' : 'outline'}>
+                          ng: {run.failed_count}
+                        </Badge>
+                        <Badge variant={run.failed_count > 0 ? 'secondary' : 'outline'}>
+                          {toFailureSummaryText(run.failed_items)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">{formatDate(run.created_at)}</span>
+                      </div>
                     </div>
+                    {run.failed_count > 0 && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        推奨: {buildFailureActionHints(run.failed_items).join(' / ')}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>

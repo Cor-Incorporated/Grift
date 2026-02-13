@@ -36,6 +36,17 @@ interface ExecutionTaskEventItem {
   created_at: string
 }
 
+interface CrossTaskEventItem extends ExecutionTaskEventItem {
+  task_title: string
+  project_title: string
+}
+
+interface TeamMemberOption {
+  clerk_user_id: string
+  email: string | null
+  roles: InternalRole[]
+}
+
 interface ExecutionTaskItem {
   id: string
   project_id: string
@@ -56,6 +67,8 @@ interface ExecutionTaskItem {
 
 interface ExecutionTaskBoardProps {
   tasks: ExecutionTaskItem[]
+  members: TeamMemberOption[]
+  allEvents: CrossTaskEventItem[]
 }
 
 const STATUS_LABELS: Record<ExecutionTaskStatus, string> = {
@@ -98,7 +111,15 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString('ja-JP')
 }
 
-export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
+function resolveOwnerRoleFromMember(member: TeamMemberOption | undefined): InternalRole | undefined {
+  if (!member) return undefined
+  if (member.roles.includes('dev')) return 'dev'
+  if (member.roles.includes('sales')) return 'sales'
+  if (member.roles.includes('admin')) return 'admin'
+  return undefined
+}
+
+export function ExecutionTaskBoard({ tasks, members, allEvents }: ExecutionTaskBoardProps) {
   const [rows, setRows] = useState(tasks)
   const [statusFilter, setStatusFilter] = useState<'all' | ExecutionTaskStatus>('all')
   const [query, setQuery] = useState('')
@@ -109,6 +130,11 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
   const [noteById, setNoteById] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  const memberById = useMemo(
+    () => new Map(members.map((member) => [member.clerk_user_id, member])),
+    [members]
+  )
 
   const stats = useMemo(() => {
     return {
@@ -210,9 +236,12 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
   }
 
   const assignOwner = async (id: string) => {
-    const rawOwnerRole = draftOwnerRoleById[id]
-    const ownerRole = rawOwnerRole && rawOwnerRole !== 'unassigned' ? rawOwnerRole : undefined
     const ownerClerkUserId = draftOwnerUserById[id]?.trim() || undefined
+    const selectedMember = ownerClerkUserId ? memberById.get(ownerClerkUserId) : undefined
+    const rawOwnerRole = draftOwnerRoleById[id]
+    const ownerRole = rawOwnerRole && rawOwnerRole !== 'unassigned'
+      ? rawOwnerRole
+      : resolveOwnerRoleFromMember(selectedMember)
 
     if (!ownerRole && !ownerClerkUserId) {
       setError('担当を設定するには owner role または clerk user id を入力してください')
@@ -311,6 +340,36 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
         </p>
       )}
 
+      <Card>
+        <CardHeader>
+          <CardTitle>横断タイムライン</CardTitle>
+          <CardDescription>直近のタスク変更イベントを案件横断で表示します。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {allEvents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">イベントはまだありません。</p>
+          ) : (
+            <div className="space-y-2">
+              {allEvents.slice(0, 15).map((event) => (
+                <div
+                  key={event.id}
+                  className="rounded-md border px-3 py-2 text-xs text-muted-foreground"
+                >
+                  <span className="font-medium text-foreground">{eventTypeLabel(event.event_type)}</span>
+                  {' / '}
+                  {event.project_title}
+                  {' / '}
+                  {event.task_title}
+                  {' / '}
+                  {formatDate(event.created_at)}
+                  {event.note ? ` / note: ${event.note}` : ''}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <section className="space-y-3">
         {visibleRows.length === 0 ? (
           <Card>
@@ -393,16 +452,27 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
                       <SelectItem value="dev">dev</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Input
-                    value={draftOwnerUserById[row.id] ?? row.owner_clerk_user_id ?? ''}
-                    onChange={(event) =>
+                  <Select
+                    value={draftOwnerUserById[row.id] ?? row.owner_clerk_user_id ?? 'unassigned'}
+                    onValueChange={(value) =>
                       setDraftOwnerUserById((prev) => ({
                         ...prev,
-                        [row.id]: event.target.value,
+                        [row.id]: value === 'unassigned' ? '' : value,
                       }))
                     }
-                    placeholder="owner clerk user id (optional)"
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="担当者を選択" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">未割当</SelectItem>
+                      {members.map((member) => (
+                        <SelectItem key={member.clerk_user_id} value={member.clerk_user_id}>
+                          {member.email ?? member.clerk_user_id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Button
                     variant="secondary"
                     onClick={() => assignOwner(row.id)}

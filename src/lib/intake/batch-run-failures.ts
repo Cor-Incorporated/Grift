@@ -111,3 +111,25 @@ export function toFailureSummaryText(items: BatchRunFailureItem[]): string {
   return parts.length > 0 ? parts.join(' / ') : '失敗なし'
 }
 
+export function buildFailureActionHints(items: BatchRunFailureItem[]): string[] {
+  const summary = summarizeBatchRunFailures(items)
+  const hints: string[] = []
+
+  if (summary.quota > 0) {
+    hints.push('クォータ超過: API上限設定と再試行間隔を見直してください。')
+  }
+  if (summary.auth > 0) {
+    hints.push('認証エラー: 権限ロールまたはAPIキー設定を確認してください。')
+  }
+  if (summary.validation > 0) {
+    hints.push('入力不正: 依頼情報の必須項目と時給入力値を確認してください。')
+  }
+  if (summary.network > 0) {
+    hints.push('ネットワーク: 一時障害の可能性があるため再実行を推奨します。')
+  }
+  if (summary.unknown > 0) {
+    hints.push('その他: 失敗詳細を監査ログで確認し、分類ルールへ追加してください。')
+  }
+
+  return hints
+}

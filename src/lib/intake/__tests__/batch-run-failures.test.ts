@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildFailureActionHints,
   classifyBatchRunFailure,
   summarizeBatchRunFailures,
   toFailureSummaryText,
@@ -50,5 +51,15 @@ describe('summarizeBatchRunFailures', () => {
       ])
     ).toBe('クォータ:1 / 認証:1')
   })
-})
 
+  it('returns action hints for detected categories', () => {
+    const hints = buildFailureActionHints([
+      { change_request_id: 'a', error: '429 rate limit exceeded' },
+      { change_request_id: 'b', error: 'invalid payload' },
+    ])
+
+    expect(hints).toHaveLength(2)
+    expect(hints[0]).toContain('クォータ超過')
+    expect(hints[1]).toContain('入力不正')
+  })
+})

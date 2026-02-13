@@ -39,14 +39,28 @@ interface ExecutionTaskEventRow {
   created_at: string
 }
 
+interface TeamMemberRow {
+  clerk_user_id: string
+  email: string | null
+  roles: Array<'admin' | 'sales' | 'dev'>
+  active: boolean
+}
+
 export default async function ExecutionTasksPage() {
   const supabase = await createServiceRoleClient()
 
-  const { data: tasks } = await supabase
-    .from('execution_tasks')
-    .select('id, project_id, change_request_id, title, summary, status, priority, due_at, owner_clerk_user_id, owner_role, created_at, updated_at')
-    .order('created_at', { ascending: false })
-    .limit(200)
+  const [{ data: tasks }, { data: teamMembers }] = await Promise.all([
+    supabase
+      .from('execution_tasks')
+      .select('id, project_id, change_request_id, title, summary, status, priority, due_at, owner_clerk_user_id, owner_role, created_at, updated_at')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('team_members')
+      .select('clerk_user_id, email, roles, active')
+      .eq('active', true)
+      .order('created_at', { ascending: false }),
+  ])
 
   const rows = (tasks ?? []) as ExecutionTaskRow[]
   const projectIds = [...new Set(rows.map((row) => row.project_id))]
@@ -93,11 +107,32 @@ export default async function ExecutionTasksPage() {
     eventMap = grouped
   }
 
+  const taskById = new Map(rows.map((row) => [row.id, row]))
+
   const normalized = rows.map((row) => ({
     ...row,
     project_title: projectMap.get(row.project_id) ?? '不明な案件',
     change_request_title: changeRequestMap.get(row.change_request_id) ?? '不明な変更要求',
     events: eventMap.get(row.id) ?? [],
+  }))
+
+  const allEvents = [...eventMap.values()]
+    .flat()
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    .slice(0, 40)
+    .map((event) => {
+      const task = taskById.get(event.task_id)
+      return {
+        ...event,
+        task_title: task?.title ?? event.task_id,
+        project_title: task ? projectMap.get(task.project_id) ?? '不明な案件' : '不明な案件',
+      }
+    })
+
+  const members = ((teamMembers ?? []) as TeamMemberRow[]).map((member) => ({
+    clerk_user_id: member.clerk_user_id,
+    email: member.email,
+    roles: Array.isArray(member.roles) ? member.roles : [],
   }))
 
   return (
@@ -108,7 +143,7 @@ export default async function ExecutionTasksPage() {
           Ready Packet から起票された実行タスクの進捗を管理します。
         </p>
       </div>
-      <ExecutionTaskBoard tasks={normalized} />
+      <ExecutionTaskBoard tasks={normalized} members={members} allEvents={allEvents} />
     </div>
   )
 }
