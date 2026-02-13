@@ -26,6 +26,11 @@ export const REQUIRED_AUDIT_ACTIONS: RequiredAuditAction[] = [
     category: 'manual_adjustment',
   },
   {
+    action: 'admin_profile.upsert',
+    file: 'src/app/api/admin/profile/route.ts',
+    category: 'manual_adjustment',
+  },
+  {
     action: 'project_file.analysis_completed',
     file: 'src/lib/source-analysis/jobs.ts',
     category: 'source_analysis',

@@ -191,3 +191,13 @@
 - Supabase Day1 hardening migration を追加
   - FK index 4件（`approval_requests(change_request_id|estimate_id)`, `change_requests(billable_rule_id)`, `estimate_versions(project_id)`）
   - RLS enable 11テーブル（pricing/data/approval/audit/change系）
+
+## 9. Sprint N+3 Day2 実装着手（2026-02-13）
+
+- `admins` 設定更新を Clerk + service-role API に移行
+  - `GET/PUT /api/admin/profile` を追加
+  - `clerk_user_id` をキーに設定を取得/更新
+- 管理設定UIを API ベースへ更新
+  - `src/app/admin/settings/page.tsx` で Supabase Auth 依存を廃止
+- 監査網羅性を拡張
+  - `admin_profile.upsert` を監査必須アクションへ追加

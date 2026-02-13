@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  adminProfileSchema,
   customerSchema,
   createProjectSchema,
   sendMessageSchema,
@@ -123,5 +124,31 @@ describe('estimateParamsSchema', () => {
       your_hourly_rate: 15000,
     })
     expect(result.multiplier).toBe(1.5)
+  })
+})
+
+describe('adminProfileSchema', () => {
+  it('should validate a valid admin profile', () => {
+    const result = adminProfileSchema.safeParse({
+      display_name: '管理者 太郎',
+      default_hourly_rate: 18000,
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('should reject empty display name', () => {
+    const result = adminProfileSchema.safeParse({
+      display_name: '',
+      default_hourly_rate: 18000,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('should reject too low hourly rate', () => {
+    const result = adminProfileSchema.safeParse({
+      display_name: '管理者 太郎',
+      default_hourly_rate: 500,
+    })
+    expect(result.success).toBe(false)
   })
 })

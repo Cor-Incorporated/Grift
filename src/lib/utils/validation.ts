@@ -162,6 +162,11 @@ export const teamMemberSchema = z.object({
   active: z.boolean().default(true),
 })
 
+export const adminProfileSchema = z.object({
+  display_name: z.string().trim().min(1).max(120),
+  default_hourly_rate: z.number().int().min(1000).max(1000000),
+})
+
 export const repositoryAnalysisRequestSchema = z.object({
   project_id: z.string().uuid(),
   repository_url: z.string().url(),
@@ -185,5 +190,6 @@ export type ApprovalRequestCreateInput = z.infer<typeof approvalRequestCreateSch
 export type ApprovalRequestUpdateInput = z.infer<typeof approvalRequestUpdateSchema>
 export type ChangeRequestBillableRuleInput = z.infer<typeof changeRequestBillableRuleSchema>
 export type TeamMemberInput = z.infer<typeof teamMemberSchema>
+export type AdminProfileInput = z.infer<typeof adminProfileSchema>
 export type RepositoryAnalysisRequestInput = z.infer<typeof repositoryAnalysisRequestSchema>
 export type SourceAnalysisRunRequestInput = z.infer<typeof sourceAnalysisRunRequestSchema>
