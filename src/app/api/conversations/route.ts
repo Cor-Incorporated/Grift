@@ -9,7 +9,9 @@ import { buildProjectAttachmentContext } from '@/lib/source-analysis/project-con
 import { getAuthenticatedUser, canAccessProject } from '@/lib/auth/authorization'
 import { writeAuditLog } from '@/lib/audit/log'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
-import type { ProjectType, ConversationMetadata } from '@/types/database'
+import type { ProjectType, ConversationMetadata, ConcreteProjectType } from '@/types/database'
+
+const METADATA_DELIMITER = '---METADATA---'
 
 interface AIResponse {
   message: string
@@ -19,9 +21,30 @@ interface AIResponse {
   is_complete: boolean
   question_type: 'open' | 'choice' | 'confirmation'
   choices?: string[]
+  classified_type?: ConcreteProjectType | null
+  generated_title?: string | null
 }
 
 function parseAIResponse(text: string): AIResponse {
+  const delimiterIndex = text.indexOf(METADATA_DELIMITER)
+
+  if (delimiterIndex !== -1) {
+    const messagePart = text.slice(0, delimiterIndex).trim()
+    const jsonPart = text.slice(delimiterIndex + METADATA_DELIMITER.length).trim()
+
+    try {
+      const metadata = JSON.parse(jsonPart) as Omit<AIResponse, 'message'>
+      return { message: messagePart, ...metadata }
+    } catch {
+      try {
+        const parsed = parseJsonFromResponse<Omit<AIResponse, 'message'>>(jsonPart)
+        return { message: messagePart, ...parsed }
+      } catch {
+        // fall through to legacy parser
+      }
+    }
+  }
+
   try {
     return parseJsonFromResponse<AIResponse>(text)
   } catch {
@@ -130,6 +153,8 @@ export async function POST(request: NextRequest) {
       is_complete: aiResponse.is_complete,
       question_type: aiResponse.question_type,
       choices: aiResponse.choices,
+      classified_type: aiResponse.classified_type ?? null,
+      generated_title: aiResponse.generated_title ?? null,
     }
 
     const { data: savedMessage } = await supabase
@@ -142,6 +167,22 @@ export async function POST(request: NextRequest) {
       })
       .select()
       .single()
+
+    if (
+      aiResponse.classified_type &&
+      project.type === 'undetermined'
+    ) {
+      const updatePayload: Record<string, unknown> = {
+        type: aiResponse.classified_type,
+      }
+      if (aiResponse.generated_title) {
+        updatePayload.title = aiResponse.generated_title
+      }
+      await supabase
+        .from('projects')
+        .update(updatePayload)
+        .eq('id', validated.project_id)
+    }
 
     if (aiResponse.is_complete) {
       const allMessages: ChatMessage[] = (history ?? [])

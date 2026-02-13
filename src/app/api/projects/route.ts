@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedProject = createProjectSchema
       .omit({ customer_id: true })
-      .parse(body.project)
+      .parse(body.project ?? {})
 
     const user = await currentUser()
     const email = user?.emailAddresses[0]?.emailAddress ?? null

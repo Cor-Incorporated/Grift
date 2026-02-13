@@ -7,6 +7,7 @@ import {
 } from '@/lib/pricing/engine'
 
 function mapProjectType(type: ProjectType): ProjectPricingType {
+  if (type === 'undetermined') return 'new_project'
   return type
 }
 

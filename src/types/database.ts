@@ -1,4 +1,6 @@
-export type ProjectType = 'new_project' | 'bug_report' | 'fix_request' | 'feature_addition'
+export type ProjectType = 'new_project' | 'bug_report' | 'fix_request' | 'feature_addition' | 'undetermined'
+
+export type ConcreteProjectType = Exclude<ProjectType, 'undetermined'>
 
 export type ProjectStatus =
   | 'draft'
@@ -84,9 +86,12 @@ export interface Conversation {
 export interface ConversationMetadata {
   category?: string
   confidence_score?: number
+  confirmed_categories?: string[]
   is_complete?: boolean
   question_type?: 'open' | 'choice' | 'confirmation'
   choices?: string[]
+  classified_type?: ConcreteProjectType | null
+  generated_title?: string | null
 }
 
 export interface ProjectFile {

@@ -11,6 +11,14 @@ export const projectTypeSchema = z.enum([
   'bug_report',
   'fix_request',
   'feature_addition',
+  'undetermined',
+])
+
+export const concreteProjectTypeSchema = z.enum([
+  'new_project',
+  'bug_report',
+  'fix_request',
+  'feature_addition',
 ])
 
 export const changeRequestCategorySchema = z.enum([
@@ -48,8 +56,8 @@ export const projectPrioritySchema = z.enum(['low', 'medium', 'high', 'critical'
 
 export const createProjectSchema = z.object({
   customer_id: z.string().uuid(),
-  title: z.string().min(1, 'タイトルを入力してください').max(200),
-  type: projectTypeSchema,
+  title: z.string().min(1).max(200).default('新規ご相談'),
+  type: projectTypeSchema.default('undetermined'),
   priority: projectPrioritySchema.optional(),
   existing_system_url: z.string().url().optional().or(z.literal('')),
 })
@@ -68,7 +76,7 @@ export const estimateParamsSchema = z.object({
 })
 
 export const pricingPolicySchema = z.object({
-  project_type: projectTypeSchema,
+  project_type: concreteProjectTypeSchema,
   name: z.string().min(1).max(120),
   coefficient_min: z.number().positive(),
   coefficient_max: z.number().positive(),
@@ -83,7 +91,7 @@ export const pricingPolicySchema = z.object({
 
 export const marketEvidenceRequestSchema = z.object({
   project_id: z.string().uuid().optional(),
-  project_type: projectTypeSchema,
+  project_type: concreteProjectTypeSchema,
   context: z.string().min(10).max(6000),
   region: z.string().min(1).max(100).optional(),
 })

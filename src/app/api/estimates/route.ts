@@ -27,6 +27,7 @@ import type { EstimateMode, ProjectType } from '@/types/database'
 function getEstimateMode(projectType: ProjectType): EstimateMode {
   switch (projectType) {
     case 'new_project':
+    case 'undetermined':
       return 'market_comparison'
     case 'bug_report':
     case 'fix_request':

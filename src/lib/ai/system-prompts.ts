@@ -1,4 +1,4 @@
-import type { ProjectType } from '@/types/database'
+import type { ProjectType, ConcreteProjectType } from '@/types/database'
 
 const BUTLER_PERSONA = `あなたは「The Benevolent Dictator」の AI 執事です。
 丁寧で品格のある言葉遣いを心がけつつ、プロフェッショナルな視点で顧客から必要な情報を引き出してください。
@@ -49,12 +49,65 @@ const REQUIRED_CATEGORIES: Record<ProjectType, string[]> = {
     'デザイン要件',
     'スケジュール',
   ],
+  undetermined: [],
+}
+
+function getClassifierSystemPrompt(): string {
+  return `${BUTLER_PERSONA}
+
+## あなたの役割
+
+お客様のご相談内容を伺い、以下の4つのタイプのいずれに該当するかを判定してください：
+
+1. **new_project** — 新規開発（ゼロからのシステム・アプリケーション開発）
+2. **bug_report** — バグ報告（既存システムの不具合・エラー）
+3. **fix_request** — 修正依頼（既存機能の動作変更・修正）
+4. **feature_addition** — 機能追加（既存システムへの新機能追加）
+
+## 対話ルール
+
+- まず「どのようなご用件でしょうか？」と穏やかにお伺いしてください。
+- お客様の最初のメッセージで判定可能な場合は、即座に分類を確定し、そのタイプに応じた最初のヒアリング質問も開始してください。
+- 判断材料が不足している場合は、穏やかに追加質問してください（最大2ターンまで）。
+- 分類が確定したら、案件タイトルも自動生成してください（お客様の相談内容を要約した簡潔なタイトル）。
+
+## 回答フォーマット（重要：必ずこの形式に従うこと）
+
+回答は2つのパートに分けて出力してください：
+
+### パート1: 顧客向けメッセージ（プレーンテキスト）
+まず、顧客に表示するメッセージをプレーンテキストで出力してください。
+Markdown 記法は使用可能ですが、JSON 形式にしないでください。
+
+### パート2: メタデータ（JSON）
+メッセージの後に、区切り線 \`---METADATA---\` を挟んで、以下の JSON を出力してください。
+
+出力例：
+
+どのようなご用件でしょうか？お気軽にお申し付けください。
+
+---METADATA---
+{"category":"分類判定","confidence_score":0.0,"confirmed_categories":[],"is_complete":false,"question_type":"open","choices":[],"classified_type":null,"generated_title":null}
+
+### JSON フィールド説明
+- \`category\` — 現在確認中のカテゴリ名
+- \`confidence_score\` — 0.0〜1.0
+- \`confirmed_categories\` — 確認済みカテゴリの配列
+- \`is_complete\` — 分類フェーズでは常に false
+- \`question_type\` — "open" | "choice" | "confirmation"
+- \`choices\` — question_type が "choice" の場合の選択肢
+- \`classified_type\` — 分類が確定した場合のみ設定。未確定なら null
+- \`generated_title\` — 分類確定時に案件タイトルを自動生成。未確定なら null`
 }
 
 export function getSystemPrompt(projectType: ProjectType): string {
+  if (projectType === 'undetermined') {
+    return getClassifierSystemPrompt()
+  }
+
   const categories = REQUIRED_CATEGORIES[projectType]
 
-  const typeInstructions: Record<ProjectType, string> = {
+  const typeInstructions: Record<ConcreteProjectType, string> = {
     new_project: `新規開発プロジェクトのヒアリングを行います。
 要件を網羅的に聞き出し、実装可能な要件定義書を作成するのが目標です。
 技術的な制約やスケジュール、予算感まで深く掘り下げてください。`,
@@ -76,36 +129,46 @@ export function getSystemPrompt(projectType: ProjectType): string {
 
 ## 対話ルール
 
-${typeInstructions[projectType]}
+${typeInstructions[projectType as ConcreteProjectType]}
 
 ## 確認すべきカテゴリ
 
 以下のカテゴリについて、すべて確認が取れるまで対話を続けてください：
 ${categories.map((c, i) => `${i + 1}. ${c}`).join('\n')}
 
-## 回答フォーマット
+## 回答フォーマット（重要：必ずこの形式に従うこと）
 
-回答は以下の JSON 形式で返してください（必ずこの形式に従うこと）：
+回答は2つのパートに分けて出力してください：
 
-\`\`\`json
-{
-  "message": "顧客に表示するメッセージ（質問や確認）",
-  "category": "現在確認中のカテゴリ名",
-  "confidence_score": 0.0〜1.0（このカテゴリの確認度合い）,
-  "confirmed_categories": ["確認済みカテゴリ1", "確認済みカテゴリ2"],
-  "is_complete": false,
-  "question_type": "open" | "choice" | "confirmation",
-  "choices": ["選択肢1", "選択肢2"]
-}
-\`\`\`
+### パート1: 顧客向けメッセージ（プレーンテキスト）
+まず、顧客に表示するメッセージをプレーンテキストで出力してください。
+Markdown 記法は使用可能ですが、JSON 形式にしないでください。
 
-- \`is_complete\` が true になったら、全カテゴリの確認が完了したことを意味します。
-- \`question_type\` が "choice" の場合、\`choices\` に選択肢を含めてください。
+### パート2: メタデータ（JSON）
+メッセージの後に、区切り線 \`---METADATA---\` を挟んで、以下の JSON を出力してください。
+
+出力例：
+
+プロジェクト概要について、もう少し詳しくお聞かせいただけますか？
+
+---METADATA---
+{"category":"プロジェクト概要","confidence_score":0.5,"confirmed_categories":[],"is_complete":false,"question_type":"open","choices":[]}
+
+### JSON フィールド説明
+- \`category\` — 現在確認中のカテゴリ名
+- \`confidence_score\` — 0.0〜1.0（このカテゴリの確認度合い）
+- \`confirmed_categories\` — 確認済みカテゴリの配列
+- \`is_complete\` — true になったら全カテゴリの確認完了
+- \`question_type\` — "open" | "choice" | "confirmation"
+- \`choices\` — question_type が "choice" の場合の選択肢
 - 各カテゴリの \`confidence_score\` が 0.8 以上になったら確認済みとしてください。`
 }
 
 export function getSpecGenerationPrompt(projectType: ProjectType): string {
-  const templates: Record<ProjectType, string> = {
+  const concreteType: ConcreteProjectType =
+    projectType === 'undetermined' ? 'new_project' : (projectType as ConcreteProjectType)
+
+  const templates: Record<ConcreteProjectType, string> = {
     new_project: `以下の対話内容を基に、実装可能な要件定義書を Markdown 形式で生成してください。
 
 ## 要件定義書の構成
@@ -168,7 +231,7 @@ export function getSpecGenerationPrompt(projectType: ProjectType): string {
 
   return `${BUTLER_PERSONA}
 
-${templates[projectType]}
+${templates[concreteType]}
 
 品格のある文体で、技術的に正確で実装可能な文書を生成してください。
 曖昧な点がある場合は、[要確認] タグを付けて明記してください。`

@@ -36,6 +36,15 @@ function toMarkdownLine(item: ProjectFileContextRow): string {
   return `- ${item.file_name} [${sourceLabel}]${sourceUrlPart} / analyzed_at=${analyzedAt}${summaryPart}`
 }
 
+interface SourceAnalysisJobRow {
+  status: string
+  last_error: string | null
+  project_files: {
+    file_name: string
+    source_url: string | null
+  } | null
+}
+
 export async function buildProjectAttachmentContext(
   supabase: SupabaseClient,
   projectId: string
@@ -44,14 +53,53 @@ export async function buildProjectAttachmentContext(
     .from('project_files')
     .select('file_name, file_type, source_kind, source_url, analysis_result, analysis_status, analyzed_at')
     .eq('project_id', projectId)
-    .eq('analysis_status', 'completed')
+    .in('analysis_status', ['completed', 'pending', 'failed'])
     .order('created_at', { ascending: false })
-    .limit(5)
+    .limit(10)
 
   if (error || !data || data.length === 0) {
     return ''
   }
 
-  const lines = (data as ProjectFileContextRow[]).map(toMarkdownLine)
-  return `添付資料の解析結果:\n${lines.join('\n')}`
+  const allFiles = data as ProjectFileContextRow[]
+  const completed = allFiles.filter((f) => f.analysis_status === 'completed')
+  const pending = allFiles.filter((f) => f.analysis_status === 'pending')
+  const failed = allFiles.filter((f) => f.analysis_status === 'failed')
+
+  const sections: string[] = []
+
+  if (completed.length > 0) {
+    const lines = completed.map(toMarkdownLine)
+    sections.push(`添付資料の解析結果:\n${lines.join('\n')}`)
+  }
+
+  if (pending.length > 0) {
+    const lines = pending.map((f) => `- ${f.file_name}${f.source_url ? ` (${f.source_url})` : ''} — 解析中`)
+    sections.push(`解析待ちの資料:\n${lines.join('\n')}`)
+  }
+
+  if (failed.length > 0) {
+    const { data: jobData } = await supabase
+      .from('source_analysis_jobs')
+      .select('status, last_error, project_files(file_name, source_url)')
+      .eq('project_id', projectId)
+      .in('status', ['failed', 'queued'])
+      .not('last_error', 'is', null)
+      .limit(5)
+
+    if (jobData && jobData.length > 0) {
+      const jobRows = jobData as unknown as SourceAnalysisJobRow[]
+      const lines = jobRows.map((j) => {
+        const name = j.project_files?.file_name ?? '不明'
+        const url = j.project_files?.source_url ? ` (${j.project_files.source_url})` : ''
+        return `- ${name}${url} — エラー: ${j.last_error}`
+      })
+      sections.push(`解析に失敗した資料（お客様にエラーを伝えてください）:\n${lines.join('\n')}`)
+    } else {
+      const lines = failed.map((f) => `- ${f.file_name}${f.source_url ? ` (${f.source_url})` : ''} — 解析失敗`)
+      sections.push(`解析に失敗した資料（お客様にエラーを伝えてください）:\n${lines.join('\n')}`)
+    }
+  }
+
+  return sections.join('\n\n')
 }

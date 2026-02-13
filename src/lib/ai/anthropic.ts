@@ -94,3 +94,88 @@ export async function sendMessage(
     throw error
   }
 }
+
+export async function sendMessageStream(
+  systemPrompt: string,
+  messages: ChatMessage[],
+  options?: {
+    maxTokens?: number
+    temperature?: number
+    model?: string
+    usageContext?: UsageCallContext
+    onToken?: (token: string) => void
+    signal?: AbortSignal
+  }
+): Promise<string> {
+  const anthropic = getAnthropicClient()
+  const model = options?.model ?? process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-5-20250929'
+  const usage = await prepareApiUsage({
+    sourceKey: 'anthropic_messages',
+    provider: 'anthropic',
+    endpoint: '/v1/messages',
+    model,
+    context: options?.usageContext,
+  })
+
+  try {
+    const stream = anthropic.messages.stream({
+      model,
+      max_tokens: options?.maxTokens ?? 4096,
+      temperature: options?.temperature ?? 0.7,
+      system: systemPrompt,
+      messages,
+    })
+
+    if (options?.signal) {
+      options.signal.addEventListener('abort', () => {
+        stream.abort()
+      }, { once: true })
+    }
+
+    let fullText = ''
+
+    stream.on('text', (text) => {
+      fullText += text
+      options?.onToken?.(text)
+    })
+
+    const finalMessage = await stream.finalMessage()
+
+    await logApiUsage(usage, {
+      status: 'success',
+      metrics: {
+        inputTokens:
+          typeof finalMessage.usage.input_tokens === 'number'
+            ? finalMessage.usage.input_tokens
+            : undefined,
+        outputTokens:
+          typeof finalMessage.usage.output_tokens === 'number'
+            ? finalMessage.usage.output_tokens
+            : undefined,
+      },
+      metadata: {
+        max_tokens: options?.maxTokens ?? 4096,
+        streaming: true,
+      },
+    })
+
+    return fullText
+  } catch (error) {
+    if (!isExternalApiQuotaError(error)) {
+      const message =
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message.slice(0, 1200)
+          : 'Unknown Anthropic API error'
+
+      await logApiUsage(usage, {
+        status: 'error',
+        errorMessage: message,
+        metadata: {
+          max_tokens: options?.maxTokens ?? 4096,
+          streaming: true,
+        },
+      })
+    }
+    throw error
+  }
+}
