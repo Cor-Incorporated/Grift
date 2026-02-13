@@ -1,6 +1,6 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/server'
 import { getInternalRoles } from '@/lib/auth/authorization'
 import { ApprovalQueue } from '@/components/admin/approval-queue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,7 +14,7 @@ export default async function AdminApprovalsPage() {
 
   const user = await currentUser()
   const email = user?.emailAddresses[0]?.emailAddress ?? null
-  const supabase = await createServerSupabaseClient()
+  const supabase = await createServiceRoleClient()
   const internalRoles = await getInternalRoles(supabase, userId, email)
 
   if (internalRoles.size === 0) {

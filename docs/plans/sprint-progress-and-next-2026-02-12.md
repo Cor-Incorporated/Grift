@@ -179,3 +179,15 @@
 - Anthropic Messages API / SDK:
   - `messages.create` の `usage.input_tokens` / `usage.output_tokens` を記録
   - クォータ超過時の呼び出し停止と 429 応答をルート側に反映
+
+## 8. Sprint N+3 Day1 実装着手（2026-02-13）
+
+- CI quality gate を強化
+  - `quality-gate` で全job resultを明示評価
+  - `ENABLE_DEPENDENCY_REVIEW=true` 時に dependency-review 成功を必須化
+  - workflow default permissions を `contents:read` へ最小化
+- Admin サーバーコンポーネントの Supabase クライアントを service-role に統一
+  - 対象: `admin/page`, `admin/approvals/page`, `admin/projects/page`, `admin/estimates/page`, `admin/projects/[id]/page`
+- Supabase Day1 hardening migration を追加
+  - FK index 4件（`approval_requests(change_request_id|estimate_id)`, `change_requests(billable_rule_id)`, `estimate_versions(project_id)`）
+  - RLS enable 11テーブル（pricing/data/approval/audit/change系）

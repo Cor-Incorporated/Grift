@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/server'
 import {
   Card,
   CardContent,
@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 
 export default async function EstimatesPage() {
-  const supabase = await createServerSupabaseClient()
+  const supabase = await createServiceRoleClient()
 
   const { data: estimates } = await supabase
     .from('estimates')

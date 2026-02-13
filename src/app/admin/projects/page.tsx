@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/server'
 import {
   Card,
   CardContent,
@@ -33,7 +33,7 @@ const typeLabels: Record<string, { label: string; icon: string }> = {
 }
 
 export default async function ProjectsListPage() {
-  const supabase = await createServerSupabaseClient()
+  const supabase = await createServiceRoleClient()
 
   const { data: projects, error } = await supabase
     .from('projects')

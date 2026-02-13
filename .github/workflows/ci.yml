@@ -12,6 +12,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -211,6 +214,7 @@ jobs:
         uses: actions/dependency-review-action@v4
 
   quality-gate:
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     needs:
       - lint
@@ -219,6 +223,46 @@ jobs:
       - migration-check
       - build
       - e2e-smoke
+      - dependency-review
     steps:
-      - name: CI quality gate passed
-        run: echo "All required CI quality gates passed."
+      - name: Validate required checks
+        env:
+          ENABLE_DEPENDENCY_REVIEW: ${{ vars.ENABLE_DEPENDENCY_REVIEW }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          TYPE_CHECK_RESULT: ${{ needs.type-check.result }}
+          UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
+          MIGRATION_CHECK_RESULT: ${{ needs.migration-check.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          E2E_SMOKE_RESULT: ${{ needs.e2e-smoke.result }}
+          DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
+        run: |
+          set -euo pipefail
+
+          core_checks=(
+            LINT_RESULT
+            TYPE_CHECK_RESULT
+            UNIT_TESTS_RESULT
+            MIGRATION_CHECK_RESULT
+            BUILD_RESULT
+            E2E_SMOKE_RESULT
+          )
+
+          for check_name in "${core_checks[@]}"; do
+            check_result="${!check_name}"
+            if [ "$check_result" != "success" ]; then
+              echo "Required check failed: ${check_name}=${check_result}"
+              exit 1
+            fi
+          done
+
+          if [ "${ENABLE_DEPENDENCY_REVIEW}" = "true" ] && [ "${DEPENDENCY_REVIEW_RESULT}" != "success" ]; then
+            echo "Dependency review is enabled, but check did not succeed: ${DEPENDENCY_REVIEW_RESULT}"
+            exit 1
+          fi
+
+          if [ "${ENABLE_DEPENDENCY_REVIEW}" != "true" ] && [ "${DEPENDENCY_REVIEW_RESULT}" = "failure" ]; then
+            echo "Dependency review failed unexpectedly while feature is disabled."
+            exit 1
+          fi
+
+          echo "All required CI quality gates passed."
