@@ -73,9 +73,17 @@ src/
 
 **Two Supabase clients**: `createServerSupabaseClient()` uses cookie-based auth for SSR pages; `createServiceRoleClient()` bypasses RLS for API routes. Never use the service-role client on the browser side.
 
-**AI dual-provider**: Claude handles conversation/analysis (via SDK). xAI/Grok handles market research with web search tools (via raw fetch). Both track usage in `api_usage_logs`.
+**AI dual-provider**: Claude handles conversation/analysis (via SDK). xAI/Grok handles market research with web search tools (via raw fetch) and website URL analysis for non-GitHub URLs. Both track usage in `api_usage_logs`.
 
 **Intake pipeline**: Raw text → `parse` (AI intent decomposition) → `ingest` (creates change requests) → `follow-up` (generates missing-info questions) → completeness scoring → queue placement (`needs_info` / `ready_to_start`).
+
+**Source analysis pipeline**: URLs submitted via `/api/source-analysis/repository` → enqueue job in `source_analysis_jobs` → `/api/source-analysis/jobs/run` processes queue. GitHub URLs use `analyzeRepositoryUrlWithClaude()` (downloads ZIP → analyzes with Claude). Non-GitHub URLs use `analyzeWebsiteUrlWithGrok()` (Grok web_search → extracts company/service/tech info). Results stored in `project_files.analysis_result`. Requires `GITHUB_TOKEN` for private repos.
+
+**Auto-estimate generation**: When chat interview completes (`is_complete: true`), spec_markdown is generated, then `autoGenerateEstimate()` creates a draft estimate automatically. Events sent via SSE (`estimate_generated` / `estimate_error`).
+
+**SSE streaming**: `/api/conversations/stream` provides real-time chat responses via Server-Sent Events. The client connects per-message and receives `message_start`, `text_delta`, `message_complete`, `spec_generated`, and `estimate_generated` events.
+
+**Project deletion**: Dashboard delete button uses Server Action (`deleteProjectAction`) with `useTransition` for pending state. FK constraints use `ON DELETE CASCADE` for `conversations`, `estimates`, `project_files`, and `source_analysis_jobs`.
 
 **Migrations**: SQL files in `supabase/migrations/` with `YYYYMMDDNNNN_name.sql` naming. Applied via Supabase CLI (`supabase db push`) or SQL Editor. CI validates file ordering via `scripts/check-migrations.mjs`.
 
@@ -102,5 +110,5 @@ Build requires real Clerk keys (set as GitHub Secrets). Supabase keys can be dum
 Copy `.env.example` → `.env.local`. Required for local dev:
 - Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 - Clerk: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (must be real, not dummy), `CLERK_SECRET_KEY`
-- AI: `ANTHROPIC_API_KEY`, `XAI_API_KEY`
+- AI: `ANTHROPIC_API_KEY`, `XAI_API_KEY`, `GITHUB_TOKEN` (optional, for private repo analysis)
 - RBAC: `ADMIN_EMAIL_ALLOWLIST` (comma-separated emails)
