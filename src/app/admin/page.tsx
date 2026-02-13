@@ -37,6 +37,7 @@ export default async function AdminDashboardPage() {
     { count: completedProjects },
     { count: needsInfoCount },
     { count: readyToStartCount },
+    { count: activeExecutionTasks },
   ] = await Promise.all([
     supabase
       .from('projects')
@@ -62,6 +63,10 @@ export default async function AdminDashboardPage() {
       .from('change_requests')
       .select('*', { count: 'exact', head: true })
       .eq('intake_status', 'ready_to_start'),
+    supabase
+      .from('execution_tasks')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['todo', 'in_progress', 'blocked']),
   ])
 
   return (
@@ -84,13 +89,16 @@ export default async function AdminDashboardPage() {
           <Button asChild>
             <Link href="/admin/intake">Intake Workspaceを開く</Link>
           </Button>
+          <Button variant="secondary" asChild>
+            <Link href="/admin/execution-tasks">実行タスクを確認</Link>
+          </Button>
           <Button variant="outline" asChild>
             <Link href="/admin/approvals">承認キューを確認</Link>
           </Button>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>要追加ヒアリング</CardDescription>
@@ -107,6 +115,12 @@ export default async function AdminDashboardPage() {
           <CardHeader className="pb-2">
             <CardDescription>進行中案件</CardDescription>
             <CardTitle className="text-4xl tabular-nums">{activeProjects ?? 0}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>実行中タスク</CardDescription>
+            <CardTitle className="text-4xl tabular-nums">{activeExecutionTasks ?? 0}</CardTitle>
           </CardHeader>
         </Card>
       </div>

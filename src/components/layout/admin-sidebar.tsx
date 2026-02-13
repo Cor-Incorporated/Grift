@@ -28,6 +28,12 @@ const navItems = [
     roles: ['admin', 'sales', 'dev'] as InternalRole[],
   },
   {
+    href: '/admin/execution-tasks',
+    label: '実行タスク',
+    icon: '🛠️',
+    roles: ['admin', 'sales', 'dev'] as InternalRole[],
+  },
+  {
     href: '/admin/estimates',
     label: '見積り',
     icon: '💰',

@@ -45,6 +45,14 @@ interface ExecutionTaskRow {
   status: string
 }
 
+interface EstimateBatchRunRow {
+  id: string
+  requested_count: number
+  succeeded_count: number
+  failed_count: number
+  created_at: string
+}
+
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
@@ -53,7 +61,7 @@ function normalizeStringArray(value: unknown): string[] {
 export default async function IntakePage() {
   const supabase = await createServiceRoleClient()
 
-  const [{ data: projects }, { data: customers }, { data: changeRequests }] = await Promise.all([
+  const [{ data: projects }, { data: customers }, { data: changeRequests }, { data: batchRuns }] = await Promise.all([
     supabase
       .from('projects')
       .select('id, title, type, status, customer_id')
@@ -68,6 +76,11 @@ export default async function IntakePage() {
       )
       .order('created_at', { ascending: false })
       .limit(200),
+    supabase
+      .from('estimate_batch_runs')
+      .select('id, requested_count, succeeded_count, failed_count, created_at')
+      .order('created_at', { ascending: false })
+      .limit(20),
   ])
 
   const customerById = new Map(
@@ -145,5 +158,13 @@ export default async function IntakePage() {
     }
   })
 
-  return <IntakeWorkspace projects={projectList} queue={queue} />
+  const runList = ((batchRuns ?? []) as EstimateBatchRunRow[]).map((row) => ({
+    id: row.id,
+    requested_count: row.requested_count,
+    succeeded_count: row.succeeded_count,
+    failed_count: row.failed_count,
+    created_at: row.created_at,
+  }))
+
+  return <IntakeWorkspace projects={projectList} queue={queue} batchRuns={runList} />
 }

@@ -137,6 +137,13 @@ interface ReadyPacketView {
 interface IntakeWorkspaceProps {
   projects: IntakeProject[]
   queue: IntakeQueueItem[]
+  batchRuns: Array<{
+    id: string
+    requested_count: number
+    succeeded_count: number
+    failed_count: number
+    created_at: string
+  }>
 }
 
 type QueueTab = 'all' | 'needs_info' | 'ready_to_start'
@@ -177,7 +184,7 @@ function taskStatusLabel(status: string | null): string {
   return `タスク: ${status}`
 }
 
-export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
+export function IntakeWorkspace({ projects, queue, batchRuns }: IntakeWorkspaceProps) {
   const router = useRouter()
   const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
   const [message, setMessage] = useState('')
@@ -808,6 +815,37 @@ export function IntakeWorkspace({ projects, queue }: IntakeWorkspaceProps) {
             {packetError}
           </p>
         )}
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">一括概算 実行履歴</CardTitle>
+            <CardDescription>直近20件の run を表示します。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {batchRuns.length === 0 ? (
+              <p className="text-sm text-muted-foreground">履歴はまだありません。</p>
+            ) : (
+              <div className="space-y-2">
+                {batchRuns.slice(0, 8).map((run) => (
+                  <div
+                    key={run.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+                  >
+                    <div className="font-mono text-xs">{run.id}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">target: {run.requested_count}</Badge>
+                      <Badge variant="secondary">ok: {run.succeeded_count}</Badge>
+                      <Badge variant={run.failed_count > 0 ? 'destructive' : 'outline'}>
+                        ng: {run.failed_count}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{formatDate(run.created_at)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Tabs value={queueTab} onValueChange={(value) => setQueueTab(value as QueueTab)}>
           <TabsList className="w-full justify-start">

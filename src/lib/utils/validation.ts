@@ -214,6 +214,11 @@ export const sourceAnalysisRunRequestSchema = z.object({
   limit: z.number().int().min(1).max(10).default(2),
 })
 
+export const executionTaskUpdateSchema = z.object({
+  status: z.enum(['todo', 'in_progress', 'done', 'blocked']),
+  note: z.string().max(1000).optional(),
+})
+
 export type CustomerInput = z.infer<typeof customerSchema>
 export type CreateProjectInput = z.infer<typeof createProjectSchema>
 export type SendMessageInput = z.infer<typeof sendMessageSchema>
@@ -234,3 +239,4 @@ export type TeamMemberInput = z.infer<typeof teamMemberSchema>
 export type AdminProfileInput = z.infer<typeof adminProfileSchema>
 export type RepositoryAnalysisRequestInput = z.infer<typeof repositoryAnalysisRequestSchema>
 export type SourceAnalysisRunRequestInput = z.infer<typeof sourceAnalysisRunRequestSchema>
+export type ExecutionTaskUpdateInput = z.infer<typeof executionTaskUpdateSchema>
