@@ -17,6 +17,9 @@ export default function Error({
         申し訳ございません。予期しないエラーが発生しました。
         もう一度お試しください。
       </p>
+      {error.digest && (
+        <p className="text-xs text-muted-foreground">Error ID: {error.digest}</p>
+      )}
       <Button onClick={reset}>再試行</Button>
     </div>
   )

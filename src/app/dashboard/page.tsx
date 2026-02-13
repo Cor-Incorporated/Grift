@@ -6,7 +6,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import type { Project, ProjectType, ProjectStatus } from '@/types/database'
+import type { Project, ProjectStatus } from '@/types/database'
 
 const typeLabels: Record<string, { title: string; icon: string }> = {
   new_project: { title: '新規開発', icon: '🏗️' },

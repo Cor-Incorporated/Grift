@@ -22,6 +22,12 @@ const navItems = [
     roles: ['admin', 'sales', 'dev'] as InternalRole[],
   },
   {
+    href: '/admin/intake',
+    label: 'Intake',
+    icon: '🧭',
+    roles: ['admin', 'sales', 'dev'] as InternalRole[],
+  },
+  {
     href: '/admin/estimates',
     label: '見積り',
     icon: '💰',

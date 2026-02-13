@@ -11,10 +11,9 @@ import {
 
 interface SpecViewerProps {
   specMarkdown: string | null
-  projectId: string
 }
 
-export function SpecViewer({ specMarkdown, projectId }: SpecViewerProps) {
+export function SpecViewer({ specMarkdown }: SpecViewerProps) {
   if (!specMarkdown) {
     return (
       <Card>

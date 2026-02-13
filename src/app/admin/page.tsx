@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
 const statusLabels: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -29,50 +30,98 @@ const typeLabels: Record<string, string> = {
 export default async function AdminDashboardPage() {
   const supabase = await createServiceRoleClient()
 
-  const { data: projects, error } = await supabase
-    .from('projects')
-    .select('*, customer:customers(*)')
-    .order('created_at', { ascending: false })
-    .limit(20)
-
-  const { count: totalProjects } = await supabase
-    .from('projects')
-    .select('*', { count: 'exact', head: true })
-
-  const { count: activeProjects } = await supabase
-    .from('projects')
-    .select('*', { count: 'exact', head: true })
-    .in('status', ['interviewing', 'analyzing', 'estimating'])
-
-  const { count: completedProjects } = await supabase
-    .from('projects')
-    .select('*', { count: 'exact', head: true })
-    .eq('status', 'completed')
+  const [
+    { data: projects, error },
+    { count: totalProjects },
+    { count: activeProjects },
+    { count: completedProjects },
+    { count: needsInfoCount },
+    { count: readyToStartCount },
+  ] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('*, customer:customers(*)')
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('projects')
+      .select('*', { count: 'exact', head: true }),
+    supabase
+      .from('projects')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['interviewing', 'analyzing', 'estimating']),
+    supabase
+      .from('projects')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'completed'),
+    supabase
+      .from('change_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('intake_status', 'needs_info'),
+    supabase
+      .from('change_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('intake_status', 'ready_to_start'),
+  ])
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">ダッシュボード</h1>
-        <p className="text-muted-foreground">案件の概要と最新の状況</p>
+        <h1 className="text-3xl font-bold text-balance">運用ダッシュボード</h1>
+        <p className="text-muted-foreground text-pretty">
+          Intakeの詰まりを優先的に解消し、着手可能な依頼を増やす運用に最適化しています。
+        </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle>本日の優先アクション</CardTitle>
+          <CardDescription className="text-pretty">
+            情報不足の依頼を要件化し、着手可能パケットを生成してください。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-3">
+          <Button asChild>
+            <Link href="/admin/intake">Intake Workspaceを開く</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/admin/approvals">承認キューを確認</Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>全案件</CardDescription>
-            <CardTitle className="text-4xl">{totalProjects ?? 0}</CardTitle>
+            <CardDescription>要追加ヒアリング</CardDescription>
+            <CardTitle className="text-4xl tabular-nums">{needsInfoCount ?? 0}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>進行中</CardDescription>
-            <CardTitle className="text-4xl">{activeProjects ?? 0}</CardTitle>
+            <CardDescription>着手可能</CardDescription>
+            <CardTitle className="text-4xl tabular-nums">{readyToStartCount ?? 0}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>進行中案件</CardDescription>
+            <CardTitle className="text-4xl tabular-nums">{activeProjects ?? 0}</CardTitle>
+          </CardHeader>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>全案件</CardDescription>
+            <CardTitle className="text-3xl tabular-nums">{totalProjects ?? 0}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>完了</CardDescription>
-            <CardTitle className="text-4xl">{completedProjects ?? 0}</CardTitle>
+            <CardTitle className="text-3xl tabular-nums">{completedProjects ?? 0}</CardTitle>
           </CardHeader>
         </Card>
       </div>

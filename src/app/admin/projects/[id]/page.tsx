@@ -124,7 +124,6 @@ export default async function ProjectDetailPage({
         <TabsContent value="spec">
           <SpecViewer
             specMarkdown={project.spec_markdown}
-            projectId={project.id}
           />
         </TabsContent>
 
