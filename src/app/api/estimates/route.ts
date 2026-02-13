@@ -3,6 +3,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { sendMessage } from '@/lib/ai/anthropic'
 import { parseJsonFromResponse } from '@/lib/ai/xai'
 import { fetchMarketEvidenceFromXai } from '@/lib/market/evidence'
+import { resolveMarketEvidenceWithFallback } from '@/lib/market/evidence-fallback'
 import { estimateParamsSchema } from '@/lib/utils/validation'
 import {
   canAccessProject,
@@ -258,9 +259,10 @@ export async function POST(request: NextRequest) {
     let evidenceRequirementMet = true
     let evidenceSourceCount: number | null = null
     let evidenceBlockReason: string | null = null
+    let evidenceWarnings: string[] = []
 
     if (estimateMode === 'market_comparison' || estimateMode === 'hybrid') {
-      const marketEvidence = await fetchMarketEvidenceFromXai({
+      const fetchedMarketEvidence = await fetchMarketEvidenceFromXai({
         projectType,
         context: attachmentContext
           ? `${project.spec_markdown}\n\n${attachmentContext}`
@@ -271,6 +273,13 @@ export async function POST(request: NextRequest) {
           actorClerkUserId: authUser.clerkUserId,
         },
       })
+      const marketEvidenceResolution = await resolveMarketEvidenceWithFallback({
+        supabase,
+        projectId: project.id,
+        projectType,
+        fetched: fetchedMarketEvidence,
+      })
+      const marketEvidence = marketEvidenceResolution.result
 
       marketAssumption = {
         teamSize: marketEvidence.evidence.typicalTeamSize,
@@ -291,6 +300,7 @@ export async function POST(request: NextRequest) {
           confidence_score: marketEvidence.confidenceScore,
           usage: marketEvidence.usage,
           created_by_clerk_user_id: authUser.clerkUserId,
+          retrieved_at: marketEvidenceResolution.sourceRetrievedAt,
         })
         .select('id, retrieved_at')
         .maybeSingle()
@@ -300,13 +310,18 @@ export async function POST(request: NextRequest) {
         citations: marketEvidence.citations,
         confidenceScore: marketEvidence.confidenceScore,
         summary: marketEvidence.evidence.summary,
-        retrievedAt: savedEvidence?.retrieved_at ?? new Date().toISOString(),
+        retrievedAt:
+          savedEvidence?.retrieved_at
+          ?? marketEvidenceResolution.sourceRetrievedAt
+          ?? new Date().toISOString(),
+        warnings: marketEvidenceResolution.warning ? [marketEvidenceResolution.warning] : [],
       })
 
       evidenceAppendix = appendix as unknown as Record<string, unknown>
       evidenceRequirementMet = appendix.requirement.met
       evidenceSourceCount = appendix.requirement.unique_source_count
       evidenceBlockReason = appendix.requirement.reason
+      evidenceWarnings = appendix.warnings
 
       marketData = {
         market_hourly_rate: marketEvidence.evidence.marketHourlyRate,
@@ -335,6 +350,9 @@ export async function POST(request: NextRequest) {
     const riskFlags = [...pricing.riskFlags]
     if (!evidenceRequirementMet) {
       riskFlags.push('insufficient_evidence_sources')
+    }
+    if (evidenceWarnings.length > 0) {
+      riskFlags.push('market_evidence_fallback_used')
     }
 
     const approvalTriggers = buildApprovalTriggersFromRiskFlags({

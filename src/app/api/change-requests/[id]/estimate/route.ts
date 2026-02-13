@@ -4,6 +4,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { sendMessage } from '@/lib/ai/anthropic'
 import { parseJsonFromResponse } from '@/lib/ai/xai'
 import { fetchMarketEvidenceFromXai } from '@/lib/market/evidence'
+import { resolveMarketEvidenceWithFallback } from '@/lib/market/evidence-fallback'
 import {
   canAccessProject,
   getAuthenticatedUser,
@@ -198,9 +199,10 @@ export async function POST(
     let evidenceRequirementMet = true
     let evidenceSourceCount: number | null = null
     let evidenceBlockReason: string | null = null
+    let evidenceWarnings: string[] = []
 
     if (validated.include_market_context) {
-      const evidence = await fetchMarketEvidenceFromXai({
+      const fetchedEvidence = await fetchMarketEvidenceFromXai({
         projectType,
         context: `${changeRequest.title}\n${changeRequest.description}${
           attachmentContext ? `\n\n${attachmentContext}` : ''
@@ -211,6 +213,13 @@ export async function POST(
           actorClerkUserId: authUser.clerkUserId,
         },
       })
+      const evidenceResolution = await resolveMarketEvidenceWithFallback({
+        supabase,
+        projectId: project.id,
+        projectType,
+        fetched: fetchedEvidence,
+      })
+      const evidence = evidenceResolution.result
 
       const { data: savedEvidence } = await supabase
         .from('market_evidence')
@@ -225,6 +234,7 @@ export async function POST(
           confidence_score: evidence.confidenceScore,
           usage: evidence.usage,
           created_by_clerk_user_id: authUser.clerkUserId,
+          retrieved_at: evidenceResolution.sourceRetrievedAt,
         })
         .select('id, retrieved_at')
         .maybeSingle()
@@ -234,13 +244,18 @@ export async function POST(
         citations: evidence.citations,
         confidenceScore: evidence.confidenceScore,
         summary: evidence.evidence.summary,
-        retrievedAt: savedEvidence?.retrieved_at ?? new Date().toISOString(),
+        retrievedAt:
+          savedEvidence?.retrieved_at
+          ?? evidenceResolution.sourceRetrievedAt
+          ?? new Date().toISOString(),
+        warnings: evidenceResolution.warning ? [evidenceResolution.warning] : [],
       })
 
       evidenceAppendix = appendix as unknown as Record<string, unknown>
       evidenceRequirementMet = appendix.requirement.met
       evidenceSourceCount = appendix.requirement.unique_source_count
       evidenceBlockReason = appendix.requirement.reason
+      evidenceWarnings = appendix.warnings
       marketData = {
         ...evidence.evidence,
         citations: evidence.citations,
@@ -263,6 +278,9 @@ export async function POST(
     const riskFlags = [...changePricing.riskFlags]
     if (!evidenceRequirementMet) {
       riskFlags.push('insufficient_evidence_sources')
+    }
+    if (evidenceWarnings.length > 0) {
+      riskFlags.push('market_evidence_fallback_used')
     }
 
     const approvalTriggers = buildApprovalTriggersFromRiskFlags({

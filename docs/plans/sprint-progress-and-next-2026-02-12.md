@@ -201,3 +201,13 @@
   - `src/app/admin/settings/page.tsx` で Supabase Auth 依存を廃止
 - 監査網羅性を拡張
   - `admin_profile.upsert` を監査必須アクションへ追加
+
+## 10. Sprint N+3 Day3 実装着手（2026-02-13）
+
+- REL-SEC-001: Supabase本番へ `day1_security_hardening` migration を適用
+  - `rls_disabled_in_public` は解消、次は `rls_enabled_no_policy` の段階的整備へ移行
+- REL-DATA-001/002: 市場根拠フォールバック実装を開始
+  - xAI取得失敗/クォータ時に `market_evidence` の前回確定値へフォールバック
+  - freshness TTL を参照し、鮮度警告を evidence appendix の `warnings` に保持
+  - `risk_flags` に `market_evidence_fallback_used` を追加
+- REL-QA-001: フォールバックのユニットテスト追加

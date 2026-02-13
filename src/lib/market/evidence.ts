@@ -25,6 +25,8 @@ export interface MarketEvidenceResult {
   raw: unknown
   confidenceScore: number
   usage: XaiUsage
+  isFallback: boolean
+  fallbackReason: 'quota_exceeded' | 'upstream_error' | null
 }
 
 interface RawMarketEvidence {
@@ -156,6 +158,8 @@ ${input.context.slice(0, 3000)}
       raw: response.raw,
       confidenceScore: calculateConfidence(response.citations.length, normalized.trends.length),
       usage: response.usage,
+      isFallback: false,
+      fallbackReason: null,
     }
   } catch (error) {
     const quotaNote = isExternalApiQuotaError(error)
@@ -172,6 +176,8 @@ ${input.context.slice(0, 3000)}
       raw: null,
       confidenceScore: 0.3,
       usage: {},
+      isFallback: true,
+      fallbackReason: isExternalApiQuotaError(error) ? 'quota_exceeded' : 'upstream_error',
     }
   }
 }

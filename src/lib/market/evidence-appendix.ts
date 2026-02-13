@@ -23,6 +23,7 @@ export interface EstimateEvidenceAppendix {
   confidence_score: number
   sources: EvidenceAppendixSource[]
   requirement: EvidenceRequirementStatus
+  warnings: string[]
 }
 
 interface BuildEstimateEvidenceAppendixInput {
@@ -32,6 +33,7 @@ interface BuildEstimateEvidenceAppendixInput {
   retrievedAt?: string
   minimumSources?: number
   provider?: string
+  warnings?: string[]
 }
 
 const PRIMARY_PUBLIC_DOMAINS = [
@@ -137,5 +139,8 @@ export function buildEstimateEvidenceAppendix(
       met,
       reason,
     },
+    warnings: Array.isArray(input.warnings)
+      ? input.warnings.filter((warning): warning is string => typeof warning === 'string' && warning.length > 0)
+      : [],
   }
 }
