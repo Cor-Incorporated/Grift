@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendMessage } from '@/lib/ai/anthropic'
 import { analyzeZipArchiveWithClaude } from '@/lib/source-analysis/zip'
-import { analyzeRepositoryUrlWithClaude } from '@/lib/source-analysis/repository'
+import { analyzeRepositoryUrlWithClaude, isGitHubUrl } from '@/lib/source-analysis/repository'
+import { analyzeWebsiteUrlWithGrok } from '@/lib/source-analysis/website'
 import { analyzePdfWithClaude, extractTextFromPdfBuffer } from '@/lib/source-analysis/pdf'
 import { writeAuditLog } from '@/lib/audit/log'
 import { isExternalApiQuotaError, type UsageCallContext } from '@/lib/usage/api-usage'
@@ -224,12 +225,26 @@ async function analyzeRepositoryUrl(
 ): Promise<{
   analysisResult: Record<string, unknown>
   fileName: string
-  fileSize: number
+  fileSize: number | null
   sourceUrl: string
 }> {
   const sourceUrl = file.source_url
   if (!sourceUrl) {
     throw new Error('repository_url が未設定です')
+  }
+
+  if (!isGitHubUrl(sourceUrl)) {
+    const websiteResult = await analyzeWebsiteUrlWithGrok(sourceUrl, usageContext)
+    const hostname = (() => {
+      try { return new URL(sourceUrl).hostname } catch { return sourceUrl.slice(0, 60) }
+    })()
+
+    return {
+      analysisResult: websiteResult as unknown as Record<string, unknown>,
+      fileName: hostname,
+      fileSize: null,
+      sourceUrl,
+    }
   }
 
   const analyzed = await analyzeRepositoryUrlWithClaude(sourceUrl, usageContext)
