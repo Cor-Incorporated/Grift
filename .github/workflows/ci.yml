@@ -203,7 +203,7 @@ jobs:
           if-no-files-found: ignore
 
   dependency-review:
-    if: ${{ github.event_name == 'pull_request' && vars.ENABLE_DEPENDENCY_REVIEW == 'true' }}
+    if: ${{ github.event_name == 'pull_request' && vars.ENABLE_DEPENDENCY_REVIEW == 'true' && vars.DEPENDENCY_REVIEW_SUPPORTED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -228,6 +228,7 @@ jobs:
       - name: Validate required checks
         env:
           ENABLE_DEPENDENCY_REVIEW: ${{ vars.ENABLE_DEPENDENCY_REVIEW }}
+          DEPENDENCY_REVIEW_SUPPORTED: ${{ vars.DEPENDENCY_REVIEW_SUPPORTED }}
           LINT_RESULT: ${{ needs.lint.result }}
           TYPE_CHECK_RESULT: ${{ needs.type-check.result }}
           UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
@@ -255,7 +256,7 @@ jobs:
             fi
           done
 
-          if [ "${ENABLE_DEPENDENCY_REVIEW}" = "true" ] && [ "${DEPENDENCY_REVIEW_RESULT}" != "success" ]; then
+          if [ "${ENABLE_DEPENDENCY_REVIEW}" = "true" ] && [ "${DEPENDENCY_REVIEW_SUPPORTED}" = "true" ] && [ "${DEPENDENCY_REVIEW_RESULT}" != "success" ]; then
             echo "Dependency review is enabled, but check did not succeed: ${DEPENDENCY_REVIEW_RESULT}"
             exit 1
           fi
@@ -263,6 +264,11 @@ jobs:
           if [ "${ENABLE_DEPENDENCY_REVIEW}" != "true" ] && [ "${DEPENDENCY_REVIEW_RESULT}" = "failure" ]; then
             echo "Dependency review failed unexpectedly while feature is disabled."
             exit 1
+          fi
+
+          if [ "${ENABLE_DEPENDENCY_REVIEW}" = "true" ] && [ "${DEPENDENCY_REVIEW_SUPPORTED}" != "true" ]; then
+            echo "Dependency review requested, but repository support flag is disabled."
+            echo "Set DEPENDENCY_REVIEW_SUPPORTED=true after enabling Dependency Graph and GHAS."
           fi
 
           echo "All required CI quality gates passed."

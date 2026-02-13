@@ -184,7 +184,7 @@
 
 - CI quality gate を強化
   - `quality-gate` で全job resultを明示評価
-  - `ENABLE_DEPENDENCY_REVIEW=true` 時に dependency-review 成功を必須化
+  - `ENABLE_DEPENDENCY_REVIEW=true` かつ `DEPENDENCY_REVIEW_SUPPORTED=true` 時に dependency-review 成功を必須化
   - workflow default permissions を `contents:read` へ最小化
 - Admin サーバーコンポーネントの Supabase クライアントを service-role に統一
   - 対象: `admin/page`, `admin/approvals/page`, `admin/projects/page`, `admin/estimates/page`, `admin/projects/[id]/page`
