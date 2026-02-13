@@ -6,7 +6,10 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { DeleteProjectButton } from '@/components/dashboard/delete-project-button'
 import type { Project, ProjectStatus } from '@/types/database'
+
+const interviewableStatuses = new Set<ProjectStatus>(['draft', 'interviewing'])
 
 const typeLabels: Record<string, { title: string; icon: string }> = {
   new_project: { title: '新規開発', icon: '🏗️' },
@@ -113,31 +116,52 @@ export default async function DashboardPage() {
                 title: project.type,
                 icon: '📁',
               }
+              const canOpenChat = interviewableStatuses.has(project.status)
 
-              return (
-                <Link key={project.id} href={`/projects/${project.id}/chat`}>
-                  <Card className="h-full transition-colors hover:bg-accent/50">
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">
-                          {typeLabel.icon} {typeLabel.title}
-                        </span>
+              const card = (
+                <Card className={`h-full transition-colors ${canOpenChat ? 'hover:bg-accent/50' : ''}`}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        {typeLabel.icon} {typeLabel.title}
+                      </span>
+                      <div className="flex items-center gap-1">
                         <Badge variant={getStatusVariant(project.status)}>
                           {statusLabels[project.status] ?? project.status}
                         </Badge>
+                        <DeleteProjectButton projectId={project.id} />
                       </div>
-                      <CardTitle className="line-clamp-2 text-base">
-                        {project.title}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <CardDescription>
-                        {formatDate(project.created_at)}
-                      </CardDescription>
-                    </CardContent>
-                  </Card>
-                </Link>
+                    </div>
+                    <CardTitle className="line-clamp-2 text-base">
+                      {project.title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <CardDescription>
+                      {formatDate(project.created_at)}
+                    </CardDescription>
+                    {!canOpenChat && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {project.status === 'analyzing' && '仕様書を分析中です...'}
+                        {project.status === 'estimating' && '見積りを作成中です...'}
+                        {project.status === 'completed' && '完了済み'}
+                        {project.status === 'rejected' && '却下済み'}
+                        {project.status === 'on_hold' && '保留中'}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
               )
+
+              if (canOpenChat) {
+                return (
+                  <Link key={project.id} href={`/projects/${project.id}/chat`}>
+                    {card}
+                  </Link>
+                )
+              }
+
+              return <div key={project.id}>{card}</div>
             })}
           </div>
         ) : (
