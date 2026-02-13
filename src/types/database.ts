@@ -244,7 +244,10 @@ export interface EstimateBatchRun {
   request_params: Record<string, unknown>
   target_change_request_ids: string[]
   succeeded_change_request_ids: string[]
-  failed_items: Array<Record<string, unknown>>
+  failed_items: Array<{
+    change_request_id: string
+    error: string
+  }>
   requested_count: number
   succeeded_count: number
   failed_count: number
@@ -260,10 +263,30 @@ export interface ExecutionTask {
   status: ExecutionTaskStatus
   priority: ImpactLevel
   due_at: string | null
+  owner_clerk_user_id?: string | null
+  owner_role?: InternalRole | null
   created_by_clerk_user_id: string | null
   metadata: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export type ExecutionTaskEventType = 'created' | 'status_changed' | 'owner_assigned' | 'note_added'
+
+export interface ExecutionTaskEvent {
+  id: string
+  task_id: string
+  project_id: string
+  change_request_id: string
+  event_type: ExecutionTaskEventType
+  actor_clerk_user_id: string | null
+  from_status: ExecutionTaskStatus | null
+  to_status: ExecutionTaskStatus | null
+  owner_clerk_user_id: string | null
+  owner_role: InternalRole | null
+  note: string | null
+  payload: Record<string, unknown>
+  created_at: string
 }
 
 export interface ChangeRequestBillableRule {

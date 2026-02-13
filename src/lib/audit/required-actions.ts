@@ -46,6 +46,11 @@ export const REQUIRED_AUDIT_ACTIONS: RequiredAuditAction[] = [
     category: 'intake',
   },
   {
+    action: 'execution_task.assign_owner',
+    file: 'src/app/api/execution-tasks/[id]/route.ts',
+    category: 'intake',
+  },
+  {
     action: 'approval_request.update',
     file: 'src/app/api/admin/approval-requests/[id]/route.ts',
     category: 'approval',

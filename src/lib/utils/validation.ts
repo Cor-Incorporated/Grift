@@ -215,9 +215,16 @@ export const sourceAnalysisRunRequestSchema = z.object({
 })
 
 export const executionTaskUpdateSchema = z.object({
-  status: z.enum(['todo', 'in_progress', 'done', 'blocked']),
+  status: z.enum(['todo', 'in_progress', 'done', 'blocked']).optional(),
   note: z.string().max(1000).optional(),
-})
+  owner_role: internalRoleSchema.optional(),
+  owner_clerk_user_id: z.string().min(1).max(120).optional(),
+}).refine(
+  (value) => Boolean(value.status || value.note || value.owner_role || value.owner_clerk_user_id),
+  {
+    message: '少なくとも1つの更新項目を指定してください',
+  }
+)
 
 export type CustomerInput = z.infer<typeof customerSchema>
 export type CreateProjectInput = z.infer<typeof createProjectSchema>

@@ -10,6 +10,8 @@ interface ExecutionTaskRow {
   status: 'todo' | 'in_progress' | 'done' | 'blocked'
   priority: 'low' | 'medium' | 'high' | 'critical'
   due_at: string | null
+  owner_clerk_user_id: string | null
+  owner_role: 'admin' | 'sales' | 'dev' | null
   created_at: string
   updated_at: string
 }
@@ -24,18 +26,32 @@ interface ChangeRequestRow {
   title: string
 }
 
+interface ExecutionTaskEventRow {
+  id: string
+  task_id: string
+  event_type: 'created' | 'status_changed' | 'owner_assigned' | 'note_added'
+  actor_clerk_user_id: string | null
+  from_status: string | null
+  to_status: string | null
+  owner_role: string | null
+  owner_clerk_user_id: string | null
+  note: string | null
+  created_at: string
+}
+
 export default async function ExecutionTasksPage() {
   const supabase = await createServiceRoleClient()
 
   const { data: tasks } = await supabase
     .from('execution_tasks')
-    .select('id, project_id, change_request_id, title, summary, status, priority, due_at, created_at, updated_at')
+    .select('id, project_id, change_request_id, title, summary, status, priority, due_at, owner_clerk_user_id, owner_role, created_at, updated_at')
     .order('created_at', { ascending: false })
     .limit(200)
 
   const rows = (tasks ?? []) as ExecutionTaskRow[]
   const projectIds = [...new Set(rows.map((row) => row.project_id))]
   const changeRequestIds = [...new Set(rows.map((row) => row.change_request_id))]
+  const taskIds = [...new Set(rows.map((row) => row.id))]
 
   let projectMap = new Map<string, string>()
   if (projectIds.length > 0) {
@@ -59,10 +75,29 @@ export default async function ExecutionTasksPage() {
     )
   }
 
+  let eventMap = new Map<string, ExecutionTaskEventRow[]>()
+  if (taskIds.length > 0) {
+    const { data: events } = await supabase
+      .from('execution_task_events')
+      .select('id, task_id, event_type, actor_clerk_user_id, from_status, to_status, owner_role, owner_clerk_user_id, note, created_at')
+      .in('task_id', taskIds)
+      .order('created_at', { ascending: false })
+      .limit(1000)
+
+    const grouped = new Map<string, ExecutionTaskEventRow[]>()
+    for (const event of (events ?? []) as ExecutionTaskEventRow[]) {
+      const list = grouped.get(event.task_id) ?? []
+      list.push(event)
+      grouped.set(event.task_id, list)
+    }
+    eventMap = grouped
+  }
+
   const normalized = rows.map((row) => ({
     ...row,
     project_title: projectMap.get(row.project_id) ?? '不明な案件',
     change_request_title: changeRequestMap.get(row.change_request_id) ?? '不明な変更要求',
+    events: eventMap.get(row.id) ?? [],
   }))
 
   return (
@@ -77,4 +112,3 @@ export default async function ExecutionTasksPage() {
     </div>
   )
 }
-

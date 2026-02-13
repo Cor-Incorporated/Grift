@@ -22,6 +22,19 @@ import {
 
 type ExecutionTaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked'
 type PriorityLevel = 'low' | 'medium' | 'high' | 'critical'
+type InternalRole = 'admin' | 'sales' | 'dev'
+
+interface ExecutionTaskEventItem {
+  id: string
+  event_type: 'created' | 'status_changed' | 'owner_assigned' | 'note_added'
+  actor_clerk_user_id: string | null
+  from_status: string | null
+  to_status: string | null
+  owner_role: string | null
+  owner_clerk_user_id: string | null
+  note: string | null
+  created_at: string
+}
 
 interface ExecutionTaskItem {
   id: string
@@ -34,8 +47,11 @@ interface ExecutionTaskItem {
   status: ExecutionTaskStatus
   priority: PriorityLevel
   due_at: string | null
+  owner_clerk_user_id: string | null
+  owner_role: InternalRole | null
   created_at: string
   updated_at: string
+  events: ExecutionTaskEventItem[]
 }
 
 interface ExecutionTaskBoardProps {
@@ -63,6 +79,20 @@ const PRIORITY_LABELS: Record<PriorityLevel, string> = {
   low: '低',
 }
 
+const ROLE_LABELS: Record<InternalRole, string> = {
+  admin: 'admin',
+  sales: 'sales',
+  dev: 'dev',
+}
+
+function eventTypeLabel(value: ExecutionTaskEventItem['event_type']): string {
+  if (value === 'created') return '作成'
+  if (value === 'status_changed') return '状態変更'
+  if (value === 'owner_assigned') return '担当更新'
+  if (value === 'note_added') return 'メモ'
+  return value
+}
+
 function formatDate(value: string | null): string {
   if (!value) return '-'
   return new Date(value).toLocaleString('ja-JP')
@@ -74,6 +104,9 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
   const [query, setQuery] = useState('')
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [draftStatusById, setDraftStatusById] = useState<Record<string, ExecutionTaskStatus>>({})
+  const [draftOwnerRoleById, setDraftOwnerRoleById] = useState<Record<string, InternalRole | 'unassigned'>>({})
+  const [draftOwnerUserById, setDraftOwnerUserById] = useState<Record<string, string>>({})
+  const [noteById, setNoteById] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
@@ -118,10 +151,11 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
     })
   }, [rows, statusFilter, query])
 
-  const updateStatus = async (id: string) => {
-    const nextStatus = draftStatusById[id]
-    if (!nextStatus) return
-
+  const patchTask = async (
+    id: string,
+    body: Record<string, unknown>,
+    successMessage: string
+  ) => {
     setError(null)
     setSuccess(null)
     setUpdatingId(id)
@@ -130,9 +164,7 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
       const response = await fetch(`/api/execution-tasks/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: nextStatus,
-        }),
+        body: JSON.stringify(body),
       })
       const payload = await response.json()
       if (!response.ok || !payload.success) {
@@ -146,17 +178,56 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
             ? {
                 ...row,
                 status: payload.data.status as ExecutionTaskStatus,
+                owner_role: (payload.data.owner_role ?? null) as InternalRole | null,
+                owner_clerk_user_id: (payload.data.owner_clerk_user_id ?? null) as string | null,
                 updated_at: payload.data.updated_at as string,
+                events: Array.isArray(payload.data.events)
+                  ? (payload.data.events as ExecutionTaskEventItem[])
+                  : row.events,
               }
             : row
         )
       )
-      setSuccess('タスク状態を更新しました')
+      setSuccess(successMessage)
     } catch {
       setError('タスク更新中にエラーが発生しました')
     } finally {
       setUpdatingId(null)
     }
+  }
+
+  const updateStatus = async (id: string) => {
+    const nextStatus = draftStatusById[id]
+    if (!nextStatus) return
+    await patchTask(
+      id,
+      {
+        status: nextStatus,
+        note: noteById[id] ?? undefined,
+      },
+      'タスク状態を更新しました'
+    )
+  }
+
+  const assignOwner = async (id: string) => {
+    const rawOwnerRole = draftOwnerRoleById[id]
+    const ownerRole = rawOwnerRole && rawOwnerRole !== 'unassigned' ? rawOwnerRole : undefined
+    const ownerClerkUserId = draftOwnerUserById[id]?.trim() || undefined
+
+    if (!ownerRole && !ownerClerkUserId) {
+      setError('担当を設定するには owner role または clerk user id を入力してください')
+      return
+    }
+
+    await patchTask(
+      id,
+      {
+        owner_role: ownerRole,
+        owner_clerk_user_id: ownerClerkUserId,
+        note: noteById[id] ?? undefined,
+      },
+      '担当を更新しました'
+    )
   }
 
   return (
@@ -261,6 +332,12 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
                     <Badge variant={row.due_at ? 'secondary' : 'outline'}>
                       期限: {formatDate(row.due_at)}
                     </Badge>
+                    <Badge variant={row.owner_role ? 'secondary' : 'outline'}>
+                      owner role: {row.owner_role ? ROLE_LABELS[row.owner_role] : '-'}
+                    </Badge>
+                    <Badge variant={row.owner_clerk_user_id ? 'secondary' : 'outline'}>
+                      owner id: {row.owner_clerk_user_id ?? '-'}
+                    </Badge>
                   </div>
                 </div>
                 <CardDescription>
@@ -296,9 +373,86 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
                     {updatingId === row.id ? '更新中...' : '状態を更新'}
                   </Button>
                 </div>
+                <div className="grid gap-2 md:grid-cols-[220px,1fr,auto]">
+                  <Select
+                    value={draftOwnerRoleById[row.id] ?? row.owner_role ?? 'unassigned'}
+                    onValueChange={(value) =>
+                      setDraftOwnerRoleById((prev) => ({
+                        ...prev,
+                        [row.id]: value as InternalRole | 'unassigned',
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">未割当</SelectItem>
+                      <SelectItem value="admin">admin</SelectItem>
+                      <SelectItem value="sales">sales</SelectItem>
+                      <SelectItem value="dev">dev</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    value={draftOwnerUserById[row.id] ?? row.owner_clerk_user_id ?? ''}
+                    onChange={(event) =>
+                      setDraftOwnerUserById((prev) => ({
+                        ...prev,
+                        [row.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="owner clerk user id (optional)"
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={() => assignOwner(row.id)}
+                    disabled={updatingId === row.id}
+                  >
+                    {updatingId === row.id ? '更新中...' : '担当を更新'}
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">更新メモ（任意）</Label>
+                  <Input
+                    value={noteById[row.id] ?? ''}
+                    onChange={(event) =>
+                      setNoteById((prev) => ({
+                        ...prev,
+                        [row.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="例: 本番障害対応のため優先着手"
+                  />
+                </div>
                 <p className="text-xs text-muted-foreground">
                   created: {formatDate(row.created_at)} / updated: {formatDate(row.updated_at)}
                 </p>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium">変更履歴</p>
+                  {row.events.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">履歴はまだありません。</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {row.events.slice(0, 5).map((event) => (
+                        <div
+                          key={event.id}
+                          className="rounded border px-2 py-1 text-xs text-muted-foreground"
+                        >
+                          <span className="font-medium text-foreground">{eventTypeLabel(event.event_type)}</span>
+                          {' '}
+                          {event.from_status || event.to_status
+                            ? `(${event.from_status ?? '-'} -> ${event.to_status ?? '-'})`
+                            : ''}
+                          {' '}
+                          owner:{event.owner_role ?? '-'}
+                          {' '}
+                          at:{formatDate(event.created_at)}
+                          {event.note ? ` / note: ${event.note}` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ))
@@ -307,4 +461,3 @@ export function ExecutionTaskBoard({ tasks }: ExecutionTaskBoardProps) {
     </div>
   )
 }
-

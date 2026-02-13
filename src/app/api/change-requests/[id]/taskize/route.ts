@@ -140,6 +140,11 @@ export async function POST(
       '## 見積メモ',
       toEstimateSummary(estimate),
     ]
+    const ownerRole = internalRoles.has('dev')
+      ? 'dev'
+      : internalRoles.has('sales')
+        ? 'sales'
+        : 'admin'
 
     const { data: createdTask, error: taskInsertError } = await supabase
       .from('execution_tasks')
@@ -151,6 +156,8 @@ export async function POST(
         status: 'todo',
         priority: changeRequest.impact_level,
         due_at: changeRequest.requested_deadline_at ?? null,
+        owner_clerk_user_id: authUser.clerkUserId,
+        owner_role: ownerRole,
         created_by_clerk_user_id: authUser.clerkUserId,
         metadata: {
           source: 'ready_packet',
@@ -177,6 +184,24 @@ export async function POST(
       })
       .eq('id', changeRequest.id)
 
+    await supabase
+      .from('execution_task_events')
+      .insert({
+        task_id: createdTask.id,
+        project_id: createdTask.project_id,
+        change_request_id: createdTask.change_request_id,
+        event_type: 'created',
+        actor_clerk_user_id: authUser.clerkUserId,
+        from_status: null,
+        to_status: createdTask.status,
+        owner_clerk_user_id: createdTask.owner_clerk_user_id ?? authUser.clerkUserId,
+        owner_role: createdTask.owner_role ?? ownerRole,
+        note: 'ready_packet から初回タスク化',
+        payload: {
+          estimate_id: estimate.id,
+        },
+      })
+
     await writeAuditLog(supabase, {
       actorClerkUserId: authUser.clerkUserId,
       action: 'change_request.taskize',
@@ -201,4 +226,3 @@ export async function POST(
     return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
 }
-

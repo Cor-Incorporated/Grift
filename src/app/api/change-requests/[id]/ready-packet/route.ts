@@ -312,6 +312,14 @@ export async function GET(
                 typeof executionTask.due_at === 'string'
                   ? executionTask.due_at
                   : null,
+              owner_role:
+                typeof executionTask.owner_role === 'string'
+                  ? executionTask.owner_role
+                  : null,
+              owner_clerk_user_id:
+                typeof executionTask.owner_clerk_user_id === 'string'
+                  ? executionTask.owner_clerk_user_id
+                  : null,
               created_at:
                 typeof executionTask.created_at === 'string'
                   ? executionTask.created_at

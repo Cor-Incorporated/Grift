@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { toFailureSummaryText } from '@/lib/intake/batch-run-failures'
 import { sortIntakeQueue } from '@/lib/intake/queue-order'
 import { cn } from '@/lib/utils'
 
@@ -129,6 +130,8 @@ interface ReadyPacketView {
     status: string
     priority: string
     due_at: string | null
+    owner_role: string | null
+    owner_clerk_user_id: string | null
     created_at: string | null
   } | null
   next_actions: string[]
@@ -142,6 +145,7 @@ interface IntakeWorkspaceProps {
     requested_count: number
     succeeded_count: number
     failed_count: number
+    failed_items: Array<{ change_request_id: string; error: string }>
     created_at: string
   }>
 }
@@ -838,6 +842,9 @@ export function IntakeWorkspace({ projects, queue, batchRuns }: IntakeWorkspaceP
                       <Badge variant={run.failed_count > 0 ? 'destructive' : 'outline'}>
                         ng: {run.failed_count}
                       </Badge>
+                      <Badge variant={run.failed_count > 0 ? 'secondary' : 'outline'}>
+                        {toFailureSummaryText(run.failed_items)}
+                      </Badge>
                       <span className="text-xs text-muted-foreground">{formatDate(run.created_at)}</span>
                     </div>
                   </div>
@@ -1061,6 +1068,8 @@ export function IntakeWorkspace({ projects, queue, batchRuns }: IntakeWorkspaceP
                       <p>task_id: {packet.execution_task.id ?? '-'}</p>
                       <p>status: {packet.execution_task.status}</p>
                       <p>priority: {packet.execution_task.priority}</p>
+                      <p>owner_role: {packet.execution_task.owner_role ?? '-'}</p>
+                      <p>owner_id: {packet.execution_task.owner_clerk_user_id ?? '-'}</p>
                       <p>due: {formatDate(packet.execution_task.due_at)}</p>
                       <p className="text-xs text-muted-foreground">
                         created at: {formatDate(packet.execution_task.created_at)}

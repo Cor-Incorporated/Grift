@@ -50,6 +50,7 @@ interface EstimateBatchRunRow {
   requested_count: number
   succeeded_count: number
   failed_count: number
+  failed_items: Array<{ change_request_id: string; error: string }>
   created_at: string
 }
 
@@ -78,7 +79,7 @@ export default async function IntakePage() {
       .limit(200),
     supabase
       .from('estimate_batch_runs')
-      .select('id, requested_count, succeeded_count, failed_count, created_at')
+      .select('id, requested_count, succeeded_count, failed_count, failed_items, created_at')
       .order('created_at', { ascending: false })
       .limit(20),
   ])
@@ -163,6 +164,7 @@ export default async function IntakePage() {
     requested_count: row.requested_count,
     succeeded_count: row.succeeded_count,
     failed_count: row.failed_count,
+    failed_items: Array.isArray(row.failed_items) ? row.failed_items : [],
     created_at: row.created_at,
   }))
 
