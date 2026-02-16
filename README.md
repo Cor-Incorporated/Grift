@@ -1,173 +1,196 @@
 # BenevolentDirector
 
-非構造な依頼文（Slack風の雑多な指示を含む）を、要件化・見積り・着手パケットまで変換する Next.js アプリです。  
-現在は **ダッシュボード完結型MVP** として運用しています。
+AI 執事が顧客の曖昧な依頼を完璧な仕様書と見積りに変換し、Linear.app で開発タスクを管理する案件管理システム。
 
-## 現在の公開判定（2026-02-13）
+## できること
 
-- 登壇デモ用途: **GO（条件付き）**
-- 一般公開（本番運用）: **未完了項目あり**
+| 機能 | 説明 |
+|------|------|
+| AI 一問一答ヒアリング | 案件タイプ別（新規/バグ/修正/機能追加）にアキネーター形式で要件を詰める |
+| 自動仕様書生成 | ヒアリング完了時に Markdown 仕様書を自動出力 |
+| 自動見積り生成 | 仕様書から工数・市場比較・価格を自動算出（バグ/修正は工数のみ） |
+| GitHub リポジトリ解析 | コードベース分析 + Velocity メトリクスで見積り精度を向上 |
+| 市場エビデンス取得 | Grok API で類似案件の市場単価を自動調査 |
+| Go/No-Go 判定 | 収益性・技術リスク・キャパシティを総合評価して受注判定 |
+| Linear 連携 | 承認済み見積りから Linear の Project/Cycle/Issue を自動作成 |
+| 管理者ダッシュボード | 全案件の状態管理、対話ログ閲覧、見積り調整 |
+| 添付ファイル解析 | ZIP/PDF/画像/URL を AI が解析し、対話・見積りに反映 |
 
-条件付き GO の条件:
+## 案件タイプ別の見積り方式
 
-1. `/admin/intake` で「3ケースを一括起票」を実行
-2. 「登壇デモ準備ゲート」が `READY` 表示になること
-3. CI の `quality-gate` が green であること
-
-補足:
-
-- 直近 PR: [#14](https://github.com/Cor-Incorporated/BenevolentDirector/pull/14)
-- 状態監査: `docs/plans/demo-readiness-audit-2026-02-13.md`
-
-## MVPスコープ（固定）
-
-- 入力チャネル: Web ダッシュボード
-- 連携スコープ外: Slack 自動連携、Stripe 決済連携
-- 目的: 依頼の要件化と、エンジニア着手までの時間短縮
-
-## 実装済み機能
-
-1. 自由文からの意図分解と分割起票
-2. 要件充足率（completeness）判定と不足質問生成
-3. `needs_info` / `ready_to_start` キュー運用
-4. 変更要求ごとの Ready Packet 表示
-5. 概算見積り（一括実行含む）と失敗履歴
-6. 実行タスク化、担当者アサイン、進捗イベント記録
-7. 登壇用デモランナー（3ケース一括起票、履歴、成否判定）
-8. 添付解析入力（ZIP/PDF/画像、Repository URL）
-9. Admin RBAC（`/admin` は admin ロールのみ）
-10. 監査ログ（主要アクション）
-
-## 未完了・制約
-
-1. E2E は現状ホーム画面スモーク中心（業務フローE2Eは不足）
-2. 顧客向け PDF 出力や差分見積り提出フォーマットは未完成
-3. dependency-review はフラグ制御で現在は `skipping`
-4. Slack など外部チャネル取り込みは未実装（仕様上スコープ外）
+| タイプ | 見積り | 金額表示 |
+|--------|--------|----------|
+| `new_project` | 市場比較（工数 + 市場対比 + 価格エンジン） | あり |
+| `feature_addition` | ハイブリッド（工数 + 市場比較） | あり |
+| `bug_report` | 工数のみ（調査/修正/テスト/バッファ） | なし（保証範囲） |
+| `fix_request` | 工数のみ | なし（契約範囲） |
 
 ## セットアップ
 
-### 前提
+### 前提条件
 
-- Node.js 20.x
-- npm
+- Node.js 20+
+- npm 10+
 - Supabase プロジェクト
-- Clerk プロジェクト
+- Clerk アカウント
 
-### 1. 環境変数
-
-`.env.example` を元に `.env.local` を作成し、最低限以下を設定してください。
-
-- Supabase:
-  - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY`
-- Clerk:
-  - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`（ダミー不可）
-  - `CLERK_SECRET_KEY`
-  - `ADMIN_EMAIL_ALLOWLIST`（例: `company@cor-jp.com`）
-- AI:
-  - `ANTHROPIC_API_KEY`
-  - `XAI_API_KEY`
-
-### 2. 依存関係
+### インストール
 
 ```bash
+git clone https://github.com/Cor-Incorporated/BenevolentDirector.git
+cd BenevolentDirector
 npm ci
+cp .env.example .env.local
+# .env.local に各種 API キーを設定（下表参照）
 ```
 
-### 3. DBマイグレーション
+### 環境変数
 
-`supabase/migrations` の SQL を適用してください。  
-このリポジトリでは migration runner を同梱していないため、次のいずれかで適用します。
+`.env.example` を `.env.local` にコピーして設定：
 
-1. Supabase CLI (`supabase db push`)
-2. Supabase SQL Editor で順次実行
+| 変数グループ | 必須 | 取得元 |
+|-------------|------|--------|
+| Supabase (`NEXT_PUBLIC_SUPABASE_URL`, `ANON_KEY`, `SERVICE_ROLE_KEY`) | 必須 | [Supabase Dashboard](https://supabase.com/dashboard) > Settings > API |
+| Clerk (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`) | 必須 | [Clerk Dashboard](https://dashboard.clerk.com)（ダミー不可） |
+| Anthropic (`ANTHROPIC_API_KEY`) | 必須 | [Anthropic Console](https://console.anthropic.com/settings/keys) |
+| xAI Grok (`XAI_API_KEY`) | 推奨 | [xAI Console](https://console.x.ai/) |
+| GitHub App (`GITHUB_APP_*`, `GITHUB_TOKEN`) | 任意 | [GitHub Settings](https://github.com/settings/apps) |
+| Linear (`LINEAR_API_KEY`, `LINEAR_DEFAULT_TEAM_ID`) | 任意 | [Linear Settings](https://linear.app/settings/api) |
+| RBAC (`ADMIN_EMAIL_ALLOWLIST`) | 必須 | 管理者メールアドレス（カンマ区切り） |
 
-### 4. 起動
+### DB マイグレーション
 
 ```bash
-npm run dev
+# Supabase CLI
+supabase db push
+
+# または Supabase SQL Editor で supabase/migrations/ 内の SQL を順次実行
 ```
 
-`http://localhost:3000`
-
-## 登壇デモ手順（最短）
-
-1. admin 権限ユーザーでログイン
-2. `/admin/intake` を開く
-3. 対象案件を選択
-4. 「3ケースを一括起票」を実行
-5. 「登壇デモ準備ゲート」が `READY` になったことを確認
-6. キューから `ready_to_start` を開き、Ready Packet を提示
-7. 必要なら概算見積りを実行し、次アクションまで表示
-
-添付解析デモを入れる場合:
-
-1. 顧客チャット画面で ZIP/PDF/画像を添付、または Repository URL を入力
-2. 管理画面の案件詳細で解析結果を確認
-
-## テスト
+### 起動
 
 ```bash
-npm run lint
-npm run type-check
-npm run test
-npm run test:e2e
+npm run dev       # http://localhost:3000 (Turbopack)
 ```
+
+## コマンド一覧
+
+```bash
+npm run dev              # 開発サーバー (Turbopack)
+npm run build            # 本番ビルド (webpack)
+npm run lint             # ESLint
+npm run type-check       # TypeScript 型チェック
+npm run test             # ユニットテスト (Vitest)
+npm run test:watch       # テスト (ウォッチモード)
+npm run test:coverage    # カバレッジ付きテスト
+npm run test:e2e         # E2E テスト (Playwright)
+npm run ci:migrations    # マイグレーションファイル順序検証
+```
+
+## 技術スタック
+
+| レイヤー | 技術 |
+|---------|------|
+| Frontend | Next.js 16 (App Router, React 19) + shadcn/ui + Tailwind CSS v4 |
+| Auth | Clerk (RBAC: admin / sales / dev / customer) |
+| Database | Supabase (PostgreSQL + RLS) |
+| AI (対話・解析) | Claude (Anthropic SDK) |
+| AI (市場調査) | xAI Grok API |
+| Task Management | Linear SDK (`@linear/sdk`) |
+| Testing | Vitest + Testing Library + Playwright |
+| Validation | Zod |
+
+## プロジェクト構成
+
+```
+src/
+├── app/                    # Next.js ページ & API ルート
+│   ├── api/                # 全 36 エンドポイント（レート制限適用済み）
+│   │   ├── health/         # ヘルスチェック（認証不要）
+│   │   ├── linear/         # Linear Webhook 受信
+│   │   └── admin/          # 管理者 API (github, linear, profile)
+│   ├── admin/              # 管理者ダッシュボード
+│   ├── dashboard/          # 顧客ダッシュボード
+│   └── projects/           # プロジェクト作成・チャット
+├── components/
+│   ├── ui/                 # shadcn/ui プリミティブ
+│   ├── chat/               # チャット UI
+│   └── estimates/          # 見積り表示 + Linear 同期ウィジェット
+├── lib/
+│   ├── ai/                 # Claude / Grok クライアント + システムプロンプト
+│   ├── approval/           # 承認ゲート + Go/No-Go 評価
+│   ├── estimates/          # 自動見積り + モジュール分解 + 類似案件検索
+│   ├── github/             # リポジトリ発見 + Velocity 分析
+│   ├── linear/             # Linear SDK クライアント + 同期 + Webhook 検証
+│   ├── market/             # 市場エビデンス (Grok + フォールバック)
+│   ├── pricing/            # 価格エンジン + ポリシー管理
+│   ├── intake/             # Intake パイプライン
+│   └── utils/              # レート制限, 構造化ログ, env 検証
+├── types/                  # TypeScript 型定義 (database.ts = SSOT)
+└── test/                   # テストセットアップ
+```
+
+## 主要画面
+
+| パス | 対象 | 機能 |
+|------|------|------|
+| `/dashboard` | 顧客 | プロジェクト一覧・新規作成 |
+| `/projects/[id]/chat` | 顧客 | AI ヒアリングチャット |
+| `/projects/[id]` | 顧客 | 仕様書・見積り閲覧 |
+| `/admin` | 管理者 | ダッシュボード（全案件俯瞰） |
+| `/admin/projects/[id]` | 管理者 | 案件詳細 + 見積り調整 + Linear 同期 |
+| `/admin/github` | 管理者 | GitHub リポジトリ管理 |
+
+## API エンドポイント（主要）
+
+### 顧客向け
+| メソッド | パス | 説明 |
+|---------|------|------|
+| POST | `/api/conversations/stream` | SSE チャットストリーミング |
+| POST | `/api/projects` | プロジェクト作成 |
+| GET | `/api/projects/[id]` | プロジェクト詳細 |
+| POST | `/api/estimates` | 見積り生成 |
+
+### 管理者向け
+| メソッド | パス | 説明 |
+|---------|------|------|
+| POST | `/api/admin/linear/sync` | Linear 手動同期 |
+| GET | `/api/admin/linear/teams` | Linear チーム一覧 |
+| POST | `/api/admin/github/repos` | GitHub リポジトリ同期 |
+| POST | `/api/admin/github/repos/[id]` | Velocity 分析実行 |
+
+### システム
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/health` | ヘルスチェック（認証不要、LB/監視用） |
+| POST | `/api/linear/webhooks` | Linear Webhook 受信 |
 
 ## CI/CD
 
 ### CI (`.github/workflows/ci.yml`)
 
-- lint
-- type-check
-- unit-tests (coverage)
-- migration-check
-- build
-- e2e-smoke
-- dependency-review（フラグ有効時）
-- quality-gate（最終判定）
+`quality-gate` ジョブが以下すべての通過を要求：
+- `lint` → `type-check` → `unit-tests` (coverage) → `migration-check` → `build` → `e2e-smoke`
 
 ### CD (`.github/workflows/cd.yml`)
 
-- `main` push 時にビルド
-- Vercel シークレットが揃っている場合のみ自動デプロイ
+- `main` push 時に Vercel 自動デプロイ（シークレット設定時）
 
-## 主要ルート
+## セキュリティ
 
-- 顧客:
-  - `/`
-  - `/dashboard`
-  - `/projects/new`
-- 管理:
-  - `/admin`
-  - `/admin/intake`
-  - `/admin/execution-tasks`
-  - `/admin/approvals`
-  - `/admin/projects`
-  - `/admin/estimates`
-  - `/admin/pricing`
+- 全 API エンドポイントにレート制限適用（429 + Retry-After）
+- CSP, HSTS, X-Frame-Options 等のセキュリティヘッダー設定済み
+- Linear Webhook は HMAC-SHA256 署名検証
+- Clerk RBAC による管理者/顧客アクセス制御
+- Zod による全入力バリデーション
 
-## APIハイライト
+## 開発ガイドライン
 
-- Intake:
-  - `POST /api/intake/parse`
-  - `POST /api/intake/ingest`
-  - `POST /api/intake/follow-up`
-  - `POST /api/intake/demo-run`
-- Change Request:
-  - `POST /api/change-requests/:id/estimate`
-  - `GET /api/change-requests/:id/ready-packet`
-  - `POST /api/change-requests/:id/taskize`
-- Attachments / Source Analysis:
-  - `POST /api/files`
-  - `POST /api/source-analysis/repository`
-  - `POST /api/source-analysis/jobs/run`
+- TypeScript, 2スペースインデント, シングルクォート, セミコロンなし
+- kebab-case ファイル名
+- `src/lib/` 内では `logger` を使用（`console.error/log` 禁止）
+- 詳細は [CLAUDE.md](./CLAUDE.md) を参照
 
-## 関連ドキュメント
+## ライセンス
 
-- `docs/plans/sprint-n5-mvp-dashboard-only-2026-02-13.md`
-- `docs/plans/sprint-n6-day4-2026-02-13.md`
-- `docs/plans/sprint-n7-day1-2026-02-13.md`
-- `docs/plans/demo-readiness-audit-2026-02-13.md`
+Private - COR Incorporated
