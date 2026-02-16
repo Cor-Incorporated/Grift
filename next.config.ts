@@ -6,11 +6,11 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://cdn.clerk.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+      "script-src 'self' 'unsafe-inline' https://cdn.clerk.com https://*.clerk.accounts.dev https://clerk.cor-jp.com https://challenges.cloudflare.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: https: blob:",
-      "connect-src 'self' https://*.clerk.accounts.dev https://clerk.com https://clerk-telemetry.com https://*.supabase.co wss://*.supabase.co https://dev-bd.cor-jp.com",
+      "connect-src 'self' https://*.clerk.accounts.dev https://clerk.cor-jp.com https://clerk.com https://clerk-telemetry.com https://*.supabase.co wss://*.supabase.co https://dev-bd.cor-jp.com",
       "worker-src 'self' blob:",
       "frame-src https://challenges.cloudflare.com",
       "base-uri 'self'",
