@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -46,7 +47,13 @@ export function ChatMessages({
                 : 'bg-muted'
             )}
           >
-            <p className="whitespace-pre-wrap">{message.content}</p>
+            {message.role === 'assistant' ? (
+              <div className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                <ReactMarkdown>{message.content}</ReactMarkdown>
+              </div>
+            ) : (
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            )}
           </div>
           {message.role === 'user' &&
             message.id === lastUserMessageId &&

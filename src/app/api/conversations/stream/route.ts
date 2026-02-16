@@ -16,6 +16,15 @@ import type { ProjectType, ConversationMetadata, ConcreteProjectType, BusinessLi
 
 const METADATA_DELIMITER = '---METADATA---'
 
+function isAnthropicTransientError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase()
+    if (msg.includes('overloaded') || msg.includes('529')) return true
+    if ('status' in error && (error as { status: number }).status === 529) return true
+  }
+  return false
+}
+
 interface AIMetadata {
   category: string
   confidence_score: number
@@ -160,6 +169,7 @@ export async function POST(request: Request) {
 
         try {
           let accumulated = ''
+          let sentUpTo = 0
           let metadataReached = false
 
           const fullText = await sendMessageStream(systemPrompt, messages, {
@@ -175,38 +185,22 @@ export async function POST(request: Request) {
 
               if (delimiterIndex !== -1) {
                 metadataReached = true
-                const beforeDelimiter = accumulated.slice(
-                  accumulated.length - token.length,
-                  delimiterIndex - (accumulated.length - token.length)
-                )
-                if (beforeDelimiter.length > 0) {
-                  sendEvent('token', { token: beforeDelimiter })
+                if (delimiterIndex > sentUpTo) {
+                  sendEvent('token', { token: accumulated.slice(sentUpTo, delimiterIndex) })
                 }
               } else {
-                const lookback = METADATA_DELIMITER.length - 1
-                const safeEnd = accumulated.length - lookback
-                const prevSafe = accumulated.length - token.length - lookback
-
-                if (safeEnd > 0 && safeEnd > prevSafe) {
-                  const safeToken = accumulated.slice(
-                    Math.max(0, prevSafe),
-                    safeEnd
-                  )
-                  if (safeToken.length > 0) {
-                    sendEvent('token', { token: safeToken })
-                  }
+                const safeEnd = accumulated.length - (METADATA_DELIMITER.length - 1)
+                if (safeEnd > sentUpTo) {
+                  sendEvent('token', { token: accumulated.slice(sentUpTo, safeEnd) })
+                  sentUpTo = safeEnd
                 }
               }
             },
             signal: request.signal,
           })
 
-          if (!metadataReached) {
-            const lookback = METADATA_DELIMITER.length - 1
-            const remaining = accumulated.slice(accumulated.length - lookback)
-            if (remaining.length > 0) {
-              sendEvent('token', { token: remaining })
-            }
+          if (!metadataReached && sentUpTo < accumulated.length) {
+            sendEvent('token', { token: accumulated.slice(sentUpTo) })
           }
 
           const { message, metadata: aiMetadata } = parseStructuredResponse(fullText)
@@ -444,8 +438,11 @@ export async function POST(request: Request) {
             return
           }
 
-          const errorMessage = error instanceof Error ? error.message : 'ストリーミングエラー'
-          sendEvent('error', { error: errorMessage })
+          const retryable = isAnthropicTransientError(error)
+          const errorMessage = retryable
+            ? 'AIサービスが一時的に混雑しています。しばらく待ってから再度お試しください。'
+            : error instanceof Error ? error.message : 'ストリーミングエラー'
+          sendEvent('error', { error: errorMessage, retryable })
           controller.close()
         }
       },
