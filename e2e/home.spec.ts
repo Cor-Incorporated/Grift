@@ -16,7 +16,7 @@ test.describe('Home Page', () => {
   test('should navigate to new project page on CTA click', async ({ page }) => {
     await page.goto('/')
 
-    await page.click('text=AI 執事に相談する')
+    await page.click('text=AI セールスエンジニアに相談する')
 
     await expect(page).toHaveURL(/\/projects\/new|\/sign-up/)
   })

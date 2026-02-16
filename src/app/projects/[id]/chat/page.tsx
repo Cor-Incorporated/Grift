@@ -25,6 +25,14 @@ export default function ChatPage() {
   const [lastSentContent, setLastSentContent] = useState<string | null>(null)
   const [businessLine, setBusinessLine] = useState<string | null>(null)
   const [goNoGoDecision, setGoNoGoDecision] = useState<string | null>(null)
+  const [estimateProgress, setEstimateProgress] = useState<'idle' | 'spec_generating' | 'estimating' | 'complete' | 'error'>('idle')
+  const [estimateSummary, setEstimateSummary] = useState<{
+    totalHours: number
+    estimateMode?: string
+    marketPrice?: number
+    ourPrice?: number
+    savingsPercent?: number
+  } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const initialMessageSentRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -64,6 +72,7 @@ export default function ChatPage() {
             const meta = lastAssistant.metadata as ConversationMetadata
             if (meta.is_complete) {
               setIsComplete(true)
+              setEstimateProgress('complete')
             }
             if (meta.confirmed_categories?.length) {
               setConfirmedCategories(meta.confirmed_categories)
@@ -173,6 +182,7 @@ export default function ChatPage() {
                 }
                 if (data.is_complete) {
                   setIsComplete(true)
+                  setEstimateProgress('spec_generating')
                 }
                 if (data.classified_type) {
                   setProjectType(data.classified_type)
@@ -180,12 +190,20 @@ export default function ChatPage() {
               }
 
               if ('estimate_id' in data) {
-                // Estimate auto-generated
+                setEstimateProgress('complete')
+                setEstimateSummary({
+                  totalHours: data.total_hours as number,
+                  estimateMode: data.estimate_mode as string | undefined,
+                  marketPrice: data.market_price as number | undefined,
+                  ourPrice: data.our_price as number | undefined,
+                  savingsPercent: data.savings_percent as number | undefined,
+                })
               }
 
               // business_line_classified イベント
               if ('business_line' in data && 'confidence' in data) {
                 setBusinessLine(data.business_line as string)
+                setEstimateProgress('estimating')
               }
 
               // go_no_go_decision イベント
@@ -201,6 +219,9 @@ export default function ChatPage() {
               if ('error' in data && !('token' in data) && !('message_id' in data)) {
                 setError(data.error)
                 setErrorRetryable(!!data.retryable)
+                if (estimateProgress === 'spec_generating' || estimateProgress === 'estimating') {
+                  setEstimateProgress('error')
+                }
               }
             } catch {
               // Skip invalid JSON
@@ -368,6 +389,8 @@ export default function ChatPage() {
         isStreaming={isStreaming}
         choices={choices}
         isComplete={isComplete}
+        estimateProgress={estimateProgress}
+        estimateSummary={estimateSummary}
       />
     </div>
   )

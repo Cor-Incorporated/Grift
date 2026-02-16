@@ -51,8 +51,8 @@ export default function NewProjectPage() {
   return (
     <div className="flex min-h-screen items-center justify-center">
       <div className="text-center">
-        <div className="mb-4 text-4xl">🎩</div>
-        <p className="text-lg font-medium">AI 執事を準備しています...</p>
+        <div className="mb-4 text-4xl">💼</div>
+        <p className="text-lg font-medium">AI セールスエンジニアを準備しています...</p>
         <p className="mt-2 text-sm text-muted-foreground">
           まもなくチャットが始まります
         </p>

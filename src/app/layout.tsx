@@ -6,7 +6,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'The Benevolent Dictator',
-  description: 'AI執事が完璧な仕様書と反論不能の見積りを自動生成する高効率案件管理システム',
+  description: 'AI セールスエンジニアが完璧な仕様書と反論不能の見積りを自動生成する高効率案件管理システム',
 }
 
 export default function RootLayout({

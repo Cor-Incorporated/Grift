@@ -79,10 +79,10 @@ export default function OnboardingPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-background to-muted/20">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mb-2 text-4xl">🎩</div>
+          <div className="mb-2 text-4xl">💼</div>
           <CardTitle className="text-2xl">初期設定</CardTitle>
           <CardDescription>
-            AI執事がお客様の情報を記憶いたします。次回以降、入力の手間が省けます。
+            AI セールスエンジニアがお客様の情報を記憶いたします。次回以降、入力の手間が省けます。
           </CardDescription>
         </CardHeader>
         <CardContent>

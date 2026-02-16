@@ -24,7 +24,7 @@ test.describe('Sales Engineer Pipeline - E2E', () => {
     expect(hasBusinessLineBadgePattern).toBe(true)
 
     // Verify the home page CTA button exists to navigate to project creation
-    const ctaButton = page.locator('text=AI 執事に相談する')
+    const ctaButton = page.locator('text=AI セールスエンジニアに相談する')
     await expect(ctaButton).toBeVisible()
   })
 
@@ -64,7 +64,7 @@ test.describe('Sales Engineer Pipeline - E2E', () => {
     await page.goto('/')
 
     // Click the CTA button
-    await page.click('text=AI 執事に相談する')
+    await page.click('text=AI セールスエンジニアに相談する')
 
     // Should navigate to project creation or sign-up page
     await expect(page).toHaveURL(/\/projects\/new|\/sign-up|\/sign-in/)

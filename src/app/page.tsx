@@ -12,7 +12,7 @@ export default async function HomePage() {
       <header className="border-b bg-background/80 backdrop-blur-sm">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🎩</span>
+            <span className="text-2xl">💼</span>
             <h1 className="text-xl font-bold">The Benevolent Dictator</h1>
           </div>
           <div className="flex items-center gap-3">
@@ -42,18 +42,18 @@ export default async function HomePage() {
 
       <main className="container mx-auto px-4 py-24">
         <div className="mx-auto max-w-2xl text-center">
-          <span className="text-6xl">🎩</span>
+          <span className="text-6xl">💼</span>
           <h2 className="mt-6 text-4xl font-bold tracking-tight">
             The Benevolent Dictator
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
-            AI 執事が何でもお伺いします
+            AI セールスエンジニアが何でもお伺いします
           </p>
 
           <div className="mt-10">
             <Link href={userId ? '/projects/new' : '/sign-up?redirect_url=/projects/new'}>
               <Button size="lg" className="h-14 px-10 text-lg">
-                AI 執事に相談する
+                AI セールスエンジニアに相談する
               </Button>
             </Link>
           </div>

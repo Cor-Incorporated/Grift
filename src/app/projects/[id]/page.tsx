@@ -134,7 +134,7 @@ export default async function CustomerProjectDetailPage({
               <Link href="/dashboard" aria-label="ダッシュボードに戻る">← ダッシュボード</Link>
             </Button>
             <div className="flex items-center gap-2">
-              <span className="text-2xl" role="img" aria-label="top hat">🎩</span>
+              <span className="text-2xl" role="img" aria-label="briefcase">💼</span>
               <h1 className="text-lg font-bold tracking-tight">The Benevolent Dictator</h1>
             </div>
           </div>

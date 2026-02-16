@@ -120,7 +120,7 @@ describe.runIf(!!process.env.ANTHROPIC_API_KEY)('Full Customer Journey - Live AP
     // ------------------------------------------------------------------
     const specPrompt = getSpecGenerationPrompt('new_project')
     const conversationContext = conversationHistory
-      .map((m) => `${m.role === 'user' ? '顧客' : 'AI執事'}: ${m.content.split('---METADATA---')[0].trim()}`)
+      .map((m) => `${m.role === 'user' ? '顧客' : 'AI SE'}: ${m.content.split('---METADATA---')[0].trim()}`)
       .join('\n\n')
 
     const specMarkdown = await sendMessage(specPrompt, [
@@ -215,7 +215,7 @@ describe.runIf(!!process.env.ANTHROPIC_API_KEY)('Full Customer Journey - Live AP
     // ------------------------------------------------------------------
     const specPrompt = getSpecGenerationPrompt('new_project')
     const conversationContext = conversationHistory
-      .map((m) => `${m.role === 'user' ? '顧客' : 'AI執事'}: ${m.content.split('---METADATA---')[0].trim()}`)
+      .map((m) => `${m.role === 'user' ? '顧客' : 'AI SE'}: ${m.content.split('---METADATA---')[0].trim()}`)
       .join('\n\n')
 
     const specMarkdown = await sendMessage(specPrompt, [
@@ -331,7 +331,7 @@ describe.runIf(!!process.env.ANTHROPIC_API_KEY)('Full Customer Journey - Live AP
     // ------------------------------------------------------------------
     const specPrompt = getSpecGenerationPrompt('bug_report')
     const conversationContext = conversationHistory
-      .map((m) => `${m.role === 'user' ? '顧客' : 'AI執事'}: ${m.content.split('---METADATA---')[0].trim()}`)
+      .map((m) => `${m.role === 'user' ? '顧客' : 'AI SE'}: ${m.content.split('---METADATA---')[0].trim()}`)
       .join('\n\n')
 
     const specMarkdown = await sendMessage(specPrompt, [
@@ -413,7 +413,7 @@ describe.runIf(!!process.env.ANTHROPIC_API_KEY)('Full Customer Journey - Live AP
     // ------------------------------------------------------------------
     const specPrompt = getSpecGenerationPrompt('feature_addition')
     const conversationContext = conversationHistory
-      .map((m) => `${m.role === 'user' ? '顧客' : 'AI執事'}: ${m.content.split('---METADATA---')[0].trim()}`)
+      .map((m) => `${m.role === 'user' ? '顧客' : 'AI SE'}: ${m.content.split('---METADATA---')[0].trim()}`)
       .join('\n\n')
 
     const specMarkdown = await sendMessage(specPrompt, [

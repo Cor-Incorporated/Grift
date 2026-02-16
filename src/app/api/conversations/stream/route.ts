@@ -353,12 +353,37 @@ export async function POST(request: Request) {
                 .update({ status: 'estimating' })
                 .eq('id', validated.project_id)
 
+              // Fetch saved estimate to get market price data
+              let marketPrice: number | null = null
+              let ourPrice: number | null = null
+              let savingsPercent: number | null = null
+
+              const { data: savedEstimate } = await supabase
+                .from('estimates')
+                .select('total_market_cost, pricing_snapshot')
+                .eq('id', estimateResult.estimateId)
+                .maybeSingle()
+
+              if (savedEstimate) {
+                const snapshot = savedEstimate.pricing_snapshot as Record<string, unknown> | null
+                if (savedEstimate.total_market_cost && snapshot && 'recommended_total_cost' in snapshot) {
+                  marketPrice = savedEstimate.total_market_cost as number
+                  ourPrice = snapshot.recommended_total_cost as number
+                  if (marketPrice > 0 && ourPrice > 0) {
+                    savingsPercent = Math.round((1 - ourPrice / marketPrice) * 100)
+                  }
+                }
+              }
+
               sendEvent('estimate_generated', {
                 estimate_id: estimateResult.estimateId,
                 total_hours: estimateResult.totalHours,
                 hourly_rate: estimateResult.hourlyRate,
                 estimate_mode: estimateResult.estimateMode,
                 go_no_go_decision: estimateResult.goNoGoDecision ?? null,
+                market_price: marketPrice,
+                our_price: ourPrice,
+                savings_percent: savingsPercent,
               })
 
               // Generate value proposition

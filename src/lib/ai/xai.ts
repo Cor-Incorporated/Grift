@@ -391,12 +391,46 @@ export async function requestXaiResponse(
   }
 }
 
+export function sanitizeJsonNewlines(text: string): string {
+  let result = ''
+  let inString = false
+  let escaped = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (escaped) {
+      result += ch
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && inString) {
+      result += ch
+      escaped = true
+      continue
+    }
+    if (ch === '"') {
+      inString = !inString
+      result += ch
+      continue
+    }
+    if (inString && ch === '\n') {
+      result += '\\n'
+      continue
+    }
+    if (inString && ch === '\r') {
+      result += '\\r'
+      continue
+    }
+    result += ch
+  }
+  return result
+}
+
 export function parseJsonFromResponse<T>(text: string): T {
   // 1. Try ```json ... ``` block extraction (non-greedy)
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/)
   if (jsonMatch) {
     try {
-      return JSON.parse(jsonMatch[1]) as T
+      return JSON.parse(sanitizeJsonNewlines(jsonMatch[1])) as T
     } catch {
       // Non-greedy match may have caught inner ```, try next strategy
     }
@@ -408,14 +442,14 @@ export function parseJsonFromResponse<T>(text: string): T {
     .replace(/\n?\s*```\s*$/, '')
     .trim()
   try {
-    return JSON.parse(stripped) as T
+    return JSON.parse(sanitizeJsonNewlines(stripped)) as T
   } catch {
     // continue
   }
 
   // 3. Try parsing entire text as JSON
   try {
-    return JSON.parse(text) as T
+    return JSON.parse(sanitizeJsonNewlines(text)) as T
   } catch {
     // continue
   }
@@ -437,7 +471,7 @@ export function parseJsonFromResponse<T>(text: string): T {
           depth--
           if (depth === 0) {
             try {
-              return JSON.parse(text.slice(startIdx, i + 1)) as T
+              return JSON.parse(sanitizeJsonNewlines(text.slice(startIdx, i + 1))) as T
             } catch {
               break
             }

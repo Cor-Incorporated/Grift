@@ -92,7 +92,7 @@ export default async function DashboardPage() {
       <header className="border-b bg-card">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <span className="text-2xl" role="img" aria-label="top hat">🎩</span>
+            <span className="text-2xl" role="img" aria-label="briefcase">💼</span>
             <h1 className="text-xl font-bold tracking-tight">The Benevolent Dictator</h1>
           </Link>
           <UserButton afterSignOutUrl="/" />

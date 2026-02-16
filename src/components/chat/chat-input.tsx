@@ -15,6 +15,14 @@ interface ChatInputProps {
   isStreaming?: boolean
   choices: string[]
   isComplete: boolean
+  estimateProgress?: 'idle' | 'spec_generating' | 'estimating' | 'complete' | 'error'
+  estimateSummary?: {
+    totalHours: number
+    estimateMode?: string
+    marketPrice?: number
+    ourPrice?: number
+    savingsPercent?: number
+  } | null
 }
 
 interface AttachmentApiResponse {
@@ -44,6 +52,8 @@ export function ChatInput({
   isStreaming = false,
   choices,
   isComplete,
+  estimateProgress = 'idle',
+  estimateSummary = null,
 }: ChatInputProps) {
   const [input, setInput] = useState('')
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
@@ -259,10 +269,89 @@ export function ChatInput({
 
   if (isComplete) {
     return (
-      <div className="border-t bg-muted/50 px-4 py-4 text-center">
-        <p className="text-sm text-muted-foreground text-pretty">
-          ヒアリングが完了しました。管理者が内容を確認中です。
-        </p>
+      <div className="border-t bg-muted/50 px-4 py-6">
+        <div className="mx-auto max-w-3xl space-y-4">
+          {estimateProgress === 'spec_generating' && (
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+              仕様書を生成しています...
+            </div>
+          )}
+
+          {estimateProgress === 'estimating' && (
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <span className="inline-block h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+              見積りを自動生成しています...
+            </div>
+          )}
+
+          {estimateProgress === 'complete' && estimateSummary && (
+            <div className="space-y-3">
+              <div className="rounded-lg border bg-background p-4 space-y-3">
+                <p className="text-sm font-medium">見積り概要</p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold">{estimateSummary.totalHours}</span>
+                  <span className="text-sm text-muted-foreground">時間</span>
+                </div>
+
+                {estimateSummary.marketPrice && estimateSummary.ourPrice && (
+                  <div className="space-y-1 border-t pt-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">市場平均:</span>
+                      <span className="line-through text-muted-foreground">
+                        ¥{estimateSummary.marketPrice.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">ご提案価格:</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                        ¥{estimateSummary.ourPrice.toLocaleString()}
+                      </span>
+                    </div>
+                    {estimateSummary.savingsPercent && estimateSummary.savingsPercent > 0 && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                        市場比 {estimateSummary.savingsPercent}% OFF
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {estimateSummary.estimateMode === 'hours_only' && (
+                  <p className="text-xs text-muted-foreground border-t pt-2">
+                    ※ バグ修正・改修案件のため工数のみの見積りです
+                  </p>
+                )}
+              </div>
+
+              <a
+                href={`/projects/${projectId}`}
+                className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors"
+              >
+                結果を確認する →
+              </a>
+            </div>
+          )}
+
+          {estimateProgress === 'error' && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                見積り生成中にエラーが発生しました。
+              </p>
+              <a
+                href={`/projects/${projectId}`}
+                className="inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium shadow-sm hover:bg-accent transition-colors"
+              >
+                案件詳細を確認する →
+              </a>
+            </div>
+          )}
+
+          {estimateProgress === 'idle' && (
+            <p className="text-sm text-muted-foreground text-center text-pretty">
+              ヒアリングが完了しました。管理者が内容を確認中です。
+            </p>
+          )}
+        </div>
       </div>
     )
   }

@@ -19,8 +19,8 @@ export function ChatHeader({ projectId, isComplete }: ChatHeaderProps) {
           </Button>
         </Link>
         <div className="flex items-center gap-2">
-          <span className="text-lg">🎩</span>
-          <span className="font-medium">AI 執事</span>
+          <span className="text-lg">💼</span>
+          <span className="font-medium">AI SE</span>
           {isComplete ? (
             <Badge variant="outline" className="bg-green-500/10 text-green-700">
               ヒアリング完了

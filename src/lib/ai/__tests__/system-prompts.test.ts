@@ -78,7 +78,7 @@ describe('getSystemPrompt', () => {
     }
   })
 
-  it('all concrete types include BUTLER_PERSONA text', () => {
+  it('all concrete types include SALES_ENGINEER_PERSONA text', () => {
     const concreteTypes: ConcreteProjectType[] = [
       'new_project',
       'bug_report',
@@ -89,14 +89,14 @@ describe('getSystemPrompt', () => {
     for (const type of concreteTypes) {
       const prompt = getSystemPrompt(type)
       expect(prompt).toContain('Benevolent Dictator')
-      expect(prompt).toContain('AI 執事')
+      expect(prompt).toContain('AI セールスエンジニア')
     }
   })
 
-  it('undetermined type also includes BUTLER_PERSONA text', () => {
+  it('undetermined type also includes SALES_ENGINEER_PERSONA text', () => {
     const prompt = getSystemPrompt('undetermined')
     expect(prompt).toContain('Benevolent Dictator')
-    expect(prompt).toContain('AI 執事')
+    expect(prompt).toContain('AI セールスエンジニア')
   })
 
   it('all types include METADATA section instructions', () => {
@@ -183,7 +183,7 @@ describe('getSpecGenerationPrompt', () => {
     expect(undeterminedPrompt).toBe(newProjectPrompt)
   })
 
-  it('all types include BUTLER_PERSONA in spec generation prompt', () => {
+  it('all types include SALES_ENGINEER_PERSONA in spec generation prompt', () => {
     const allTypes: ProjectType[] = [
       'undetermined',
       'new_project',

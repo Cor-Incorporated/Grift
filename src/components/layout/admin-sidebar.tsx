@@ -79,7 +79,7 @@ export function AdminSidebar({ userEmail, userName, internalRoles }: AdminSideba
   return (
     <aside className="flex w-64 flex-col border-r bg-card">
       <div className="flex h-16 items-center gap-2 border-b px-6">
-        <span className="text-xl">🎩</span>
+        <span className="text-xl">💼</span>
         <span className="font-bold">BD Admin</span>
       </div>
 

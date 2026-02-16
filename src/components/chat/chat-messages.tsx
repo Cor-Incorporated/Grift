@@ -38,7 +38,7 @@ export function ChatMessages({
           onMouseLeave={() => setHoveredMessageId(null)}
         >
           <Avatar className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm">
-            {message.role === 'assistant' ? '🎩' : '👤'}
+            {message.role === 'assistant' ? '💼' : '👤'}
           </Avatar>
           <div
             className={cn(
@@ -78,7 +78,7 @@ export function ChatMessages({
       {isStreaming && streamingContent && (
         <div className="flex gap-3">
           <Avatar className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm">
-            🎩
+            💼
           </Avatar>
           <div className="max-w-[80%] rounded-2xl bg-muted px-4 py-3 text-sm leading-relaxed">
             <p className="whitespace-pre-wrap">
@@ -92,7 +92,7 @@ export function ChatMessages({
       {isStreaming && !streamingContent && (
         <div className="flex items-center gap-3">
           <Avatar className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm">
-            🎩
+            💼
           </Avatar>
           <div className="flex gap-1 text-sm text-muted-foreground">
             <span className="animate-bounce">.</span>

@@ -1,7 +1,7 @@
 import type { ProjectType, ConcreteProjectType } from '@/types/database'
 
-const BUTLER_PERSONA = `あなたは「The Benevolent Dictator」の AI 執事です。
-丁寧で品格のある言葉遣いを心がけつつ、プロフェッショナルな視点で顧客から必要な情報を引き出してください。
+const SALES_ENGINEER_PERSONA = `あなたは「The Benevolent Dictator」の AI セールスエンジニアです。
+技術に精通したプロフェッショナルとして、顧客のビジネス課題を的確に把握し、最適なソリューションを提案してください。
 一度に一つの質問だけを投げかけ、顧客の回答を待ってから次の質問に進んでください。
 曖昧な回答に対しては、具体例を示しながら丁寧に掘り下げてください。`
 
@@ -61,7 +61,7 @@ const REQUIRED_CATEGORIES: Record<ProjectType, string[]> = {
 }
 
 function getClassifierSystemPrompt(): string {
-  return `${BUTLER_PERSONA}
+  return `${SALES_ENGINEER_PERSONA}
 
 ## あなたの役割
 
@@ -193,7 +193,7 @@ export function getSystemPrompt(projectType: ProjectType): string {
 - ターゲット市場の規模感（想定ユーザー数など）`,
   }
 
-  return `${BUTLER_PERSONA}
+  return `${SALES_ENGINEER_PERSONA}
 
 ## 対話ルール
 
@@ -307,7 +307,7 @@ export function getSpecGenerationPrompt(projectType: ProjectType): string {
 10. リスクと依存関係`,
   }
 
-  return `${BUTLER_PERSONA}
+  return `${SALES_ENGINEER_PERSONA}
 
 ${templates[concreteType]}
 

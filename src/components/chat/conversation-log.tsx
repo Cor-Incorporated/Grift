@@ -50,7 +50,7 @@ export function ConversationLog({ conversations }: ConversationLogProps) {
                 <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-medium">
                     {msg.role === 'assistant'
-                      ? '🎩 AI 執事'
+                      ? '💼 AI SE'
                       : msg.role === 'user'
                         ? '👤 顧客'
                         : '🔧 システム'}

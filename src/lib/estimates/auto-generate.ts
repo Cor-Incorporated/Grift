@@ -63,6 +63,9 @@ async function estimateHoursWithClaude(
 
 案件タイプ: ${projectType}
 
+以下の2パートで回答してください：
+
+パート1: JSON（数値のみ）
 各フェーズの時間（時間単位）をJSON形式で返してください：
 \`\`\`json
 {
@@ -70,10 +73,14 @@ async function estimateHoursWithClaude(
   "implementation": 実装時間,
   "testing": テスト時間,
   "buffer": バッファ時間,
-  "total": 合計時間,
-  "breakdown": "Markdown形式の工数内訳説明"
+  "total": 合計時間
 }
 \`\`\`
+
+パート2: 区切り線の後にMarkdown形式の工数内訳
+---BREAKDOWN---
+## 工数内訳
+（ここにMarkdown形式で詳細な内訳説明を記述）
 
 バッファ率の目安:
 - bug_report: 20-30%
@@ -88,8 +95,9 @@ async function estimateHoursWithClaude(
 - 既存コードベースの規模や複雑さを考慮してください
 
 制約:
-- 回答は必ずJSONのみで返す
-- total は各項目の合計と一致させる`
+- パート1のJSONには数値のみを含めてください（文字列フィールドは含めない）
+- total は各項目の合計と一致させる
+- パート2は必ず ---BREAKDOWN--- の後に出力してください`
 
   const response = await sendMessage(prompt, [{ role: 'user', content: `${specMarkdown}${attachmentBlock}` }], {
     temperature: 0.2,
@@ -97,7 +105,22 @@ async function estimateHoursWithClaude(
     usageContext,
   })
 
-  const parsed = parseJsonFromResponse<Partial<HoursEstimate>>(response)
+  // Separate JSON and breakdown using delimiter
+  const breakdownDelimiter = '---BREAKDOWN---'
+  const delimiterIndex = response.indexOf(breakdownDelimiter)
+
+  let jsonPart: string
+  let breakdownPart: string
+
+  if (delimiterIndex !== -1) {
+    jsonPart = response.slice(0, delimiterIndex)
+    breakdownPart = response.slice(delimiterIndex + breakdownDelimiter.length).trim()
+  } else {
+    jsonPart = response
+    breakdownPart = ''
+  }
+
+  const parsed = parseJsonFromResponse<Partial<HoursEstimate>>(jsonPart)
 
   const investigation = Math.max(0, Number(parsed.investigation ?? 0))
   const implementation = Math.max(0, Number(parsed.implementation ?? 0))
@@ -112,9 +135,11 @@ async function estimateHoursWithClaude(
     buffer,
     total,
     breakdown:
-      typeof parsed.breakdown === 'string' && parsed.breakdown.length > 0
-        ? parsed.breakdown
-        : '工数内訳の詳細は生成できませんでした。',
+      breakdownPart.length > 0
+        ? breakdownPart
+        : typeof parsed.breakdown === 'string' && parsed.breakdown.length > 0
+          ? parsed.breakdown
+          : '工数内訳の詳細は生成できませんでした。',
   }
 }
 
