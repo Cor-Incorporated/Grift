@@ -11,6 +11,7 @@ const securityHeaders = [
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: https: blob:",
       "connect-src 'self' https://*.clerk.accounts.dev https://clerk.com https://clerk-telemetry.com https://*.supabase.co wss://*.supabase.co https://dev-bd.cor-jp.com",
+      "worker-src 'self' blob:",
       "frame-src https://challenges.cloudflare.com",
       "base-uri 'self'",
       "form-action 'self'",
