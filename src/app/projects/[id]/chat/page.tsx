@@ -21,6 +21,8 @@ export default function ChatPage() {
   const [isComplete, setIsComplete] = useState(false)
   const [projectType, setProjectType] = useState<ProjectType>('undetermined')
   const [error, setError] = useState<string | null>(null)
+  const [errorRetryable, setErrorRetryable] = useState(false)
+  const [lastSentContent, setLastSentContent] = useState<string | null>(null)
   const [businessLine, setBusinessLine] = useState<string | null>(null)
   const [goNoGoDecision, setGoNoGoDecision] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -105,6 +107,8 @@ export default function ChatPage() {
     setIsStreaming(true)
     setStreamingContent('')
     setError(null)
+    setErrorRetryable(false)
+    setLastSentContent(content)
 
     const controller = new AbortController()
     abortControllerRef.current = controller
@@ -196,6 +200,7 @@ export default function ChatPage() {
 
               if ('error' in data && !('token' in data) && !('message_id' in data)) {
                 setError(data.error)
+                setErrorRetryable(!!data.retryable)
               }
             } catch {
               // Skip invalid JSON
@@ -334,7 +339,20 @@ export default function ChatPage() {
           )}
           {error && (
             <div className="mt-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-              {error}
+              <p>{error}</p>
+              {errorRetryable && lastSentContent && (
+                <button
+                  type="button"
+                  className="mt-2 rounded-md bg-destructive/20 px-3 py-1.5 text-xs font-medium hover:bg-destructive/30 transition-colors"
+                  onClick={() => {
+                    setError(null)
+                    setErrorRetryable(false)
+                    sendStreamingMessage(lastSentContent)
+                  }}
+                >
+                  再試行する
+                </button>
+              )}
             </div>
           )}
           <div ref={messagesEndRef} />

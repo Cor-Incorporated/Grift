@@ -1,5 +1,6 @@
 'use client'
 
+import ReactMarkdown from 'react-markdown'
 import { cn } from '@/lib/utils'
 import {
   Card,
@@ -57,7 +58,13 @@ export function ConversationLog({ conversations }: ConversationLogProps) {
                     {new Date(msg.created_at).toLocaleString('ja-JP')}
                   </span>
                 </div>
-                <p className="whitespace-pre-wrap">{msg.content}</p>
+                {msg.role === 'assistant' ? (
+                  <div className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                )}
               </div>
             ))}
           </div>
