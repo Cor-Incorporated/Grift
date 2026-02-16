@@ -391,13 +391,18 @@ export async function requestXaiResponse(
   }
 }
 
-export function sanitizeJsonNewlines(text: string): string {
+export function sanitizeJsonStrings(text: string): string {
   let result = ''
   let inString = false
   let escaped = false
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]
     if (escaped) {
+      // After a backslash, only valid JSON escape chars are: " \ / b f n r t u
+      // If the char is not one of these, escape the backslash itself
+      if (!'"\\/bfnrtu'.includes(ch)) {
+        result += '\\'
+      }
       result += ch
       escaped = false
       continue
@@ -412,17 +417,76 @@ export function sanitizeJsonNewlines(text: string): string {
       result += ch
       continue
     }
-    if (inString && ch === '\n') {
-      result += '\\n'
-      continue
-    }
-    if (inString && ch === '\r') {
-      result += '\\r'
-      continue
+    if (inString) {
+      const code = ch.charCodeAt(0)
+      // All control characters (0x00-0x1F) must be escaped in JSON strings
+      if (code <= 0x1f) {
+        switch (ch) {
+          case '\n': result += '\\n'; break
+          case '\r': result += '\\r'; break
+          case '\t': result += '\\t'; break
+          case '\b': result += '\\b'; break
+          case '\f': result += '\\f'; break
+          default: result += `\\u${code.toString(16).padStart(4, '0')}`; break
+        }
+        continue
+      }
     }
     result += ch
   }
   return result
+}
+
+/** @deprecated Use sanitizeJsonStrings instead */
+export const sanitizeJsonNewlines = sanitizeJsonStrings
+
+function stripJsonStringField(text: string, fieldName: string): string {
+  // Remove a string field and its value from JSON text using state machine
+  // Handles the case where the field value contains complex content that breaks parsing
+  const pattern = `"${fieldName}"`
+  const fieldIndex = text.indexOf(pattern)
+  if (fieldIndex === -1) return text
+
+  // Find the colon after the field name
+  let colonIndex = fieldIndex + pattern.length
+  while (colonIndex < text.length && text[colonIndex] !== ':') colonIndex++
+  if (colonIndex >= text.length) return text
+
+  // Find the opening quote of the value
+  let valueStart = colonIndex + 1
+  while (valueStart < text.length && text[valueStart] !== '"') valueStart++
+  if (valueStart >= text.length) return text
+
+  // Find the closing quote of the value (respecting escapes)
+  let valueEnd = valueStart + 1
+  let esc = false
+  while (valueEnd < text.length) {
+    if (esc) { esc = false; valueEnd++; continue }
+    if (text[valueEnd] === '\\') { esc = true; valueEnd++; continue }
+    if (text[valueEnd] === '"') break
+    valueEnd++
+  }
+  if (valueEnd >= text.length) return text
+
+  // Remove the field: from before the key to after the value (including trailing comma if present)
+  let removeStart = fieldIndex
+  let removeEnd = valueEnd + 1
+
+  // Check for trailing comma
+  let afterValue = removeEnd
+  while (afterValue < text.length && ' \t\n\r'.includes(text[afterValue])) afterValue++
+  if (afterValue < text.length && text[afterValue] === ',') {
+    removeEnd = afterValue + 1
+  } else {
+    // Check for leading comma (when this is the last field)
+    let beforeField = removeStart - 1
+    while (beforeField >= 0 && ' \t\n\r'.includes(text[beforeField])) beforeField--
+    if (beforeField >= 0 && text[beforeField] === ',') {
+      removeStart = beforeField
+    }
+  }
+
+  return text.slice(0, removeStart) + text.slice(removeEnd)
 }
 
 export function parseJsonFromResponse<T>(text: string): T {
@@ -430,7 +494,7 @@ export function parseJsonFromResponse<T>(text: string): T {
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/)
   if (jsonMatch) {
     try {
-      return JSON.parse(sanitizeJsonNewlines(jsonMatch[1])) as T
+      return JSON.parse(sanitizeJsonStrings(jsonMatch[1])) as T
     } catch {
       // Non-greedy match may have caught inner ```, try next strategy
     }
@@ -442,14 +506,14 @@ export function parseJsonFromResponse<T>(text: string): T {
     .replace(/\n?\s*```\s*$/, '')
     .trim()
   try {
-    return JSON.parse(sanitizeJsonNewlines(stripped)) as T
+    return JSON.parse(sanitizeJsonStrings(stripped)) as T
   } catch {
     // continue
   }
 
   // 3. Try parsing entire text as JSON
   try {
-    return JSON.parse(sanitizeJsonNewlines(text)) as T
+    return JSON.parse(sanitizeJsonStrings(text)) as T
   } catch {
     // continue
   }
@@ -471,11 +535,26 @@ export function parseJsonFromResponse<T>(text: string): T {
           depth--
           if (depth === 0) {
             try {
-              return JSON.parse(sanitizeJsonNewlines(text.slice(startIdx, i + 1))) as T
+              return JSON.parse(sanitizeJsonStrings(text.slice(startIdx, i + 1))) as T
             } catch {
               break
             }
           }
+        }
+      }
+    }
+  }
+
+  // 5. Last resort: strip problematic string fields and retry
+  const fieldsToStrip = ['breakdown', 'description', 'summary']
+  for (const field of fieldsToStrip) {
+    if (text.includes(`"${field}"`)) {
+      const cleaned = stripJsonStringField(text, field)
+      if (cleaned !== text) {
+        try {
+          return JSON.parse(sanitizeJsonStrings(cleaned)) as T
+        } catch {
+          // continue to next field
         }
       }
     }
