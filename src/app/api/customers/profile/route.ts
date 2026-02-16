@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { z } from 'zod'
 import { createServiceRoleClient } from '@/lib/supabase/server'
+import { applyRateLimit } from '@/lib/utils/rate-limit'
+import { RATE_LIMITS } from '@/lib/utils/rate-limit-config'
 
 const profileSchema = z.object({
   company: z.string(),
@@ -19,6 +21,14 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       )
     }
+
+    const rateLimited = applyRateLimit(
+      request,
+      'customers:profile:post',
+      RATE_LIMITS['customers:profile:post'],
+      userId
+    )
+    if (rateLimited) return rateLimited
 
     const body = await request.json()
     const validated = profileSchema.parse(body)
@@ -302,7 +312,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth()
 
@@ -312,6 +322,14 @@ export async function GET() {
         { status: 401 }
       )
     }
+
+    const rateLimitedGet = applyRateLimit(
+      request,
+      'customers:profile:get',
+      RATE_LIMITS['customers:profile:get'],
+      userId
+    )
+    if (rateLimitedGet) return rateLimitedGet
 
     const supabase = await createServiceRoleClient()
 

@@ -8,6 +8,7 @@ export interface PricingPolicy {
   minimumProjectFee: number
   minimumMarginPercent: number
   avgInternalCostPerMemberMonth: number
+  internalTeamSize: number
   defaultTeamSize: number
   defaultDurationMonths: number
 }
@@ -86,7 +87,7 @@ export function calculatePrice(input: PriceCalculationInput): PriceCalculationRe
   const basePrice = marketTotal * coefficient
   const costFloor = calculateCostFloor(
     input.policy.avgInternalCostPerMemberMonth,
-    input.market.teamSize,
+    input.policy.internalTeamSize,
     input.market.durationMonths * 0.6
   )
 
@@ -166,6 +167,7 @@ export function defaultPolicyFor(projectType: ProjectPricingType): PricingPolicy
       minimumProjectFee: 2_000_000,
       minimumMarginPercent: 20,
       avgInternalCostPerMemberMonth: 2_000_000,
+      internalTeamSize: 2,
       defaultTeamSize: 6,
       defaultDurationMonths: 6,
     }
@@ -180,6 +182,7 @@ export function defaultPolicyFor(projectType: ProjectPricingType): PricingPolicy
       minimumProjectFee: 1_000_000,
       minimumMarginPercent: 20,
       avgInternalCostPerMemberMonth: 2_000_000,
+      internalTeamSize: 2,
       defaultTeamSize: 4,
       defaultDurationMonths: 2,
     }
@@ -193,6 +196,7 @@ export function defaultPolicyFor(projectType: ProjectPricingType): PricingPolicy
     minimumProjectFee: 300_000,
     minimumMarginPercent: 20,
     avgInternalCostPerMemberMonth: 2_000_000,
+    internalTeamSize: 2,
     defaultTeamSize: 2,
     defaultDurationMonths: 1,
   }

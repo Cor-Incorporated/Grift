@@ -4,6 +4,8 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { runQueuedSourceAnalysisJobs } from '@/lib/source-analysis/jobs'
 import { getAuthenticatedUser, isAdminUser, canAccessProject } from '@/lib/auth/authorization'
 import { sourceAnalysisRunRequestSchema } from '@/lib/utils/validation'
+import { applyRateLimit } from '@/lib/utils/rate-limit'
+import { RATE_LIMITS } from '@/lib/utils/rate-limit-config'
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,6 +13,9 @@ export async function POST(request: NextRequest) {
     if (!authUser) {
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 })
     }
+
+    const rateLimited = applyRateLimit(request, 'source-analysis:jobs:run:post', RATE_LIMITS['source-analysis:jobs:run:post'], authUser.clerkUserId)
+    if (rateLimited) return rateLimited
 
     let rawBody: unknown = {}
     try {

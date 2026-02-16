@@ -6,6 +6,7 @@ import {
   type XaiUsage,
 } from '@/lib/ai/xai'
 import { isExternalApiQuotaError, type UsageCallContext } from '@/lib/usage/api-usage'
+import { logger } from '@/lib/utils/logger'
 
 export interface MarketEvidence {
   marketHourlyRate: number
@@ -25,6 +26,8 @@ export interface MarketEvidenceResult {
   raw: unknown
   confidenceScore: number
   usage: XaiUsage
+  isFallback: boolean
+  fallbackReason: 'quota_exceeded' | 'upstream_error' | null
 }
 
 interface RawMarketEvidence {
@@ -46,8 +49,8 @@ const defaultEvidence: MarketEvidence = {
   marketHourlyRate: 10_000,
   marketRateRange: { min: 7_000, max: 15_000 },
   marketEstimatedHoursMultiplier: 1.8,
-  typicalTeamSize: 6,
-  typicalDurationMonths: 6,
+  typicalTeamSize: 4,
+  typicalDurationMonths: 4,
   monthlyUnitPrice: 1_100_000,
   trends: [],
   risks: [],
@@ -114,18 +117,24 @@ export async function fetchMarketEvidenceFromXai(input: {
 要件抜粋:
 ${input.context.slice(0, 3000)}
 
+チーム規模・期間の目安（案件タイプ別）:
+- new_project（新規開発）: チーム3-8名、期間3-12ヶ月が一般的
+- feature_addition（機能追加）: チーム1-4名、期間1-4ヶ月が一般的
+- bug_report / fix_request（修正）: チーム1-2名、期間0.5-2ヶ月が一般的
+案件の規模と複雑さに応じて、上記レンジ内で適切な値を選んでください。
+
 以下のJSON形式で返してください:
 \`\`\`json
 {
-  "market_hourly_rate": 10000,
-  "market_rate_range": { "min": 7000, "max": 15000 },
-  "market_estimated_hours_multiplier": 1.8,
-  "typical_team_size": 6,
-  "typical_duration_months": 6,
-  "monthly_unit_price": 1100000,
-  "trends": ["..."],
-  "risks": ["..."],
-  "summary": "..."
+  "market_hourly_rate": "<市場の平均時間単価（円）>",
+  "market_rate_range": { "min": "<最低時間単価>", "max": "<最高時間単価>" },
+  "market_estimated_hours_multiplier": "<市場の一般的な工数倍率（1.0-3.0）>",
+  "typical_team_size": "<このタイプの案件に必要な典型的チーム人数>",
+  "typical_duration_months": "<このタイプの案件の典型的な開発期間（月）>",
+  "monthly_unit_price": "<エンジニア1名あたりの月額単価（円）>",
+  "trends": ["市場トレンド1", "市場トレンド2"],
+  "risks": ["リスク要因1", "リスク要因2"],
+  "summary": "調査結果の要約"
 }
 \`\`\`
 
@@ -156,13 +165,17 @@ ${input.context.slice(0, 3000)}
       raw: response.raw,
       confidenceScore: calculateConfidence(response.citations.length, normalized.trends.length),
       usage: response.usage,
+      isFallback: false,
+      fallbackReason: null,
     }
   } catch (error) {
     const quotaNote = isExternalApiQuotaError(error)
       ? 'xAI API クォータ上限のため、前回確認済みのデフォルト値にフォールバックしました。'
       : null
 
-    console.warn('Failed to fetch market evidence from xAI', error)
+    logger.warn('Failed to fetch market evidence from xAI', {
+      error: error instanceof Error ? error.message : String(error),
+    })
     return {
       evidence: {
         ...defaultEvidence,
@@ -172,6 +185,8 @@ ${input.context.slice(0, 3000)}
       raw: null,
       confidenceScore: 0.3,
       usage: {},
+      isFallback: true,
+      fallbackReason: isExternalApiQuotaError(error) ? 'quota_exceeded' : 'upstream_error',
     }
   }
 }

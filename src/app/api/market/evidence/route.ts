@@ -5,6 +5,8 @@ import { getAuthenticatedUser, isAdminUser } from '@/lib/auth/authorization'
 import { writeAuditLog } from '@/lib/audit/log'
 import { marketEvidenceRequestSchema } from '@/lib/utils/validation'
 import { fetchMarketEvidenceFromXai } from '@/lib/market/evidence'
+import { applyRateLimit } from '@/lib/utils/rate-limit'
+import { RATE_LIMITS } from '@/lib/utils/rate-limit-config'
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,6 +14,9 @@ export async function POST(request: NextRequest) {
     if (!authUser) {
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 })
     }
+
+    const rateLimited = applyRateLimit(request, 'admin:market:evidence:post', RATE_LIMITS['admin:market:evidence:post'], authUser.clerkUserId)
+    if (rateLimited) return rateLimited
 
     const supabase = await createServiceRoleClient()
 

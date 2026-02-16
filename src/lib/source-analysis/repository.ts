@@ -10,6 +10,19 @@ interface ParsedGitHubUrl {
   branch?: string
 }
 
+function getGitHubHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Accept': 'application/vnd.github+json',
+    'User-Agent': 'BenevolentDirector/1.0',
+  }
+
+  if (process.env.GITHUB_TOKEN) {
+    headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`
+  }
+
+  return headers
+}
+
 export interface RepositoryAnalysisResult {
   repository: {
     url: string
@@ -54,12 +67,28 @@ function parseGitHubRepositoryUrl(rawUrl: string): ParsedGitHubUrl {
   return { owner, repo, branch }
 }
 
+export function isGitHubUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl)
+
+    if (!GITHUB_HOSTS.has(parsed.hostname.toLowerCase())) {
+      return false
+    }
+
+    const segments = parsed.pathname.split('/').filter(Boolean)
+    if (segments.length < 2) {
+      return false
+    }
+
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function resolveDefaultBranch(owner: string, repo: string): Promise<string> {
   const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'BenevolentDirector/1.0',
-    },
+    headers: getGitHubHeaders(),
     cache: 'no-store',
   })
 
@@ -83,7 +112,10 @@ async function downloadRepositoryArchive(owner: string, repo: string, branch: st
   archiveUrl: string
 }> {
   const archiveUrl = `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${encodeURIComponent(branch)}`
-  const response = await fetch(archiveUrl, { cache: 'no-store' })
+  const response = await fetch(archiveUrl, {
+    headers: getGitHubHeaders(),
+    cache: 'no-store',
+  })
 
   if (!response.ok) {
     throw new Error(`リポジトリアーカイブの取得に失敗しました (${response.status})`)

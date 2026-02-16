@@ -1,5 +1,10 @@
 import { inflateSync } from 'node:zlib'
-import { sendMessage } from '@/lib/ai/anthropic'
+import {
+  sendMessage,
+  sendVisionMessage,
+  buildDocumentBlock,
+  validatePdfSize,
+} from '@/lib/ai/anthropic'
 import { parseJsonFromResponse } from '@/lib/ai/xai'
 import type { UsageCallContext } from '@/lib/usage/api-usage'
 
@@ -129,7 +134,75 @@ export function extractTextFromPdfBuffer(pdfBuffer: Buffer): string {
   return normalized
 }
 
-export async function analyzePdfWithClaude(input: {
+function buildParsedResult(
+  parsed: RawPdfAnalysis,
+  extractedTextLength: number,
+  fallbackSummary: string
+): PdfAnalysisResult {
+  const summary =
+    typeof parsed.summary === 'string' && parsed.summary.trim().length > 0
+      ? parsed.summary.trim()
+      : fallbackSummary
+
+  return {
+    summary,
+    extractedTextLength,
+    keyPoints: toTextArray(parsed.key_points),
+    risks: toTextArray(parsed.risks),
+    changeImpactPoints: toTextArray(parsed.change_impact_points),
+    recommendedQuestions: toTextArray(parsed.recommended_questions),
+  }
+}
+
+async function analyzePdfNative(input: {
+  fileName: string
+  pdfBuffer: Buffer
+  pdfText: string
+  usageContext?: UsageCallContext
+}): Promise<PdfAnalysisResult> {
+  validatePdfSize(input.pdfBuffer)
+
+  const base64Data = input.pdfBuffer.toString('base64')
+  const documentBlock = buildDocumentBlock(base64Data)
+
+  const prompt = `このPDFドキュメントを分析してください。ファイル名: ${input.fileName}
+
+受託開発の追加実装見積りに必要な情報を抽出し、JSONのみで返してください。
+
+出力形式:
+\`\`\`json
+{
+  "summary": "2-4文の要約",
+  "key_points": ["..."],
+  "risks": ["..."],
+  "change_impact_points": ["..."],
+  "recommended_questions": ["..."]
+}
+\`\`\`
+
+制約:
+- 日本語で返答
+- 不明点は推定と明記
+- 各配列は最大10件
+- 図表やレイアウトも含めて分析してください`
+
+  const response = await sendVisionMessage(
+    'あなたは要件定義と変更見積りの分析官です。曖昧な内容は明示し、誤推定を避けてください。',
+    [{
+      role: 'user',
+      content: [
+        documentBlock,
+        { type: 'text', text: prompt },
+      ],
+    }],
+    { maxTokens: 1500, temperature: 0.1, usageContext: input.usageContext }
+  )
+
+  const parsed = parseJsonFromResponse<RawPdfAnalysis>(response)
+  return buildParsedResult(parsed, input.pdfText.length, 'PDFドキュメントをネイティブ解析しました。')
+}
+
+async function analyzePdfFromText(input: {
   fileName: string
   pdfText: string
   usageContext?: UsageCallContext
@@ -182,19 +255,7 @@ ${input.pdfText.slice(0, MAX_ANALYSIS_TEXT_CHARS)}`
     )
 
     const parsed = parseJsonFromResponse<RawPdfAnalysis>(response)
-    const summary =
-      typeof parsed.summary === 'string' && parsed.summary.trim().length > 0
-        ? parsed.summary.trim()
-        : 'PDF本文から要約を抽出しました。'
-
-    return {
-      summary,
-      extractedTextLength,
-      keyPoints: toTextArray(parsed.key_points),
-      risks: toTextArray(parsed.risks),
-      changeImpactPoints: toTextArray(parsed.change_impact_points),
-      recommendedQuestions: toTextArray(parsed.recommended_questions),
-    }
+    return buildParsedResult(parsed, extractedTextLength, 'PDF本文から要約を抽出しました。')
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown'
     return {
@@ -206,4 +267,30 @@ ${input.pdfText.slice(0, MAX_ANALYSIS_TEXT_CHARS)}`
       recommendedQuestions: [],
     }
   }
+}
+
+export async function analyzePdfWithClaude(input: {
+  fileName: string
+  pdfBuffer?: Buffer
+  pdfText: string
+  usageContext?: UsageCallContext
+}): Promise<PdfAnalysisResult> {
+  if (input.pdfBuffer && input.pdfBuffer.length <= 32 * 1024 * 1024) {
+    try {
+      return await analyzePdfNative({
+        fileName: input.fileName,
+        pdfBuffer: input.pdfBuffer,
+        pdfText: input.pdfText,
+        usageContext: input.usageContext,
+      })
+    } catch {
+      // フォールバック: テキスト抽出ベースの既存ロジック
+    }
+  }
+
+  return analyzePdfFromText({
+    fileName: input.fileName,
+    pdfText: input.pdfText,
+    usageContext: input.usageContext,
+  })
 }

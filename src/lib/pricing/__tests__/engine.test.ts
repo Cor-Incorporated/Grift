@@ -34,6 +34,7 @@ describe('pricing engine', () => {
     expect(result.coefficient).toBe(0.7)
     expect(result.marginPercent).toBeGreaterThanOrEqual(0)
     expect(Array.isArray(result.riskFlags)).toBe(true)
+    expect(policy.internalTeamSize).toBe(2)
   })
 
   it('calculates change order with floor guard', () => {
@@ -54,5 +55,79 @@ describe('pricing engine', () => {
     expect(result.deltaHours).toBe(28)
     expect(result.finalDeltaFee).toBeGreaterThan(0)
     expect(result.finalDeltaFee).toBeGreaterThanOrEqual(result.floorGuardFee)
+  })
+
+  it('defaultPolicyFor includes internalTeamSize for all project types', () => {
+    const types: Array<'new_project' | 'bug_report' | 'fix_request' | 'feature_addition'> = [
+      'new_project',
+      'bug_report',
+      'fix_request',
+      'feature_addition',
+    ]
+    for (const type of types) {
+      const policy = defaultPolicyFor(type)
+      expect(policy.internalTeamSize).toBe(2)
+    }
+  })
+
+  it('costFloor uses internalTeamSize, not market teamSize', () => {
+    const policy = defaultPolicyFor('new_project')
+    const result = calculatePrice({
+      policy,
+      market: {
+        teamSize: 6,
+        durationMonths: 6,
+        monthlyUnitPrice: 1_100_000,
+      },
+    })
+
+    // costFloor = avgCost(2M) * internalTeamSize(2) * durationMonths(6 * 0.6 = 3.6)
+    // = 2_000_000 * 2 * 3.6 = 14_400_000
+    const expectedCostFloor = Math.round(2_000_000 * policy.internalTeamSize * (6 * 0.6) * 100) / 100
+    expect(result.costFloor).toBe(expectedCostFloor)
+  })
+
+  it('ourPrice should not exceed marketTotal for standard new_project', () => {
+    const policy = defaultPolicyFor('new_project')
+    const result = calculatePrice({
+      policy,
+      market: {
+        teamSize: 6,
+        durationMonths: 6,
+        monthlyUnitPrice: 1_100_000,
+      },
+      selectedCoefficient: 0.7,
+    })
+
+    // Strategy: ourPrice should be 65-80% of market
+    expect(result.ourPrice).toBeLessThanOrEqual(result.marketTotal)
+    expect(result.ourPrice).toBeGreaterThanOrEqual(result.marketTotal * 0.5)
+  })
+
+  it('coefficient range is respected for all project types', () => {
+    const types: Array<'new_project' | 'bug_report' | 'fix_request' | 'feature_addition'> = [
+      'new_project',
+      'bug_report',
+      'fix_request',
+      'feature_addition',
+    ]
+    for (const type of types) {
+      const policy = defaultPolicyFor(type)
+      // Test below min
+      const belowMin = calculatePrice({
+        policy,
+        market: { teamSize: 4, durationMonths: 4, monthlyUnitPrice: 1_000_000 },
+        selectedCoefficient: 0.01,
+      })
+      expect(belowMin.coefficient).toBe(policy.coefficientMin)
+
+      // Test above max
+      const aboveMax = calculatePrice({
+        policy,
+        market: { teamSize: 4, durationMonths: 4, monthlyUnitPrice: 1_000_000 },
+        selectedCoefficient: 0.99,
+      })
+      expect(aboveMax.coefficient).toBe(policy.coefficientMax)
+    }
   })
 })

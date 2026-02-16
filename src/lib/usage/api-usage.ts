@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceRoleClient } from '@/lib/supabase/server'
+import { logger } from '@/lib/utils/logger'
 
 type UsageStatus = 'success' | 'error' | 'blocked'
 type QuotaBreachType =
@@ -383,7 +384,7 @@ async function safeInsertUsageLog(
   const { error } = await supabase.from('api_usage_logs').insert(payload)
 
   if (error) {
-    console.warn('Failed to insert api_usage_logs', {
+    logger.warn('Failed to insert api_usage_logs', {
       sourceKey: input.sourceKey,
       status: input.status,
       code: error.code,

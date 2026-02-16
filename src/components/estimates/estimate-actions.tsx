@@ -13,18 +13,25 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import type { Estimate } from '@/types/database'
+import { LinearSyncWidget } from '@/components/estimates/linear-sync-widget'
+import type { Estimate, LinearIssueMapping } from '@/types/database'
 
 interface EstimateActionsProps {
   projectId: string
   hasSpec: boolean
   estimates: Estimate[]
+  linearIssueMappings?: LinearIssueMapping[]
 }
 
 const modeLabels: Record<string, string> = {
   market_comparison: '市場比較',
   hours_only: '工数のみ',
   hybrid: 'ハイブリッド',
+}
+
+function isHoursOnlyProject(estimate: Estimate): boolean {
+  const snapshot = estimate.pricing_snapshot as { hours_only?: boolean } | null | undefined
+  return estimate.estimate_mode === 'hours_only' || snapshot?.hours_only === true
 }
 
 interface EvidenceAppendixSourceView {
@@ -85,6 +92,7 @@ export function EstimateActions({
   projectId,
   hasSpec,
   estimates,
+  linearIssueMappings = [],
 }: EstimateActionsProps) {
   const [hourlyRate, setHourlyRate] = useState('15000')
   const [loading, setLoading] = useState(false)
@@ -212,43 +220,53 @@ export function EstimateActions({
                   </div>
                 </div>
 
-                <div>
-                  <h4 className="mb-2 text-sm font-medium">コスト</h4>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">時給</span>
-                      <span>
-                        ¥{estimate.your_hourly_rate.toLocaleString()}
-                      </span>
+                {isHoursOnlyProject(estimate) ? (
+                  <div className="space-y-2">
+                    <h4 className="mb-2 text-sm font-medium">対応方針</h4>
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                      バグ修正・保守対応は保証/契約範囲のため、金額見積りは表示されません。
+                      工数（{estimate.your_estimated_hours}h）のみで管理されます。
                     </div>
-                    <div className="flex justify-between font-bold text-lg">
-                      <span>見積総額</span>
-                      <span>
-                        ¥{displayedTotal.toLocaleString()}
-                      </span>
-                    </div>
-                    {estimate.total_market_cost && (
-                      <>
-                        <Separator className="my-2" />
-                        <div className="flex justify-between text-muted-foreground">
-                          <span>市場価格</span>
-                          <span className="line-through">
-                            ¥{estimate.total_market_cost.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-green-600">
-                          <span>削減額</span>
-                          <span>
-                            ¥{(estimate.total_market_cost - displayedTotal).toLocaleString()}
-                          </span>
-                        </div>
-                      </>
-                    )}
                   </div>
-                </div>
+                ) : (
+                  <div>
+                    <h4 className="mb-2 text-sm font-medium">コスト</h4>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">時給</span>
+                        <span>
+                          ¥{estimate.your_hourly_rate.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between font-bold text-lg">
+                        <span>見積総額</span>
+                        <span>
+                          ¥{displayedTotal.toLocaleString()}
+                        </span>
+                      </div>
+                      {estimate.total_market_cost && (
+                        <>
+                          <Separator className="my-2" />
+                          <div className="flex justify-between text-muted-foreground">
+                            <span>市場価格</span>
+                            <span className="line-through">
+                              ¥{estimate.total_market_cost.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-green-600">
+                            <span>削減額</span>
+                            <span>
+                              ¥{(estimate.total_market_cost - displayedTotal).toLocaleString()}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {estimate.comparison_report && (
+              {!isHoursOnlyProject(estimate) && estimate.comparison_report && (
                 <>
                   <Separator />
                   <div>
@@ -260,7 +278,7 @@ export function EstimateActions({
                 </>
               )}
 
-              {appendix && Array.isArray(appendix.sources) && appendix.sources.length > 0 && (
+              {!isHoursOnlyProject(estimate) && appendix && Array.isArray(appendix.sources) && appendix.sources.length > 0 && (
                 <>
                   <Separator />
                   <div className="space-y-3">
@@ -292,6 +310,14 @@ export function EstimateActions({
                   </div>
                 </>
               )}
+
+              <LinearSyncWidget
+                estimate={estimate}
+                projectId={projectId}
+                issueMappings={linearIssueMappings.filter(
+                  (m) => m.estimate_id === estimate.id
+                )}
+              />
             </CardContent>
             </Card>
           )

@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/server'
 import {
   Card,
   CardDescription,
@@ -20,7 +20,7 @@ export default async function ProjectDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const supabase = await createServerSupabaseClient()
+  const supabase = await createServiceRoleClient()
 
   const { data: project, error } = await supabase
     .from('projects')
@@ -55,6 +55,12 @@ export default async function ProjectDetailPage({
     .select('*')
     .eq('project_id', id)
     .order('created_at', { ascending: false })
+
+  const { data: linearIssueMappings } = await supabase
+    .from('linear_issue_mappings')
+    .select('*')
+    .eq('project_id', id)
+    .order('created_at', { ascending: true })
 
   const statusColor: Record<string, string> = {
     draft: 'bg-gray-500/10 text-gray-700',
@@ -124,7 +130,6 @@ export default async function ProjectDetailPage({
         <TabsContent value="spec">
           <SpecViewer
             specMarkdown={project.spec_markdown}
-            projectId={project.id}
           />
         </TabsContent>
 
@@ -141,6 +146,7 @@ export default async function ProjectDetailPage({
             projectId={project.id}
             hasSpec={!!project.spec_markdown}
             estimates={estimates ?? []}
+            linearIssueMappings={linearIssueMappings ?? []}
           />
         </TabsContent>
 

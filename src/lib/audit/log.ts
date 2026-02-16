@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { logger } from '@/lib/utils/logger'
 
 interface AuditLogInput {
   actorClerkUserId: string
@@ -26,7 +27,7 @@ export async function writeAuditLog(
 
   if (error) {
     // Avoid breaking request flow if audit table is not yet migrated.
-    console.warn('Failed to write audit log', {
+    logger.warn('Failed to write audit log', {
       action: input.action,
       resourceType: input.resourceType,
       resourceId: input.resourceId,

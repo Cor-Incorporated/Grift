@@ -4,13 +4,26 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { sendMessage } from '@/lib/ai/anthropic'
 import { parseJsonFromResponse } from '@/lib/ai/xai'
 import { fetchMarketEvidenceFromXai } from '@/lib/market/evidence'
-import { getAuthenticatedUser, isAdminUser, canAccessProject } from '@/lib/auth/authorization'
+import { resolveMarketEvidenceWithFallback } from '@/lib/market/evidence-fallback'
+import {
+  canAccessProject,
+  getAuthenticatedUser,
+  getInternalRoles,
+} from '@/lib/auth/authorization'
+import { applyRateLimit } from '@/lib/utils/rate-limit'
+import { RATE_LIMITS } from '@/lib/utils/rate-limit-config'
 import { buildProjectAttachmentContext } from '@/lib/source-analysis/project-context'
 import { writeAuditLog } from '@/lib/audit/log'
 import { changeRequestEstimateSchema } from '@/lib/utils/validation'
 import { fetchActivePricingPolicy } from '@/lib/pricing/policies'
 import { calculateChangeOrder } from '@/lib/pricing/engine'
 import { buildEstimateEvidenceAppendix } from '@/lib/market/evidence-appendix'
+import {
+  buildApprovalTriggersFromRiskFlags,
+  deriveApprovalStatus,
+  resolveEstimateStatus,
+} from '@/lib/approval/gate'
+import { ensureApprovalRequests } from '@/lib/approval/requests'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
 import type { EstimateMode, ProjectType } from '@/types/database'
 
@@ -112,12 +125,18 @@ export async function POST(
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 })
     }
 
-    const supabase = await createServiceRoleClient()
-    const admin = await isAdminUser(supabase, authUser.clerkUserId, authUser.email)
+    const rateLimited = applyRateLimit(request, 'change-requests:estimate:post', RATE_LIMITS['change-requests:estimate:post'], authUser.clerkUserId)
+    if (rateLimited) return rateLimited
 
-    if (!admin) {
+    const supabase = await createServiceRoleClient()
+    const internalRoles = await getInternalRoles(
+      supabase,
+      authUser.clerkUserId,
+      authUser.email
+    )
+    if (internalRoles.size === 0) {
       return NextResponse.json(
-        { success: false, error: '変更見積りは管理者のみ実行できます' },
+        { success: false, error: '変更見積りは管理者・営業・開発ロールのみ実行できます' },
         { status: 403 }
       )
     }
@@ -185,9 +204,10 @@ export async function POST(
     let evidenceRequirementMet = true
     let evidenceSourceCount: number | null = null
     let evidenceBlockReason: string | null = null
+    let evidenceWarnings: string[] = []
 
     if (validated.include_market_context) {
-      const evidence = await fetchMarketEvidenceFromXai({
+      const fetchedEvidence = await fetchMarketEvidenceFromXai({
         projectType,
         context: `${changeRequest.title}\n${changeRequest.description}${
           attachmentContext ? `\n\n${attachmentContext}` : ''
@@ -198,6 +218,13 @@ export async function POST(
           actorClerkUserId: authUser.clerkUserId,
         },
       })
+      const evidenceResolution = await resolveMarketEvidenceWithFallback({
+        supabase,
+        projectId: project.id,
+        projectType,
+        fetched: fetchedEvidence,
+      })
+      const evidence = evidenceResolution.result
 
       const { data: savedEvidence } = await supabase
         .from('market_evidence')
@@ -212,6 +239,7 @@ export async function POST(
           confidence_score: evidence.confidenceScore,
           usage: evidence.usage,
           created_by_clerk_user_id: authUser.clerkUserId,
+          retrieved_at: evidenceResolution.sourceRetrievedAt,
         })
         .select('id, retrieved_at')
         .maybeSingle()
@@ -221,13 +249,18 @@ export async function POST(
         citations: evidence.citations,
         confidenceScore: evidence.confidenceScore,
         summary: evidence.evidence.summary,
-        retrievedAt: savedEvidence?.retrieved_at ?? new Date().toISOString(),
+        retrievedAt:
+          savedEvidence?.retrieved_at
+          ?? evidenceResolution.sourceRetrievedAt
+          ?? new Date().toISOString(),
+        warnings: evidenceResolution.warning ? [evidenceResolution.warning] : [],
       })
 
       evidenceAppendix = appendix as unknown as Record<string, unknown>
       evidenceRequirementMet = appendix.requirement.met
       evidenceSourceCount = appendix.requirement.unique_source_count
       evidenceBlockReason = appendix.requirement.reason
+      evidenceWarnings = appendix.warnings
       marketData = {
         ...evidence.evidence,
         citations: evidence.citations,
@@ -251,6 +284,29 @@ export async function POST(
     if (!evidenceRequirementMet) {
       riskFlags.push('insufficient_evidence_sources')
     }
+    if (evidenceWarnings.length > 0) {
+      riskFlags.push('market_evidence_fallback_used')
+    }
+
+    const approvalTriggers = buildApprovalTriggersFromRiskFlags({
+      riskFlags,
+      projectType,
+      pricingContext: {
+        delta_hours: changePricing.deltaHours,
+        hours_based_fee: changePricing.hoursBasedFee,
+        floor_guard_fee: changePricing.floorGuardFee,
+        final_delta_fee: changePricing.finalDeltaFee,
+      },
+    })
+    const approvalRequired = approvalTriggers.length > 0
+    const approvalStatus = approvalRequired
+      ? deriveApprovalStatus(['pending'])
+      : deriveApprovalStatus([])
+    const statusDecision = resolveEstimateStatus({
+      evidenceRequirementMet,
+      evidenceReason: evidenceBlockReason,
+      approvalStatus,
+    })
 
     const { data: estimate, error: estimateError } = await supabase
       .from('estimates')
@@ -258,6 +314,14 @@ export async function POST(
         project_id: project.id,
         change_request_id: changeRequest.id,
         estimate_mode: modeFromType(projectType),
+        estimate_status: statusDecision.estimateStatus,
+        approval_required: approvalRequired,
+        approval_status: approvalStatus,
+        approval_block_reason: statusDecision.approvalBlockReason,
+        evidence_requirement_met: evidenceRequirementMet,
+        evidence_source_count: evidenceSourceCount,
+        evidence_appendix: evidenceAppendix,
+        evidence_block_reason: evidenceBlockReason,
         your_hourly_rate: validated.your_hourly_rate,
         your_estimated_hours: changePricing.deltaHours,
         hours_investigation: deltaHours.investigation,
@@ -284,11 +348,6 @@ export async function POST(
         },
         risk_flags: riskFlags,
         market_evidence_id: marketEvidenceId,
-        estimate_status: evidenceRequirementMet ? 'ready' : 'draft',
-        evidence_requirement_met: evidenceRequirementMet,
-        evidence_source_count: evidenceSourceCount,
-        evidence_appendix: evidenceAppendix,
-        evidence_block_reason: evidenceBlockReason,
       })
       .select('*')
       .single()
@@ -298,6 +357,30 @@ export async function POST(
         { success: false, error: '追加見積りの保存に失敗しました' },
         { status: 500 }
       )
+    }
+
+    if (approvalRequired) {
+      const ensured = await ensureApprovalRequests({
+        supabase,
+        projectId: project.id,
+        estimateId: estimate.id,
+        changeRequestId: changeRequest.id,
+        actorClerkUserId: authUser.clerkUserId,
+        triggers: approvalTriggers,
+      })
+
+      await writeAuditLog(supabase, {
+        actorClerkUserId: authUser.clerkUserId,
+        action: 'change_request.approval_gate_enabled',
+        resourceType: 'change_request',
+        resourceId: changeRequest.id,
+        projectId: project.id,
+        payload: {
+          estimateId: estimate.id,
+          triggerCount: approvalTriggers.length,
+          createdApprovalRequestCount: ensured.createdIds.length,
+        },
+      })
     }
 
     const { count } = await supabase
@@ -339,6 +422,8 @@ export async function POST(
         riskFlags,
         evidenceRequirementMet,
         evidenceSourceCount,
+        approvalRequired,
+        approvalStatus,
       },
     })
 

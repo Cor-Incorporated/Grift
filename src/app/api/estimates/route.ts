@@ -3,19 +3,38 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { sendMessage } from '@/lib/ai/anthropic'
 import { parseJsonFromResponse } from '@/lib/ai/xai'
 import { fetchMarketEvidenceFromXai } from '@/lib/market/evidence'
+import { resolveMarketEvidenceWithFallback } from '@/lib/market/evidence-fallback'
 import { estimateParamsSchema } from '@/lib/utils/validation'
-import { getAuthenticatedUser, isAdminUser, canAccessProject } from '@/lib/auth/authorization'
+import { applyRateLimit } from '@/lib/utils/rate-limit'
+import { RATE_LIMITS } from '@/lib/utils/rate-limit-config'
+import {
+  canAccessProject,
+  getAuthenticatedUser,
+  getInternalRoles,
+} from '@/lib/auth/authorization'
 import { buildProjectAttachmentContext } from '@/lib/source-analysis/project-context'
 import { fetchActivePricingPolicy } from '@/lib/pricing/policies'
 import { calculatePrice, type MarketAssumption } from '@/lib/pricing/engine'
 import { buildEstimateEvidenceAppendix } from '@/lib/market/evidence-appendix'
+import {
+  buildApprovalTriggersFromRiskFlags,
+  deriveApprovalStatus,
+  resolveEstimateStatus,
+} from '@/lib/approval/gate'
+import { ensureApprovalRequests } from '@/lib/approval/requests'
 import { writeAuditLog } from '@/lib/audit/log'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
+import { findSimilarProjects } from '@/lib/estimates/similar-projects'
 import type { EstimateMode, ProjectType } from '@/types/database'
+
+function isHoursOnlyType(projectType: ProjectType): boolean {
+  return projectType === 'bug_report' || projectType === 'fix_request'
+}
 
 function getEstimateMode(projectType: ProjectType): EstimateMode {
   switch (projectType) {
     case 'new_project':
+    case 'undetermined':
       return 'market_comparison'
     case 'bug_report':
     case 'fix_request':
@@ -67,6 +86,12 @@ async function estimateHoursWithClaude(
 - fix_request: 10-20%
 - feature_addition: 15-25%
 - new_project: 15-25%
+
+見積もり時の考慮事項:
+- 添付資料の技術スタックやアーキテクチャ情報がある場合、フレームワーク固有の工数を反映してください
+- リスクや変更影響ポイントがある場合、バッファ時間に適切に反映してください
+- 主要モジュール情報がある場合、実装工数の精度を向上させてください
+- 既存コードベースの規模や複雑さを考慮してください
 
 制約:
 - 回答は必ずJSONのみで返す
@@ -146,6 +171,84 @@ ${citationLines}
 `
 }
 
+export async function GET(request: NextRequest) {
+  try {
+    const authUser = await getAuthenticatedUser()
+    if (!authUser) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      )
+    }
+
+    const rateLimited = applyRateLimit(request, 'estimates:get', RATE_LIMITS['estimates:get'], authUser.clerkUserId)
+    if (rateLimited) return rateLimited
+
+    const projectId = request.nextUrl.searchParams.get('project_id')
+    if (!projectId) {
+      return NextResponse.json(
+        { success: false, error: 'project_id は必須です' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createServiceRoleClient()
+
+    const hasAccess = await canAccessProject(
+      supabase,
+      projectId,
+      authUser.clerkUserId,
+      authUser.email
+    )
+    if (!hasAccess) {
+      return NextResponse.json(
+        { success: false, error: 'このプロジェクトにアクセスできません' },
+        { status: 403 }
+      )
+    }
+
+    const internalRoles = await getInternalRoles(
+      supabase,
+      authUser.clerkUserId,
+      authUser.email
+    )
+
+    const { data: estimates, error: fetchError } = await supabase
+      .from('estimates')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+
+    if (fetchError) {
+      return NextResponse.json(
+        { success: false, error: '見積りの取得に失敗しました' },
+        { status: 500 }
+      )
+    }
+
+    const isInternal = internalRoles.size > 0
+    const sanitizedEstimates = isInternal
+      ? estimates
+      : (estimates ?? []).map((estimate) => ({
+          ...estimate,
+          pricing_snapshot: null,
+          risk_flags: null,
+          grok_market_data: null,
+        }))
+
+    return NextResponse.json({
+      success: true,
+      data: sanitizedEstimates,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'サーバーエラー'
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authUser = await getAuthenticatedUser()
@@ -156,15 +259,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const rateLimited = applyRateLimit(request, 'estimates:post', RATE_LIMITS['estimates:post'], authUser.clerkUserId)
+    if (rateLimited) return rateLimited
+
     const body = await request.json()
     const validated = estimateParamsSchema.parse(body)
 
     const supabase = await createServiceRoleClient()
 
-    const admin = await isAdminUser(supabase, authUser.clerkUserId, authUser.email)
-    if (!admin) {
+    const internalRoles = await getInternalRoles(
+      supabase,
+      authUser.clerkUserId,
+      authUser.email
+    )
+    if (!internalRoles.has('admin') && !internalRoles.has('sales')) {
       return NextResponse.json(
-        { success: false, error: '見積り生成は管理者のみ実行できます' },
+        { success: false, error: '見積り生成は管理者または営業ロールのみ実行できます' },
         { status: 403 }
       )
     }
@@ -244,9 +354,10 @@ export async function POST(request: NextRequest) {
     let evidenceRequirementMet = true
     let evidenceSourceCount: number | null = null
     let evidenceBlockReason: string | null = null
+    let evidenceWarnings: string[] = []
 
     if (estimateMode === 'market_comparison' || estimateMode === 'hybrid') {
-      const marketEvidence = await fetchMarketEvidenceFromXai({
+      const fetchedMarketEvidence = await fetchMarketEvidenceFromXai({
         projectType,
         context: attachmentContext
           ? `${project.spec_markdown}\n\n${attachmentContext}`
@@ -257,6 +368,13 @@ export async function POST(request: NextRequest) {
           actorClerkUserId: authUser.clerkUserId,
         },
       })
+      const marketEvidenceResolution = await resolveMarketEvidenceWithFallback({
+        supabase,
+        projectId: project.id,
+        projectType,
+        fetched: fetchedMarketEvidence,
+      })
+      const marketEvidence = marketEvidenceResolution.result
 
       marketAssumption = {
         teamSize: marketEvidence.evidence.typicalTeamSize,
@@ -277,6 +395,7 @@ export async function POST(request: NextRequest) {
           confidence_score: marketEvidence.confidenceScore,
           usage: marketEvidence.usage,
           created_by_clerk_user_id: authUser.clerkUserId,
+          retrieved_at: marketEvidenceResolution.sourceRetrievedAt,
         })
         .select('id, retrieved_at')
         .maybeSingle()
@@ -286,13 +405,18 @@ export async function POST(request: NextRequest) {
         citations: marketEvidence.citations,
         confidenceScore: marketEvidence.confidenceScore,
         summary: marketEvidence.evidence.summary,
-        retrievedAt: savedEvidence?.retrieved_at ?? new Date().toISOString(),
+        retrievedAt:
+          savedEvidence?.retrieved_at
+          ?? marketEvidenceResolution.sourceRetrievedAt
+          ?? new Date().toISOString(),
+        warnings: marketEvidenceResolution.warning ? [marketEvidenceResolution.warning] : [],
       })
 
       evidenceAppendix = appendix as unknown as Record<string, unknown>
       evidenceRequirementMet = appendix.requirement.met
       evidenceSourceCount = appendix.requirement.unique_source_count
       evidenceBlockReason = appendix.requirement.reason
+      evidenceWarnings = appendix.warnings
 
       marketData = {
         market_hourly_rate: marketEvidence.evidence.marketHourlyRate,
@@ -313,20 +437,51 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const pricing = calculatePrice({
+    const pricing = isHoursOnlyType(projectType) ? null : calculatePrice({
       policy,
       market: marketAssumption,
       selectedCoefficient: validated.coefficient,
     })
-    const riskFlags = [...pricing.riskFlags]
+    const riskFlags = [...(pricing?.riskFlags ?? [])]
     if (!evidenceRequirementMet) {
       riskFlags.push('insufficient_evidence_sources')
     }
+    if (evidenceWarnings.length > 0) {
+      riskFlags.push('market_evidence_fallback_used')
+    }
 
-    const hoursBasedCost = validated.your_hourly_rate * hours.total
-    const recommendedTotalCost = Math.max(
-      pricing.ourPrice,
-      hoursBasedCost,
+    // Find similar projects
+    const similarProjects = await findSimilarProjects({
+      supabase,
+      specMarkdown: project.spec_markdown,
+      projectType,
+      attachmentContext: attachmentContext || undefined,
+    })
+
+    const approvalTriggers = buildApprovalTriggersFromRiskFlags({
+      riskFlags,
+      projectType,
+      pricingContext: pricing ? {
+        market_total: pricing.marketTotal,
+        our_price: pricing.ourPrice,
+        cost_floor: pricing.costFloor,
+        margin_percent: pricing.marginPercent,
+      } : undefined,
+    })
+    const approvalRequired = approvalTriggers.length > 0
+    const approvalStatus = approvalRequired
+      ? deriveApprovalStatus(['pending'])
+      : deriveApprovalStatus([])
+    const statusDecision = resolveEstimateStatus({
+      evidenceRequirementMet,
+      evidenceReason: evidenceBlockReason,
+      approvalStatus,
+    })
+
+    const hoursBasedCost = isHoursOnlyType(projectType) ? null : validated.your_hourly_rate * hours.total
+    const recommendedTotalCost = isHoursOnlyType(projectType) ? null : Math.max(
+      pricing!.ourPrice,
+      hoursBasedCost!,
       policy.minimumProjectFee
     )
 
@@ -353,6 +508,14 @@ export async function POST(request: NextRequest) {
       .insert({
         project_id: validated.project_id,
         estimate_mode: estimateMode,
+        estimate_status: statusDecision.estimateStatus,
+        approval_required: approvalRequired,
+        approval_status: approvalStatus,
+        approval_block_reason: statusDecision.approvalBlockReason,
+        evidence_requirement_met: evidenceRequirementMet,
+        evidence_source_count: evidenceSourceCount,
+        evidence_appendix: evidenceAppendix,
+        evidence_block_reason: evidenceBlockReason,
         your_hourly_rate: validated.your_hourly_rate,
         your_estimated_hours: hours.total,
         hours_investigation: hours.investigation,
@@ -366,21 +529,20 @@ export async function POST(request: NextRequest) {
         total_market_cost: totalMarketCost,
         comparison_report: comparisonReport,
         grok_market_data: marketData,
-        similar_projects: null,
-        pricing_snapshot: {
-          policy,
-          market_assumption: marketAssumption,
-          calculated: pricing,
-          recommended_total_cost: recommendedTotalCost,
-          hours_based_cost: hoursBasedCost,
-        },
+        similar_projects: similarProjects.length > 0 ? similarProjects : null,
+        go_no_go_result: null,
+        value_proposition: null,
+        pricing_snapshot: isHoursOnlyType(projectType)
+          ? { hours_only: true, hourly_rate: validated.your_hourly_rate, total_hours: hours.total }
+          : {
+              policy,
+              market_assumption: marketAssumption,
+              calculated: pricing,
+              recommended_total_cost: recommendedTotalCost,
+              hours_based_cost: hoursBasedCost,
+            },
         risk_flags: riskFlags,
         market_evidence_id: marketEvidenceRecordId,
-        estimate_status: evidenceRequirementMet ? 'ready' : 'draft',
-        evidence_requirement_met: evidenceRequirementMet,
-        evidence_source_count: evidenceSourceCount,
-        evidence_appendix: evidenceAppendix,
-        evidence_block_reason: evidenceBlockReason,
       })
       .select()
       .single()
@@ -390,6 +552,28 @@ export async function POST(request: NextRequest) {
         { success: false, error: '見積りの保存に失敗しました' },
         { status: 500 }
       )
+    }
+
+    if (approvalRequired) {
+      const ensured = await ensureApprovalRequests({
+        supabase,
+        projectId: estimate.project_id,
+        estimateId: estimate.id,
+        actorClerkUserId: authUser.clerkUserId,
+        triggers: approvalTriggers,
+      })
+
+      await writeAuditLog(supabase, {
+        actorClerkUserId: authUser.clerkUserId,
+        action: 'estimate.approval_gate_enabled',
+        resourceType: 'estimate',
+        resourceId: estimate.id,
+        projectId: estimate.project_id,
+        payload: {
+          triggerCount: approvalTriggers.length,
+          createdApprovalRequestCount: ensured.createdIds.length,
+        },
+      })
     }
 
     await supabase
@@ -421,6 +605,8 @@ export async function POST(request: NextRequest) {
         recommendedTotalCost,
         evidenceRequirementMet,
         evidenceSourceCount,
+        approvalRequired,
+        approvalStatus,
       },
     })
 
@@ -430,6 +616,7 @@ export async function POST(request: NextRequest) {
         ...estimate,
         recommended_total_cost: recommendedTotalCost,
         blocked_by_evidence: !evidenceRequirementMet,
+        blocked_by_approval: approvalRequired,
       },
     })
   } catch (error) {

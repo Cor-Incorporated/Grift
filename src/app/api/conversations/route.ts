@@ -4,12 +4,15 @@ import { sendMessage, type ChatMessage } from '@/lib/ai/anthropic'
 import { parseJsonFromResponse } from '@/lib/ai/xai'
 import { getSystemPrompt, getSpecGenerationPrompt } from '@/lib/ai/system-prompts'
 import { sendMessageSchema } from '@/lib/utils/validation'
-import { checkRateLimit } from '@/lib/utils/rate-limit'
+import { applyRateLimit } from '@/lib/utils/rate-limit'
+import { RATE_LIMITS } from '@/lib/utils/rate-limit-config'
 import { buildProjectAttachmentContext } from '@/lib/source-analysis/project-context'
 import { getAuthenticatedUser, canAccessProject } from '@/lib/auth/authorization'
 import { writeAuditLog } from '@/lib/audit/log'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
-import type { ProjectType, ConversationMetadata } from '@/types/database'
+import type { ProjectType, ConversationMetadata, ConcreteProjectType } from '@/types/database'
+
+const METADATA_DELIMITER = '---METADATA---'
 
 interface AIResponse {
   message: string
@@ -19,9 +22,30 @@ interface AIResponse {
   is_complete: boolean
   question_type: 'open' | 'choice' | 'confirmation'
   choices?: string[]
+  classified_type?: ConcreteProjectType | null
+  generated_title?: string | null
 }
 
 function parseAIResponse(text: string): AIResponse {
+  const delimiterIndex = text.indexOf(METADATA_DELIMITER)
+
+  if (delimiterIndex !== -1) {
+    const messagePart = text.slice(0, delimiterIndex).trim()
+    const jsonPart = text.slice(delimiterIndex + METADATA_DELIMITER.length).trim()
+
+    try {
+      const metadata = JSON.parse(jsonPart) as Omit<AIResponse, 'message'>
+      return { message: messagePart, ...metadata }
+    } catch {
+      try {
+        const parsed = parseJsonFromResponse<Omit<AIResponse, 'message'>>(jsonPart)
+        return { message: messagePart, ...parsed }
+      } catch {
+        // fall through to legacy parser
+      }
+    }
+  }
+
   try {
     return parseJsonFromResponse<AIResponse>(text)
   } catch {
@@ -47,17 +71,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const rateLimit = checkRateLimit(`conversations:${authUser.clerkUserId}`, {
-      maxRequests: 20,
-      windowMs: 60000,
-    })
-
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { success: false, error: 'リクエスト制限を超えました。しばらくお待ちください。' },
-        { status: 429 }
-      )
-    }
+    const rateLimited = applyRateLimit(
+      request,
+      'conversations:post',
+      RATE_LIMITS['conversations:post'],
+      authUser.clerkUserId
+    )
+    if (rateLimited) return rateLimited
 
     const body = await request.json()
     const validated = sendMessageSchema.parse(body)
@@ -130,6 +150,8 @@ export async function POST(request: NextRequest) {
       is_complete: aiResponse.is_complete,
       question_type: aiResponse.question_type,
       choices: aiResponse.choices,
+      classified_type: aiResponse.classified_type ?? null,
+      generated_title: aiResponse.generated_title ?? null,
     }
 
     const { data: savedMessage } = await supabase
@@ -142,6 +164,22 @@ export async function POST(request: NextRequest) {
       })
       .select()
       .single()
+
+    if (
+      aiResponse.classified_type &&
+      project.type === 'undetermined'
+    ) {
+      const updatePayload: Record<string, unknown> = {
+        type: aiResponse.classified_type,
+      }
+      if (aiResponse.generated_title) {
+        updatePayload.title = aiResponse.generated_title
+      }
+      await supabase
+        .from('projects')
+        .update(updatePayload)
+        .eq('id', validated.project_id)
+    }
 
     if (aiResponse.is_complete) {
       const allMessages: ChatMessage[] = (history ?? [])
@@ -234,6 +272,14 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
+
+    const rateLimitedGet = applyRateLimit(
+      request,
+      'conversations:get',
+      RATE_LIMITS['conversations:get'],
+      authUser.clerkUserId
+    )
+    if (rateLimitedGet) return rateLimitedGet
 
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get('project_id')

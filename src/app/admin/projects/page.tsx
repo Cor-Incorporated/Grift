@@ -1,18 +1,9 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/server'
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import Link from 'next/link'
 
 const statusLabels: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -33,7 +24,7 @@ const typeLabels: Record<string, { label: string; icon: string }> = {
 }
 
 export default async function ProjectsListPage() {
-  const supabase = await createServerSupabaseClient()
+  const supabase = await createServiceRoleClient()
 
   const { data: projects, error } = await supabase
     .from('projects')

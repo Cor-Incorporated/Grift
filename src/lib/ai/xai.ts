@@ -392,10 +392,21 @@ export async function requestXaiResponse(
 }
 
 export function parseJsonFromResponse<T>(text: string): T {
+  // 1. Try ```json ... ``` block extraction
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/)
   if (jsonMatch) {
     return JSON.parse(jsonMatch[1]) as T
   }
 
-  return JSON.parse(text) as T
+  // 2. Try parsing entire text as JSON
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    // 3. Try extracting the first JSON object from mixed text
+    const objectMatch = text.match(/\{[\s\S]*\}/)
+    if (objectMatch) {
+      return JSON.parse(objectMatch[0]) as T
+    }
+    throw new SyntaxError(`No valid JSON found in response: ${text.slice(0, 200)}`)
+  }
 }

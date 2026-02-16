@@ -6,23 +6,75 @@ import { SignOutButton } from '@clerk/nextjs'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import type { InternalRole } from '@/types/database'
 
 const navItems = [
-  { href: '/admin', label: 'ダッシュボード', icon: '📊' },
-  { href: '/admin/projects', label: '案件一覧', icon: '📋' },
-  { href: '/admin/estimates', label: '見積り', icon: '💰' },
-  { href: '/admin/pricing', label: '価格ポリシー', icon: '📈' },
-  { href: '/admin/github', label: 'GitHub連携', icon: '🔗' },
-  { href: '/admin/settings', label: '設定', icon: '⚙️' },
+  {
+    href: '/admin',
+    label: 'ダッシュボード',
+    icon: '📊',
+    roles: ['admin', 'sales', 'dev'] as InternalRole[],
+  },
+  {
+    href: '/admin/projects',
+    label: '案件一覧',
+    icon: '📋',
+    roles: ['admin', 'sales', 'dev'] as InternalRole[],
+  },
+  {
+    href: '/admin/intake',
+    label: 'Intake',
+    icon: '🧭',
+    roles: ['admin', 'sales', 'dev'] as InternalRole[],
+  },
+  {
+    href: '/admin/execution-tasks',
+    label: '実行タスク',
+    icon: '🛠️',
+    roles: ['admin', 'sales', 'dev'] as InternalRole[],
+  },
+  {
+    href: '/admin/estimates',
+    label: '見積り',
+    icon: '💰',
+    roles: ['admin', 'sales'] as InternalRole[],
+  },
+  {
+    href: '/admin/approvals',
+    label: '承認キュー',
+    icon: '✅',
+    roles: ['admin', 'sales', 'dev'] as InternalRole[],
+  },
+  {
+    href: '/admin/pricing',
+    label: '価格ポリシー',
+    icon: '📈',
+    roles: ['admin', 'sales'] as InternalRole[],
+  },
+  {
+    href: '/admin/github',
+    label: 'GitHub連携',
+    icon: '🔗',
+    roles: ['admin', 'dev'] as InternalRole[],
+  },
+  {
+    href: '/admin/settings',
+    label: '設定',
+    icon: '⚙️',
+    roles: ['admin'] as InternalRole[],
+  },
 ]
 
 interface AdminSidebarProps {
   userEmail: string
   userName: string
+  internalRoles: InternalRole[]
 }
 
-export function AdminSidebar({ userEmail, userName }: AdminSidebarProps) {
+export function AdminSidebar({ userEmail, userName, internalRoles }: AdminSidebarProps) {
   const pathname = usePathname()
+  const roleSet = new Set(internalRoles)
+  const canView = (roles: InternalRole[]) => roles.some((role) => roleSet.has(role))
 
   return (
     <aside className="flex w-64 flex-col border-r bg-card">
@@ -32,7 +84,9 @@ export function AdminSidebar({ userEmail, userName }: AdminSidebarProps) {
       </div>
 
       <nav className="flex-1 space-y-1 p-4">
-        {navItems.map((item) => (
+        {navItems
+          .filter((item) => canView(item.roles))
+          .map((item) => (
           <Link key={item.href} href={item.href}>
             <div
               className={cn(
@@ -46,7 +100,7 @@ export function AdminSidebar({ userEmail, userName }: AdminSidebarProps) {
               <span>{item.label}</span>
             </div>
           </Link>
-        ))}
+          ))}
       </nav>
 
       <Separator />

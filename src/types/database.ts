@@ -1,4 +1,6 @@
-export type ProjectType = 'new_project' | 'bug_report' | 'fix_request' | 'feature_addition'
+export type ProjectType = 'new_project' | 'bug_report' | 'fix_request' | 'feature_addition' | 'undetermined'
+
+export type ConcreteProjectType = Exclude<ProjectType, 'undetermined'>
 
 export type ProjectStatus =
   | 'draft'
@@ -10,6 +12,10 @@ export type ProjectStatus =
   | 'on_hold'
 
 export type ProjectPriority = 'low' | 'medium' | 'high' | 'critical'
+export type InternalRole = 'admin' | 'sales' | 'dev'
+export type AppUserRole = InternalRole | 'customer'
+
+export type BusinessLine = 'boltsite' | 'iotrealm' | 'tapforge'
 
 export type ConversationRole = 'assistant' | 'user' | 'system'
 
@@ -29,7 +35,23 @@ export type ChangeRequestStatus =
   | 'approved'
   | 'rejected'
   | 'implemented'
+export type ChangeRequestIntakeStatus = 'needs_info' | 'ready_to_start'
 export type ImpactLevel = 'low' | 'medium' | 'high' | 'critical'
+export type ExecutionTaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked'
+export type ChangeRequestResponsibility =
+  | 'our_fault'
+  | 'customer_fault'
+  | 'third_party'
+  | 'unknown'
+export type ChangeRequestReproducibility = 'confirmed' | 'not_confirmed' | 'unknown'
+export type IntakeIntentType =
+  | 'bug_report'
+  | 'fix_request'
+  | 'feature_addition'
+  | 'scope_change'
+  | 'account_task'
+  | 'billing_risk'
+  | 'other'
 
 export interface Customer {
   id: string
@@ -50,6 +72,7 @@ export interface Project {
   priority: ProjectPriority | null
   existing_system_url: string | null
   spec_markdown: string | null
+  business_line: BusinessLine | null
   created_at: string
   updated_at: string
 }
@@ -66,9 +89,12 @@ export interface Conversation {
 export interface ConversationMetadata {
   category?: string
   confidence_score?: number
+  confirmed_categories?: string[]
   is_complete?: boolean
   question_type?: 'open' | 'choice' | 'confirmation'
   choices?: string[]
+  classified_type?: ConcreteProjectType | null
+  generated_title?: string | null
 }
 
 export interface ProjectFile {
@@ -94,14 +120,34 @@ export interface GitHubReference {
   id: string
   org_name: string
   repo_name: string
-  pr_title: string | null
-  pr_number: number | null
+  full_name: string
   description: string | null
   language: string | null
+  stars: number
+  topics: string[]
+  is_showcase: boolean
   hours_spent: number | null
-  embedding: number[] | null
+  pr_title: string | null
+  pr_number: number | null
+  analysis_summary: string | null
+  analysis_result: Record<string, unknown> | null
+  tech_stack: string[]
+  project_type: string | null
   metadata: Record<string, unknown>
+  synced_at: string | null
+  created_by_clerk_user_id: string | null
+  first_commit_date: string | null
+  last_commit_date: string | null
+  total_commits: number | null
+  commits_per_week: number | null
+  contributor_count: number | null
+  core_contributors: number | null
+  total_additions: number | null
+  total_deletions: number | null
+  velocity_data: Record<string, unknown> | null
+  velocity_analyzed_at: string | null
   created_at: string
+  updated_at: string
 }
 
 export interface Estimate {
@@ -110,6 +156,9 @@ export interface Estimate {
   estimate_mode: EstimateMode
   change_request_id?: string | null
   estimate_status?: 'draft' | 'ready'
+  approval_required?: boolean
+  approval_status?: 'not_required' | 'pending' | 'approved' | 'rejected'
+  approval_block_reason?: string | null
   evidence_requirement_met?: boolean
   evidence_source_count?: number | null
   evidence_appendix?: Record<string, unknown> | null
@@ -132,6 +181,10 @@ export interface Estimate {
   pricing_snapshot?: Record<string, unknown> | null
   risk_flags?: string[] | null
   market_evidence_id?: string | null
+  go_no_go_result: Record<string, unknown> | null
+  value_proposition: Record<string, unknown> | null
+  linear_project_id?: string | null
+  linear_sync_status?: LinearSyncStatus
   created_at: string
 }
 
@@ -186,13 +239,113 @@ export interface ChangeRequest {
   description: string
   category: ChangeRequestCategory
   status: ChangeRequestStatus
+  intake_status?: ChangeRequestIntakeStatus
+  requirement_completeness?: number
+  missing_fields?: string[]
+  source_channel?: string | null
+  source_message_id?: string | null
+  source_thread_id?: string | null
+  source_actor_name?: string | null
+  source_actor_email?: string | null
+  source_event_at?: string | null
+  requested_deadline?: string | null
+  requested_deadline_at?: string | null
+  intake_group_id?: string | null
+  intake_intent?: IntakeIntentType | string | null
   impact_level: ImpactLevel
+  responsibility_type?: ChangeRequestResponsibility
+  reproducibility?: ChangeRequestReproducibility
   is_billable: boolean | null
   billable_reason: string | null
+  billable_rule_id?: string | null
+  billable_evaluation?: Record<string, unknown>
   requested_by_name: string | null
   requested_by_email: string | null
   base_estimate_id: string | null
   latest_estimate_id: string | null
+  latest_execution_task_id?: string | null
+  created_by_clerk_user_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EstimateBatchRun {
+  id: string
+  actor_clerk_user_id: string
+  scope: string
+  request_params: Record<string, unknown>
+  target_change_request_ids: string[]
+  succeeded_change_request_ids: string[]
+  failed_items: Array<{
+    change_request_id: string
+    error: string
+  }>
+  requested_count: number
+  succeeded_count: number
+  failed_count: number
+  created_at: string
+}
+
+export interface ExecutionTask {
+  id: string
+  project_id: string
+  change_request_id: string
+  title: string
+  summary: string
+  status: ExecutionTaskStatus
+  priority: ImpactLevel
+  due_at: string | null
+  owner_clerk_user_id?: string | null
+  owner_role?: InternalRole | null
+  created_by_clerk_user_id: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type ExecutionTaskEventType = 'created' | 'status_changed' | 'owner_assigned' | 'note_added'
+
+export interface ExecutionTaskEvent {
+  id: string
+  task_id: string
+  project_id: string
+  change_request_id: string
+  event_type: ExecutionTaskEventType
+  actor_clerk_user_id: string | null
+  from_status: ExecutionTaskStatus | null
+  to_status: ExecutionTaskStatus | null
+  owner_clerk_user_id: string | null
+  owner_role: InternalRole | null
+  note: string | null
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export interface IntakeDemoRun {
+  id: string
+  project_id: string
+  demo_case_id: string
+  parser: string
+  intake_group_id: string | null
+  created_count: number
+  created_change_request_ids: string[]
+  actor_clerk_user_id: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export interface ChangeRequestBillableRule {
+  id: string
+  rule_name: string
+  active: boolean
+  priority: number
+  applies_to_categories: ChangeRequestCategory[]
+  max_warranty_days: number | null
+  responsibility_required: ChangeRequestResponsibility[]
+  reproducibility_required: ChangeRequestReproducibility[]
+  result_is_billable: boolean
+  reason_template: string
+  metadata: Record<string, unknown>
   created_by_clerk_user_id: string | null
   created_at: string
   updated_at: string
@@ -275,6 +428,8 @@ export interface ApprovalRequest {
   estimate_id: string | null
   change_request_id: string | null
   request_type: ApprovalRequestType
+  required_role: InternalRole
+  assigned_to_role: InternalRole | null
   status: ApprovalRequestStatus
   severity: ApprovalSeverity
   reason: string
@@ -282,9 +437,21 @@ export interface ApprovalRequest {
   requested_by_clerk_user_id: string
   assigned_to_clerk_user_id: string | null
   resolved_by_clerk_user_id: string | null
+  resolved_by_role: InternalRole | null
   resolution_comment: string | null
   requested_at: string
   resolved_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TeamMember {
+  id: string
+  clerk_user_id: string
+  email: string | null
+  roles: InternalRole[]
+  active: boolean
+  created_by_clerk_user_id: string | null
   created_at: string
   updated_at: string
 }
@@ -298,4 +465,25 @@ export interface ProjectWithDetails extends Project {
   conversations: Conversation[]
   files: ProjectFile[]
   estimates: Estimate[]
+}
+
+// --- Linear Integration Types ---
+export type LinearSyncStatus = 'not_synced' | 'syncing' | 'synced' | 'error'
+
+export interface LinearIssueMapping {
+  id: string
+  estimate_id: string
+  project_id: string
+  module_name: string
+  phase_name: string | null
+  linear_issue_id: string
+  linear_issue_identifier: string | null
+  linear_issue_url: string
+  linear_team_id: string | null
+  linear_cycle_id: string | null
+  sync_status: string
+  hours_estimate: number | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
 }

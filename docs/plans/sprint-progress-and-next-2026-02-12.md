@@ -8,11 +8,11 @@
 |---|---:|---:|---:|---:|---:|
 | EPIC-REQ | 5 | 0 | 2 | 3 | 20% |
 | EPIC-DATA | 10 | 3 | 3 | 4 | 45% |
-| EPIC-PRICE | 4 | 3 | 1 | 0 | 88% |
-| EPIC-CHG | 6 | 3 | 2 | 1 | 67% |
-| EPIC-GOV | 2 | 0 | 2 | 0 | 50% |
+| EPIC-PRICE | 4 | 4 | 0 | 0 | 100% |
+| EPIC-CHG | 6 | 5 | 0 | 1 | 83% |
+| EPIC-GOV | 2 | 1 | 1 | 0 | 75% |
 | EPIC-OUT | 4 | 0 | 0 | 4 | 0% |
-| **Total** | **31** | **9** | **10** | **12** | **45%** |
+| **Total** | **31** | **13** | **6** | **12** | **52%** |
 
 ## 2. Story別更新ステータス
 
@@ -36,15 +36,15 @@
 | PRICE-101 | **Done** | 価格ポリシー版管理実装 |
 | PRICE-102 | **Done** | 市場想定計算（人数×期間×単価）実装 |
 | PRICE-103 | **Done** | 当社提示額算定/下限比較実装 |
-| PRICE-104 | Partial | リスクフラグは実装。承認必須ゲート連動は未完成 |
+| PRICE-104 | **Done** | 下限割れ・低粗利・高リスク差分で承認リクエスト自動起票、承認状態で見積確定可否を制御 |
 | CHG-101 | **Done** | 変更要求受付API/UI実装 |
-| CHG-102 | Partial | 初期判定あり。保証期間/責任区分の詳細ルール未完成 |
+| CHG-102 | **Done** | 保証期間/責任区分/再現性のルールテーブル + API + UI入力 + 判定根拠保存を実装 |
 | CHG-103 | **Done** | 追加工数4区分算定実装 |
 | CHG-104 | **Done** | 追加料金算定実装 |
 | CHG-105 | Partial | 変更見積り生成あり。顧客提出差分文書の完成度不足 |
-| CHG-106 | Not Started | 役割別承認ゲート未実装 |
+| CHG-106 | **Done** | 承認リクエストに `required_role` を追加し、該当ロール（またはadmin）以外の承認操作を禁止 |
 | GOV-101 | Partial | Admin/案件所有者検証あり。sales/dev/customerの多ロール未実装 |
-| GOV-102 | Partial | 監査ログ基盤あり。全操作網羅/改ざん耐性の詰め未完 |
+| GOV-102 | **Done** | 主要mutationの監査アクションをテストで網羅検証し、CIゲート化 |
 | OUT-101 | Not Started | 顧客向けPDF出力未実装 |
 | OUT-102 | Not Started | 経営ダッシュボード未実装 |
 | OUT-103 | Not Started | 通知未実装 |
@@ -72,6 +72,42 @@
 - ジョブ実行の定期化（Cron/Worker常駐化）  
 - PDF OCR（画像PDF対応）  
 - 非公開リポジトリ（GitHub Appトークン経由）対応  
+
+### 3.3 Day3実装結果（今回）
+- PRICE-104-T1/T2 を実装
+  - `estimates` に `approval_required / approval_status / approval_block_reason` を追加
+  - `risk_flags` から承認トリガー生成し、`approval_requests` を自動起票
+  - 承認ステータス反映時に見積ステータスを再計算して `draft/ready` を同期
+- CHG-102-T1 を実装
+  - `change_request_billable_rules` テーブルを新設し、保証期間/責任区分/再現性で有償判定
+  - `change_requests` に判定入力（`responsibility_type`,`reproducibility`）と評価結果（`billable_rule_id`,`billable_evaluation`）を保存
+  - 管理API `/api/admin/change-request-billable-rules` を追加
+  - 管理UIで責任区分/再現性入力を追加
+
+### 3.4 Day4実装結果（今回）
+- CHG-106-T1 を実装
+  - 承認リクエストへ `required_role` を導入（`admin/sales/dev`）
+  - `approval_request` 更新APIで required role 検証を強制
+  - 承認自動起票時に request_type から required role を自動割当
+- GOV-101-T1 を実装（部分完了）
+  - 認可基盤を `admin/sales/dev/customer` へ拡張（allowlist + `team_members`）
+  - `/admin` レイアウトを internal role のみに制限
+  - `/admin/approvals` 承認キュー画面を追加
+  - 見積生成APIを role-based 制御へ変更（新規見積: admin/sales、変更見積: admin/sales/dev）
+  - `team_members` 管理APIを追加（`/api/admin/team-members`）
+
+### 3.5 Day5実装結果（今回）
+- GOV-102-T1 を実装
+  - 主要監査ログアクションの必須リストを追加（`src/lib/audit/required-actions.ts`）
+  - 必須監査アクションの網羅性テストを追加（`src/lib/audit/__tests__/required-actions.test.ts`）
+- OPS-ANL-01 を最小運用で実装
+  - cron専用実行APIを追加（`/api/source-analysis/jobs/cron`）
+  - cronシークレット検証ロジックとユニットテストを追加
+  - GitHub Actions の schedule で30分間隔実行できる workflow を追加
+- CI品質ゲートを強化
+  - CIを `lint/type-check/unit-tests/migration-check/build/e2e-smoke/quality-gate` に分割
+  - unit-test coverage artifact と playwright report artifact を保存
+  - dependency-review をPRで実行
 
 ## 4. 既存チケットへの紐付け更新
 
@@ -122,9 +158,9 @@
 
 - Day1: DATA-109-T1/T2（usage ledger + hard quota）✅
 - Day2: DATA-110-T1/T2（evidence appendix + 2ソースガード）✅
-- Day3: PRICE-104-T1/T2 + CHG-102-T1
-- Day4: CHG-106-T1 + GOV-101-T1
-- Day5: GOV-102-T1 + OPS-ANL-01 の最小運用化
+- Day3: PRICE-104-T1/T2 + CHG-102-T1 ✅
+- Day4: CHG-106-T1 + GOV-101-T1 ✅（GOV-101は残りAPI境界テストをDay5へ）
+- Day5: GOV-102-T1 + OPS-ANL-01 の最小運用化 ✅
 
 ## 6. 既知リスク
 
@@ -143,3 +179,35 @@
 - Anthropic Messages API / SDK:
   - `messages.create` の `usage.input_tokens` / `usage.output_tokens` を記録
   - クォータ超過時の呼び出し停止と 429 応答をルート側に反映
+
+## 8. Sprint N+3 Day1 実装着手（2026-02-13）
+
+- CI quality gate を強化
+  - `quality-gate` で全job resultを明示評価
+  - `ENABLE_DEPENDENCY_REVIEW=true` かつ `DEPENDENCY_REVIEW_SUPPORTED=true` 時に dependency-review 成功を必須化
+  - workflow default permissions を `contents:read` へ最小化
+- Admin サーバーコンポーネントの Supabase クライアントを service-role に統一
+  - 対象: `admin/page`, `admin/approvals/page`, `admin/projects/page`, `admin/estimates/page`, `admin/projects/[id]/page`
+- Supabase Day1 hardening migration を追加
+  - FK index 4件（`approval_requests(change_request_id|estimate_id)`, `change_requests(billable_rule_id)`, `estimate_versions(project_id)`）
+  - RLS enable 11テーブル（pricing/data/approval/audit/change系）
+
+## 9. Sprint N+3 Day2 実装着手（2026-02-13）
+
+- `admins` 設定更新を Clerk + service-role API に移行
+  - `GET/PUT /api/admin/profile` を追加
+  - `clerk_user_id` をキーに設定を取得/更新
+- 管理設定UIを API ベースへ更新
+  - `src/app/admin/settings/page.tsx` で Supabase Auth 依存を廃止
+- 監査網羅性を拡張
+  - `admin_profile.upsert` を監査必須アクションへ追加
+
+## 10. Sprint N+3 Day3 実装着手（2026-02-13）
+
+- REL-SEC-001: Supabase本番へ `day1_security_hardening` migration を適用
+  - `rls_disabled_in_public` は解消、次は `rls_enabled_no_policy` の段階的整備へ移行
+- REL-DATA-001/002: 市場根拠フォールバック実装を開始
+  - xAI取得失敗/クォータ時に `market_evidence` の前回確定値へフォールバック
+  - freshness TTL を参照し、鮮度警告を evidence appendix の `warnings` に保持
+  - `risk_flags` に `market_evidence_fallback_used` を追加
+- REL-QA-001: フォールバックのユニットテスト追加

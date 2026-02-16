@@ -6,11 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { ProjectType } from '@/types/database'
+import type { ConcreteProjectType } from '@/types/database'
 
 type Policy = {
   id: string
-  project_type: ProjectType
+  project_type: ConcreteProjectType
   name: string
   coefficient_min: number
   coefficient_max: number
@@ -24,7 +24,7 @@ type Policy = {
   created_at: string
 }
 
-const projectTypeLabels: Record<ProjectType, string> = {
+const projectTypeLabels: Record<ConcreteProjectType, string> = {
   new_project: '新規開発',
   bug_report: 'バグ報告',
   fix_request: '修正依頼',
@@ -33,7 +33,7 @@ const projectTypeLabels: Record<ProjectType, string> = {
 
 export default function PricingPage() {
   const [policies, setPolicies] = useState<Policy[]>([])
-  const [selectedType, setSelectedType] = useState<ProjectType>('new_project')
+  const [selectedType, setSelectedType] = useState<ConcreteProjectType>('new_project')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -150,7 +150,7 @@ export default function PricingPage() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>案件タイプ</Label>
-            <Select value={selectedType} onValueChange={(value) => setSelectedType(value as ProjectType)}>
+            <Select value={selectedType} onValueChange={(value) => setSelectedType(value as ConcreteProjectType)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>

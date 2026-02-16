@@ -1,9 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createServiceRoleClient } from '@/lib/supabase/server'
-import { getAuthenticatedUser, isAdminUser, canAccessProject } from '@/lib/auth/authorization'
+import {
+  canAccessProject,
+  canResolveApprovalRequestByRole,
+  getAuthenticatedUser,
+  getInternalRoles,
+} from '@/lib/auth/authorization'
 import { writeAuditLog } from '@/lib/audit/log'
 import { approvalRequestCreateSchema } from '@/lib/utils/validation'
+import { applyRateLimit } from '@/lib/utils/rate-limit'
+import { RATE_LIMITS } from '@/lib/utils/rate-limit-config'
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,10 +19,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 })
     }
 
+    const rateLimitedGet = applyRateLimit(request, 'admin:approval-requests:get', RATE_LIMITS['admin:approval-requests:get'], authUser.clerkUserId)
+    if (rateLimitedGet) return rateLimitedGet
+
     const supabase = await createServiceRoleClient()
-    const admin = await isAdminUser(supabase, authUser.clerkUserId, authUser.email)
-    if (!admin) {
-      return NextResponse.json({ success: false, error: '管理者権限が必要です' }, { status: 403 })
+    const internalRoles = await getInternalRoles(
+      supabase,
+      authUser.clerkUserId,
+      authUser.email
+    )
+    const isAdmin = internalRoles.has('admin')
+    if (internalRoles.size === 0) {
+      return NextResponse.json(
+        { success: false, error: '管理者・営業・開発ロールが必要です' },
+        { status: 403 }
+      )
     }
 
     const { searchParams } = new URL(request.url)
@@ -33,6 +51,14 @@ export async function GET(request: NextRequest) {
 
     if (projectId) {
       query = query.eq('project_id', projectId)
+    }
+
+    if (!isAdmin) {
+      const visibleRoles = Array.from(internalRoles)
+      if (visibleRoles.length === 0) {
+        return NextResponse.json({ success: true, data: [] })
+      }
+      query = query.in('required_role', visibleRoles)
     }
 
     const { data, error } = await query
@@ -60,10 +86,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 })
     }
 
+    const rateLimited = applyRateLimit(request, 'admin:approval-requests:post', RATE_LIMITS['admin:approval-requests:post'], authUser.clerkUserId)
+    if (rateLimited) return rateLimited
+
     const supabase = await createServiceRoleClient()
-    const admin = await isAdminUser(supabase, authUser.clerkUserId, authUser.email)
-    if (!admin) {
-      return NextResponse.json({ success: false, error: '管理者権限が必要です' }, { status: 403 })
+    const internalRoles = await getInternalRoles(
+      supabase,
+      authUser.clerkUserId,
+      authUser.email
+    )
+    if (internalRoles.size === 0) {
+      return NextResponse.json(
+        { success: false, error: '管理者・営業・開発ロールが必要です' },
+        { status: 403 }
+      )
     }
 
     const body = await request.json()
@@ -80,10 +116,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'この案件にアクセスできません' }, { status: 403 })
     }
 
+    if (
+      !canResolveApprovalRequestByRole({
+        internalRoles,
+        requiredRole: validated.required_role,
+      })
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `required_role=${validated.required_role} の承認リクエストを起票する権限がありません`,
+        },
+        { status: 403 }
+      )
+    }
+
     const { data, error } = await supabase
       .from('approval_requests')
       .insert({
         ...validated,
+        assigned_to_role: validated.assigned_to_role ?? validated.required_role,
         status: 'pending',
         requested_by_clerk_user_id: authUser.clerkUserId,
       })

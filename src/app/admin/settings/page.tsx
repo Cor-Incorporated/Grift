@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,27 +13,42 @@ import {
 } from '@/components/ui/card'
 import { toast } from 'sonner'
 
+interface AdminProfileResponse {
+  success: boolean
+  error?: string
+  data?: {
+    id: string | null
+    display_name: string
+    default_hourly_rate: number
+    github_orgs: string[]
+  }
+}
+
 export default function SettingsPage() {
   const [displayName, setDisplayName] = useState('')
   const [hourlyRate, setHourlyRate] = useState('15000')
   const [loading, setLoading] = useState(false)
+  const [initializing, setInitializing] = useState(true)
 
   useEffect(() => {
     const loadSettings = async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      try {
+        const response = await fetch('/api/admin/profile', {
+          method: 'GET',
+          cache: 'no-store',
+        })
+        const payload = (await response.json()) as AdminProfileResponse
 
-      if (user) {
-        const { data: admin } = await supabase
-          .from('admins')
-          .select('*')
-          .eq('user_id', user.id)
-          .single()
-
-        if (admin) {
-          setDisplayName(admin.display_name ?? '')
-          setHourlyRate(String(admin.default_hourly_rate ?? 15000))
+        if (!response.ok || !payload.success || !payload.data) {
+          throw new Error(payload.error ?? '設定の取得に失敗しました')
         }
+
+        setDisplayName(payload.data.display_name)
+        setHourlyRate(String(payload.data.default_hourly_rate))
+      } catch {
+        toast.error('設定の読み込みに失敗しました')
+      } finally {
+        setInitializing(false)
       }
     }
 
@@ -45,22 +59,26 @@ export default function SettingsPage() {
     setLoading(true)
 
     try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (!user) return
-
-      const { error } = await supabase
-        .from('admins')
-        .upsert({
-          user_id: user.id,
-          display_name: displayName,
-          default_hourly_rate: Number(hourlyRate),
-        }, { onConflict: 'user_id' })
-
-      if (error) {
-        toast.error('設定の保存に失敗しました')
+      const parsedHourlyRate = Number(hourlyRate)
+      if (!Number.isFinite(parsedHourlyRate)) {
+        toast.error('デフォルト時給は数値で入力してください')
         return
+      }
+
+      const response = await fetch('/api/admin/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          display_name: displayName,
+          default_hourly_rate: parsedHourlyRate,
+        }),
+      })
+      const payload = (await response.json()) as AdminProfileResponse
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error ?? '設定の保存に失敗しました')
       }
 
       toast.success('設定を保存しました')
@@ -102,8 +120,8 @@ export default function SettingsPage() {
               min={1000}
             />
           </div>
-          <Button onClick={handleSave} disabled={loading}>
-            {loading ? '保存中...' : '設定を保存'}
+          <Button onClick={handleSave} disabled={loading || initializing}>
+            {loading ? '保存中...' : initializing ? '読込中...' : '設定を保存'}
           </Button>
         </CardContent>
       </Card>
