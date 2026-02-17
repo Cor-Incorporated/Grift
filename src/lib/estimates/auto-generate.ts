@@ -182,10 +182,19 @@ export async function autoGenerateEstimate(
     }
   }
 
+  // Calculate hourly-based market total first (for accurate pricing)
+  const marketHours = marketData
+    ? hours.total * (marketData.market_estimated_hours_multiplier ?? 1.8)
+    : null
+  const totalMarketCost = marketData
+    ? marketData.market_hourly_rate * (marketHours ?? 0)
+    : null
+
   const pricing = isHoursOnlyType(projectType) ? null : calculatePrice({
     policy,
     market: marketAssumption,
     selectedCoefficient: undefined,
+    hourlyMarketTotal: totalMarketCost ?? undefined,
   })
   const riskFlags = [...(pricing?.riskFlags ?? [])]
   if (!evidenceRequirementMet) {
@@ -295,13 +304,6 @@ export async function autoGenerateEstimate(
     hoursBasedCost!,
     policy.minimumProjectFee
   )
-
-  const marketHours = marketData
-    ? hours.total * (marketData.market_estimated_hours_multiplier ?? 1.8)
-    : null
-  const totalMarketCost = marketData
-    ? marketData.market_hourly_rate * (marketHours ?? 0)
-    : null
 
   const { data: estimate, error: estimateError } = await supabase
     .from('estimates')
