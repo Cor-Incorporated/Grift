@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -57,6 +59,34 @@ function parseEvidenceAppendix(value: unknown): EvidenceAppendixView | null {
   return value as EvidenceAppendixView
 }
 
+interface SpeedAdvantageView {
+  marketEstimate?: {
+    durationMonths?: number
+    teamSize?: number
+    totalHours?: number
+  }
+  ourEstimate?: {
+    durationMonths?: number
+    teamSize?: number
+    totalHours?: number
+  }
+  speedMultiplier?: number
+  durationSavingsPercent?: number
+  narrative?: string
+  evidencePoints?: string[]
+}
+
+function parseSpeedAdvantage(estimate: Estimate): SpeedAdvantageView | null {
+  const snapshot = estimate.pricing_snapshot as
+    | { speed_advantage?: unknown }
+    | null
+    | undefined
+  if (!snapshot?.speed_advantage || typeof snapshot.speed_advantage !== 'object') {
+    return null
+  }
+  return snapshot.speed_advantage as SpeedAdvantageView
+}
+
 function getDisplayedTotalCost(estimate: Estimate): number {
   const snapshot = estimate.pricing_snapshot as
     | { recommended_total_cost?: unknown; pricing?: { finalDeltaFee?: unknown } }
@@ -86,6 +116,10 @@ function getDisplayedTotalCost(estimate: Estimate): number {
   }
 
   return estimate.your_hourly_rate * estimate.your_estimated_hours
+}
+
+function stripGrokCitationTags(text: string): string {
+  return text.replace(/<grok:render[^>]*>.*?<\/grok:render>/g, '').trim()
 }
 
 export function EstimateActions({
@@ -167,6 +201,7 @@ export function EstimateActions({
         estimates.map((estimate) => {
           const displayedTotal = getDisplayedTotalCost(estimate)
           const appendix = parseEvidenceAppendix(estimate.evidence_appendix)
+          const speedAdvantage = parseSpeedAdvantage(estimate)
           const evidenceBlocked = estimate.evidence_requirement_met === false
           return (
             <Card key={estimate.id}>
@@ -244,7 +279,7 @@ export function EstimateActions({
                           ¥{displayedTotal.toLocaleString()}
                         </span>
                       </div>
-                      {estimate.total_market_cost && (
+                      {estimate.total_market_cost && estimate.total_market_cost > 0 && (
                         <>
                           <Separator className="my-2" />
                           <div className="flex justify-between text-muted-foreground">
@@ -253,12 +288,18 @@ export function EstimateActions({
                               ¥{estimate.total_market_cost.toLocaleString()}
                             </span>
                           </div>
-                          <div className="flex justify-between text-green-600">
-                            <span>削減額</span>
-                            <span>
-                              ¥{(estimate.total_market_cost - displayedTotal).toLocaleString()}
-                            </span>
-                          </div>
+                          {(() => {
+                            const savings = estimate.total_market_cost - displayedTotal
+                            const isPositive = savings > 0
+                            return (
+                              <div className={`flex justify-between ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                <span>{isPositive ? '削減額' : '超過額'}</span>
+                                <span>
+                                  ¥{savings.toLocaleString()}
+                                </span>
+                              </div>
+                            )
+                          })()}
                         </>
                       )}
                     </div>
@@ -266,13 +307,71 @@ export function EstimateActions({
                 )}
               </div>
 
+              {!isHoursOnlyProject(estimate) && speedAdvantage && (speedAdvantage.speedMultiplier ?? 0) > 0 && (
+                <>
+                  <Separator />
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium">期間・スピード比較</h4>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-lg border p-3 text-sm">
+                        <div className="mb-1 text-xs font-medium text-muted-foreground">市場標準</div>
+                        <div className="text-lg font-bold">
+                          {speedAdvantage.marketEstimate?.teamSize ?? '-'}名 × {speedAdvantage.marketEstimate?.durationMonths ?? '-'}ヶ月
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {speedAdvantage.marketEstimate?.totalHours?.toLocaleString() ?? '-'}時間
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm">
+                        <div className="mb-1 text-xs font-medium text-green-700">当社（推定）</div>
+                        <div className="text-lg font-bold text-green-800">
+                          {speedAdvantage.ourEstimate?.teamSize ?? '-'}名 × {typeof speedAdvantage.ourEstimate?.durationMonths === 'number' ? Math.round(speedAdvantage.ourEstimate.durationMonths * 10) / 10 : '-'}ヶ月
+                        </div>
+                        <div className="text-xs text-green-700">
+                          {speedAdvantage.ourEstimate?.totalHours?.toLocaleString() ?? '-'}時間
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      {(speedAdvantage.speedMultiplier ?? 0) > 1 && (
+                        <Badge variant="outline" className="border-green-300 bg-green-50 text-green-800">
+                          効率 {speedAdvantage.speedMultiplier}倍
+                        </Badge>
+                      )}
+                      {(speedAdvantage.durationSavingsPercent ?? 0) > 0 && (
+                        <Badge variant="outline" className="border-blue-300 bg-blue-50 text-blue-800">
+                          期間 {Math.round(speedAdvantage.durationSavingsPercent ?? 0)}% 短縮
+                        </Badge>
+                      )}
+                    </div>
+                    {speedAdvantage.narrative && (
+                      <p className="text-sm text-muted-foreground">{speedAdvantage.narrative}</p>
+                    )}
+                    {Array.isArray(speedAdvantage.evidencePoints) && speedAdvantage.evidencePoints.length > 0 && (
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                          根拠データを表示
+                        </summary>
+                        <ul className="mt-2 space-y-1 text-muted-foreground">
+                          {speedAdvantage.evidencePoints.map((point, i) => (
+                            <li key={i}>• {point}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                </>
+              )}
+
               {!isHoursOnlyProject(estimate) && estimate.comparison_report && (
                 <>
                   <Separator />
                   <div>
                     <h4 className="mb-2 text-sm font-medium">市場比較レポート</h4>
-                    <div className="rounded-lg bg-muted/50 p-4 text-sm whitespace-pre-wrap">
-                      {estimate.comparison_report}
+                    <div className="rounded-lg bg-muted/50 p-4 text-sm prose prose-sm max-w-none dark:prose-invert">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {stripGrokCitationTags(estimate.comparison_report)}
+                      </ReactMarkdown>
                     </div>
                   </div>
                 </>

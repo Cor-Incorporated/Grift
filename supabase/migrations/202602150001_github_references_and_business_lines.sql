@@ -1,28 +1,17 @@
--- github_references テーブル（ポートフォリオ/実績管理）
-CREATE TABLE IF NOT EXISTS github_references (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_name text NOT NULL,
-  repo_name text NOT NULL,
-  full_name text GENERATED ALWAYS AS (org_name || '/' || repo_name) STORED,
-  description text,
-  language text,
-  stars integer DEFAULT 0,
-  topics text[] DEFAULT '{}',
-  is_showcase boolean DEFAULT false,
-  hours_spent numeric,
-  pr_title text,
-  pr_number integer,
-  analysis_summary text,
-  analysis_result jsonb,
-  tech_stack text[] DEFAULT '{}',
-  project_type text,
-  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-  synced_at timestamptz,
-  created_by_clerk_user_id text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (org_name, repo_name)
-);
+-- github_references テーブルに不足カラムを追加（既存テーブルなので ALTER TABLE を使用）
+-- 注: 初期マイグレーション create_github_references で基本カラムは作成済み
+ALTER TABLE github_references
+  ADD COLUMN IF NOT EXISTS full_name text GENERATED ALWAYS AS (org_name || '/' || repo_name) STORED,
+  ADD COLUMN IF NOT EXISTS stars integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS topics text[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS is_showcase boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS analysis_summary text,
+  ADD COLUMN IF NOT EXISTS analysis_result jsonb,
+  ADD COLUMN IF NOT EXISTS tech_stack text[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS project_type text,
+  ADD COLUMN IF NOT EXISTS synced_at timestamptz,
+  ADD COLUMN IF NOT EXISTS created_by_clerk_user_id text,
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS idx_github_references_showcase ON github_references(is_showcase) WHERE is_showcase = true;
 CREATE INDEX IF NOT EXISTS idx_github_references_tech_stack ON github_references USING gin(tech_stack);
