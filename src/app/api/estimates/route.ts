@@ -24,6 +24,7 @@ import { ensureApprovalRequests } from '@/lib/approval/requests'
 import { writeAuditLog } from '@/lib/audit/log'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
 import { findSimilarProjects } from '@/lib/estimates/similar-projects'
+import { calculateSpeedAdvantage } from '@/lib/estimates/speed-advantage'
 import type { EstimateMode, ProjectType } from '@/types/database'
 
 function isHoursOnlyType(projectType: ProjectType): boolean {
@@ -356,10 +357,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Calculate hourly-based market total first (for accurate pricing)
+    const marketHours = marketData
+      ? hours.total * (marketData.market_estimated_hours_multiplier ?? 1.8)
+      : null
+    const totalMarketCost = marketData
+      ? marketData.market_hourly_rate * (marketHours ?? 0)
+      : null
+
     const pricing = isHoursOnlyType(projectType) ? null : calculatePrice({
       policy,
       market: marketAssumption,
       selectedCoefficient: validated.coefficient,
+      hourlyMarketTotal: totalMarketCost ?? undefined,
     })
     const riskFlags = [...(pricing?.riskFlags ?? [])]
     if (!evidenceRequirementMet) {
@@ -376,6 +386,16 @@ export async function POST(request: NextRequest) {
       projectType,
       attachmentContext: attachmentContext || undefined,
     })
+
+    // Speed advantage calculation
+    const speedAdvantage = !isHoursOnlyType(projectType) ? calculateSpeedAdvantage({
+      similarProjects,
+      velocityData: null,
+      marketTeamSize: marketAssumption.teamSize,
+      marketDurationMonths: marketAssumption.durationMonths,
+      ourHoursEstimate: hours.total,
+      policy,
+    }) : null
 
     const approvalTriggers = buildApprovalTriggersFromRiskFlags({
       riskFlags,
@@ -403,13 +423,6 @@ export async function POST(request: NextRequest) {
       hoursBasedCost!,
       policy.minimumProjectFee
     )
-
-    const marketHours = marketData
-      ? hours.total * (marketData.market_estimated_hours_multiplier ?? 1.8)
-      : null
-    const totalMarketCost = marketData
-      ? marketData.market_hourly_rate * (marketHours ?? 0)
-      : null
 
     const comparisonReport = buildComparisonReport({
       hourlyRate: validated.your_hourly_rate,
@@ -459,6 +472,7 @@ export async function POST(request: NextRequest) {
               calculated: pricing,
               recommended_total_cost: recommendedTotalCost,
               hours_based_cost: hoursBasedCost,
+              speed_advantage: speedAdvantage,
             },
         risk_flags: riskFlags,
         market_evidence_id: marketEvidenceRecordId,

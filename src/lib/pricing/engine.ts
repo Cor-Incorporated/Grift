@@ -23,6 +23,9 @@ export interface PriceCalculationInput {
   policy: PricingPolicy
   market: MarketAssumption
   selectedCoefficient?: number
+  /** Hourly-based market total from Grok research (marketHourlyRate × marketEstimatedHours).
+   *  When provided, takes precedence over team-based calculation for more accurate pricing. */
+  hourlyMarketTotal?: number
 }
 
 export interface PriceCalculationResult {
@@ -77,7 +80,7 @@ export function calculateCostFloor(
 }
 
 export function calculatePrice(input: PriceCalculationInput): PriceCalculationResult {
-  const marketTotal = calculateMarketTotal(input.market)
+  const marketTotal = input.hourlyMarketTotal ?? calculateMarketTotal(input.market)
   const coefficient = clamp(
     input.selectedCoefficient ?? input.policy.defaultCoefficient,
     input.policy.coefficientMin,
