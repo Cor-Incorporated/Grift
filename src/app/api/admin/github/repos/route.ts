@@ -73,10 +73,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validated = githubSyncRequestSchema.parse(body)
 
-    const allRepos = await Promise.all(
+    const results = await Promise.allSettled(
       validated.orgs.map((org) => discoverOrgRepos(org))
     )
-    const flatRepos = allRepos.flat()
+    const flatRepos = results
+      .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof discoverOrgRepos>>> => r.status === 'fulfilled')
+      .flatMap((r) => r.value)
+    const failedOrgs = validated.orgs.filter((_, i) => results[i].status === 'rejected')
+
+    if (flatRepos.length === 0 && failedOrgs.length > 0) {
+      const reasons = results
+        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+        .map((r) => r.reason instanceof Error ? r.reason.message : String(r.reason))
+      return NextResponse.json(
+        { success: false, error: `全Organizationの取得に失敗しました: ${reasons.join(', ')}` },
+        { status: 502 }
+      )
+    }
 
     const result = await syncReposToDatabase({
       supabase,
@@ -94,10 +107,14 @@ export async function POST(request: NextRequest) {
         synced: result.synced,
         created: result.created,
         updated: result.updated,
+        failedOrgs,
       },
     })
 
-    return NextResponse.json({ success: true, data: result })
+    return NextResponse.json({
+      success: true,
+      data: { ...result, failedOrgs },
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ success: false, error: '入力データが不正です' }, { status: 400 })
