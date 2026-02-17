@@ -41,6 +41,17 @@ function getGitHubHeaders(token?: string): Record<string, string> {
   return headers
 }
 
+function extractOrgName(input: string): string {
+  const trimmed = input.trim()
+  // Handle full URLs like "https://github.com/Cor-Incorporated"
+  const urlMatch = trimmed.match(/(?:https?:\/\/)?github\.com\/([^/\s]+)\/?$/)
+  if (urlMatch) {
+    return urlMatch[1]
+  }
+  // Already just an org name
+  return trimmed
+}
+
 function mapApiRepo(repo: GitHubApiRepo): GitHubRepoInfo {
   return {
     orgName: repo.owner.login,
@@ -98,10 +109,22 @@ export async function discoverOrgRepos(
   org: string,
   token?: string
 ): Promise<GitHubRepoInfo[]> {
+  const orgName = extractOrgName(org)
   const headers = getGitHubHeaders(token)
-  const url = `https://api.github.com/orgs/${encodeURIComponent(org)}/repos?type=all&sort=updated&per_page=100`
-  const repos = await fetchAllPages(url, headers)
-  return repos.map(mapApiRepo)
+  const url = `https://api.github.com/orgs/${encodeURIComponent(orgName)}/repos?type=all&sort=updated&per_page=100`
+
+  try {
+    const repos = await fetchAllPages(url, headers)
+    return repos.map(mapApiRepo)
+  } catch (error) {
+    // If org endpoint fails (e.g. user account, not an org), try user repos endpoint
+    if (error instanceof Error && error.message.includes('404')) {
+      const userUrl = `https://api.github.com/users/${encodeURIComponent(orgName)}/repos?type=owner&sort=updated&per_page=100`
+      const repos = await fetchAllPages(userUrl, headers)
+      return repos.map(mapApiRepo)
+    }
+    throw error
+  }
 }
 
 export interface SyncResult {

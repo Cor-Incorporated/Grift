@@ -29,6 +29,11 @@ interface ProfileData {
 
 type ShowcaseFilter = 'all' | 'showcase' | 'non-showcase'
 
+function displayOrgName(org: string): string {
+  const match = org.match(/(?:https?:\/\/)?github\.com\/([^/\s]+)\/?$/)
+  return match ? match[1] : org
+}
+
 export default function GitHubPage() {
   const [repos, setRepos] = useState<GitHubReference[]>([])
   const [githubOrgs, setGithubOrgs] = useState<string[]>([])
@@ -92,6 +97,7 @@ export default function GitHubPage() {
         synced: number
         created: number
         updated: number
+        failedOrgs?: string[]
       }>
 
       if (!response.ok || !payload.success) {
@@ -101,6 +107,11 @@ export default function GitHubPage() {
       toast.success(
         `同期完了: ${payload.data?.synced ?? 0}件 (新規${payload.data?.created ?? 0} / 更新${payload.data?.updated ?? 0})`
       )
+      if (payload.data?.failedOrgs && payload.data.failedOrgs.length > 0) {
+        toast.warning(
+          `以下のOrganizationの取得に失敗しました: ${payload.data.failedOrgs.join(', ')}`
+        )
+      }
       await fetchRepos()
     } catch (error) {
       const message = error instanceof Error ? error.message : '同期に失敗しました'
@@ -199,8 +210,11 @@ export default function GitHubPage() {
   }
 
   const handleAddOrg = async () => {
-    const trimmed = newOrg.trim()
-    if (!trimmed) return
+    const raw = newOrg.trim()
+    if (!raw) return
+    // Strip GitHub URL prefix to extract org name
+    const urlMatch = raw.match(/(?:https?:\/\/)?github\.com\/([^/\s]+)\/?$/)
+    const trimmed = urlMatch ? urlMatch[1] : raw
     if (githubOrgs.includes(trimmed)) {
       toast.error('この Organization は既に追加されています')
       return
@@ -288,7 +302,7 @@ export default function GitHubPage() {
           <div className="flex flex-wrap gap-2">
             {githubOrgs.map((org) => (
               <Badge key={org} variant="secondary" className="gap-1 px-3 py-1">
-                {org}
+                {displayOrgName(org)}
                 <button
                   type="button"
                   onClick={() => handleRemoveOrg(org)}
