@@ -220,8 +220,12 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      const detailMessage = insertError?.message
+        ? `デモケース起票に失敗しました: ${insertError.message}`
+        : 'デモケース起票に失敗しました: change_requests insert returned null'
+
       return NextResponse.json(
-        { success: false, error: 'デモケース起票に失敗しました' },
+        { success: false, error: detailMessage },
         { status: 500 }
       )
     }
