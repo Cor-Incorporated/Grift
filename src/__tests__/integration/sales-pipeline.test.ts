@@ -16,6 +16,21 @@ vi.mock('@/lib/ai/xai', () => ({
   requestXaiResponse: vi.fn(),
 }))
 
+// 1b. Evidence pipeline modules (hours-estimator now uses Grok directly)
+vi.mock('@/lib/estimates/hours-estimator', () => ({
+  estimateHours: vi.fn(),
+  estimateHoursWithClaude: vi.fn(),
+}))
+
+vi.mock('@/lib/estimates/historical-calibration', () => ({
+  enrichSimilarProjectsWithHistory: vi.fn(),
+  buildHistoricalCalibration: vi.fn(),
+}))
+
+vi.mock('@/lib/estimates/evidence-context-builder', () => ({
+  buildEvidenceContextBlock: vi.fn(),
+}))
+
 // 2. Supabase
 vi.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: vi.fn(),
@@ -55,12 +70,20 @@ import { calculatePrice, defaultPolicyFor } from '@/lib/pricing/engine'
 import { fetchMarketEvidenceFromXai } from '@/lib/market/evidence'
 import { resolveMarketEvidenceWithFallback } from '@/lib/market/evidence-fallback'
 import { fetchActivePricingPolicy } from '@/lib/pricing/policies'
+import { estimateHours } from '@/lib/estimates/hours-estimator'
+import { enrichSimilarProjectsWithHistory, buildHistoricalCalibration } from '@/lib/estimates/historical-calibration'
+import { buildEvidenceContextBlock } from '@/lib/estimates/evidence-context-builder'
+import { buildEmptyHistoricalCalibration } from '@/lib/estimates/evidence-bundle'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const mockSendMessage = vi.mocked(sendMessage)
 const mockFetchMarketEvidence = vi.mocked(fetchMarketEvidenceFromXai)
 const mockResolveEvidence = vi.mocked(resolveMarketEvidenceWithFallback)
 const mockFetchPricingPolicy = vi.mocked(fetchActivePricingPolicy)
+const mockEstimateHours = vi.mocked(estimateHours)
+const mockEnrichHistory = vi.mocked(enrichSimilarProjectsWithHistory)
+const mockBuildCalibration = vi.mocked(buildHistoricalCalibration)
+const mockBuildEvidenceContext = vi.mocked(buildEvidenceContextBlock)
 
 // ---------------------------------------------------------------------------
 // Shared test helpers
@@ -164,15 +187,15 @@ function createMockSupabase(overrides?: {
 }
 
 function setupHoursEstimateMock(): void {
-  // First sendMessage call = hours estimate
-  mockSendMessage.mockResolvedValueOnce(JSON.stringify({
+  // estimateHours now uses Grok directly — mock the module
+  mockEstimateHours.mockResolvedValueOnce({
     investigation: 10,
     implementation: 40,
     testing: 15,
     buffer: 10,
     total: 75,
     breakdown: '## 工数内訳\n- 調査: 10h\n- 実装: 40h\n- テスト: 15h\n- バッファ: 10h',
-  }))
+  })
 }
 
 function setupMarketEvidenceMocks(): void {
@@ -245,6 +268,10 @@ function setupValuePropositionMock(): void {
 describe('Sales Engineer Pipeline Integration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default evidence pipeline setup
+    mockEnrichHistory.mockResolvedValue([])
+    mockBuildCalibration.mockReturnValue(buildEmptyHistoricalCalibration())
+    mockBuildEvidenceContext.mockReturnValue('')
   })
 
   // 1. Full new_project pipeline

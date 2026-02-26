@@ -1,5 +1,4 @@
-import { sendMessage } from '@/lib/ai/anthropic'
-import { parseJsonFromResponse } from '@/lib/ai/xai'
+import { requestXaiResponse, parseJsonFromResponse } from '@/lib/ai/xai'
 import type { ProjectType } from '@/types/database'
 
 export interface HoursEstimate {
@@ -11,19 +10,25 @@ export interface HoursEstimate {
   breakdown: string
 }
 
-export async function estimateHoursWithClaude(
+export async function estimateHours(
   specMarkdown: string,
   projectType: ProjectType,
   attachmentContext?: string,
   usageContext?: {
     projectId?: string | null
     actorClerkUserId?: string | null
-  }
+  },
+  evidenceContext?: string
 ): Promise<HoursEstimate> {
   const attachmentBlock = attachmentContext
     ? `\n\n添付資料解析の要約:\n${attachmentContext}`
     : ''
-  const prompt = `あなたはシニアソフトウェアエンジニアです。以下の仕様書を読み、工数を見積もってください。
+
+  const evidenceBlock = evidenceContext
+    ? `## 証拠データ（類似プロジェクト実績）\n${evidenceContext}\n\n重要: 上記の類似プロジェクト実績データがある場合、それを根拠として工数を校正してください。\n単純な感覚値ではなく、実績データとの乖離理由を工数内訳に明記してください。\n例: 「類似プロジェクト X の実績 200 時間を参照し、本案件は Y の追加要件があるため 280 時間と見積もりました」\n\n`
+    : ''
+
+  const systemPrompt = `${evidenceBlock}あなたはシニアソフトウェアエンジニアです。以下の仕様書を読み、工数を見積もってください。
 
 案件タイプ: ${projectType}
 
@@ -63,11 +68,19 @@ export async function estimateHoursWithClaude(
 - total は各項目の合計と一致させる
 - パート2は必ず ---BREAKDOWN--- の後に出力してください`
 
-  const response = await sendMessage(prompt, [{ role: 'user', content: `${specMarkdown}${attachmentBlock}` }], {
+  const messages = [
+    { role: 'system' as const, content: systemPrompt },
+    { role: 'user' as const, content: `${specMarkdown}${attachmentBlock}` },
+  ]
+
+  const grokResponse = await requestXaiResponse(messages, {
+    model: process.env.XAI_MODEL ?? 'grok-4-1-fast',
     temperature: 0.2,
-    maxTokens: 2048,
+    maxOutputTokens: 2048,
     usageContext,
   })
+
+  const response = grokResponse.text
 
   // Separate JSON and breakdown using delimiter
   const breakdownDelimiter = '---BREAKDOWN---'
@@ -84,13 +97,25 @@ export async function estimateHoursWithClaude(
     breakdownPart = ''
   }
 
-  const parsed = parseJsonFromResponse<Partial<HoursEstimate>>(jsonPart)
+  let parsed: Partial<HoursEstimate>
+  try {
+    parsed = parseJsonFromResponse<Partial<HoursEstimate>>(jsonPart)
+  } catch {
+    parsed = {}
+  }
 
-  const investigation = Math.max(0, Number(parsed.investigation ?? 0))
-  const implementation = Math.max(0, Number(parsed.implementation ?? 0))
-  const testing = Math.max(0, Number(parsed.testing ?? 0))
-  const buffer = Math.max(0, Number(parsed.buffer ?? 0))
-  const total = Number(parsed.total ?? investigation + implementation + testing + buffer)
+  const toSafeNumber = (value: unknown, fallback: number): number => {
+    const num = Number(value ?? fallback)
+    return Number.isFinite(num) ? Math.max(0, num) : fallback
+  }
+
+  const investigation = toSafeNumber(parsed.investigation, 0)
+  const implementation = toSafeNumber(parsed.implementation, 0)
+  const testing = toSafeNumber(parsed.testing, 0)
+  const buffer = toSafeNumber(parsed.buffer, 0)
+  const computedTotal = investigation + implementation + testing + buffer
+  const parsedTotal = Number(parsed.total ?? computedTotal)
+  const total = Number.isFinite(parsedTotal) && parsedTotal > 0 ? parsedTotal : computedTotal
 
   return {
     investigation,
@@ -106,3 +131,6 @@ export async function estimateHoursWithClaude(
           : '工数内訳の詳細は生成できませんでした。',
   }
 }
+
+/** @deprecated Use estimateHours instead */
+export { estimateHours as estimateHoursWithClaude }

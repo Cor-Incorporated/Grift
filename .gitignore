@@ -46,6 +46,12 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 
+# logs
+/log/
+
+# supabase temp
+supabase/.temp/
+
 # IDE
 .idea/
 .vscode/

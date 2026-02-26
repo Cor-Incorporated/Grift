@@ -15,7 +15,12 @@ import { evaluateGoNoGo, type GoNoGoResult } from '@/lib/approval/go-no-go'
 import { generateImplementationPlan, type ImplementationPlan } from '@/lib/estimates/module-decomposition'
 import { analyzeCodeImpact, type CodeImpactAnalysis } from '@/lib/estimates/code-impact-analysis'
 import { calculateSpeedAdvantage } from '@/lib/estimates/speed-advantage'
-import { estimateHoursWithClaude } from '@/lib/estimates/hours-estimator'
+import { estimateHours } from '@/lib/estimates/hours-estimator'
+import { enrichSimilarProjectsWithHistory, buildHistoricalCalibration } from '@/lib/estimates/historical-calibration'
+import { buildEvidenceContextBlock } from '@/lib/estimates/evidence-context-builder'
+import { crossValidateEstimate } from '@/lib/estimates/cross-validate'
+import { buildEmptyHistoricalCalibration } from '@/lib/estimates/evidence-bundle'
+import { logger } from '@/lib/utils/logger'
 import type { EstimateMode, ProjectType, BusinessLine } from '@/types/database'
 
 const DEFAULT_HOURLY_RATE = 15000
@@ -65,16 +70,80 @@ export async function autoGenerateEstimate(
 
   const estimateMode = getEstimateMode(projectType)
   const policy = await fetchActivePricingPolicy(supabase, projectType)
-
-  const hours = await estimateHoursWithClaude(
-    specMarkdown,
-    projectType,
-    attachmentContext || undefined,
-    usageContext
-  )
-
   const hourlyRate = DEFAULT_HOURLY_RATE
 
+  // ═══════════════════════════════════════════════════════════
+  // Phase 1: Evidence Gathering (parallel where possible)
+  // ═══════════════════════════════════════════════════════════
+
+  // 1a. Find similar projects (semantic) — uses Grok for profile extraction
+  let similarProjects = await findSimilarProjects({
+    supabase,
+    specMarkdown,
+    projectType,
+    businessLine: input.businessLine ?? undefined,
+    attachmentContext: attachmentContext || undefined,
+    strategy: 'semantic',
+    usageContext,
+  })
+
+  // Fallback: if semantic returned nothing, try keyword
+  if (similarProjects.length === 0) {
+    try {
+      similarProjects = await findSimilarProjects({
+        supabase,
+        specMarkdown,
+        projectType,
+        businessLine: input.businessLine ?? undefined,
+        attachmentContext: attachmentContext || undefined,
+        strategy: 'keyword',
+      })
+    } catch {
+      // Keyword fallback also failed — proceed with empty
+    }
+  }
+
+  // 1b. Enrich similar projects with historical data (velocity, analysis_result, hours)
+  let historicalCalibration = buildEmptyHistoricalCalibration()
+  let historicalRefs: Awaited<ReturnType<typeof enrichSimilarProjectsWithHistory>> = []
+  if (similarProjects.length > 0) {
+    try {
+      historicalRefs = await enrichSimilarProjectsWithHistory(supabase, similarProjects)
+      historicalCalibration = buildHistoricalCalibration(historicalRefs)
+    } catch (error) {
+      logger.warn('Historical calibration failed', {
+        error: error instanceof Error ? error.message : String(error),
+        projectId,
+      })
+    }
+  }
+
+  // 1c. Code impact analysis BEFORE implementation plan (order fix)
+  let codeImpact: CodeImpactAnalysis | null = null
+  if (attachmentContext) {
+    try {
+      codeImpact = await analyzeCodeImpact({
+        repoAnalysis: attachmentContext,
+        specMarkdown,
+        projectType,
+        usageContext,
+      })
+    } catch {
+      // Code impact analysis failed — continue without it
+    }
+  }
+
+  // 1d. Build evidence context block for AI prompts
+  const evidenceContextBlock = buildEvidenceContextBlock({
+    historicalCalibration,
+    codeImpact,
+  })
+
+  // ═══════════════════════════════════════════════════════════
+  // Phase 2: Evidence-Informed Estimation (parallel)
+  // ═══════════════════════════════════════════════════════════
+
+  // Market evidence vars
   let marketEvidenceRecordId: string | null = null
   let marketData: {
     market_hourly_rate: number
@@ -101,20 +170,38 @@ export async function autoGenerateEstimate(
   let evidenceBlockReason: string | null = null
   let evidenceWarnings: string[] = []
 
-  if (estimateMode === 'market_comparison' || estimateMode === 'hybrid') {
+  // 2a + 2b: Hours estimation (Grok + evidence) and market evidence in parallel
+  const needsMarketEvidence = estimateMode === 'market_comparison' || estimateMode === 'hybrid'
+
+  const [hours, marketResult] = await Promise.all([
+    // 2a. Hours estimation with evidence context (Grok)
+    estimateHours(
+      specMarkdown,
+      projectType,
+      attachmentContext || undefined,
+      usageContext,
+      evidenceContextBlock || undefined
+    ),
+    // 2b. Market evidence (Grok with web search) — conditional
+    needsMarketEvidence
+      ? fetchMarketEvidenceFromXai({
+          projectType,
+          context: attachmentContext
+            ? `${specMarkdown}\n\n${attachmentContext}`
+            : specMarkdown,
+          usageContext,
+        }).catch(() => null)
+      : Promise.resolve(null),
+  ])
+
+  // Process market evidence result
+  if (marketResult) {
     try {
-      const fetchedMarketEvidence = await fetchMarketEvidenceFromXai({
-        projectType,
-        context: attachmentContext
-          ? `${specMarkdown}\n\n${attachmentContext}`
-          : specMarkdown,
-        usageContext,
-      })
       const marketEvidenceResolution = await resolveMarketEvidenceWithFallback({
         supabase,
         projectId,
         projectType,
-        fetched: fetchedMarketEvidence,
+        fetched: marketResult,
       })
       const marketEvidence = marketEvidenceResolution.result
 
@@ -178,13 +265,31 @@ export async function autoGenerateEstimate(
         })),
       }
     } catch {
-      // Market evidence fetch failed — proceed with hours-only estimate
+      // Market evidence processing failed — proceed without it
     }
   }
 
-  // Calculate hourly-based market total first (for accurate pricing)
+  // ═══════════════════════════════════════════════════════════
+  // Phase 3: Synthesis (cross-validation + planning)
+  // ═══════════════════════════════════════════════════════════
+
+  // 3a. Cross-validate estimate against historical data
+  const velocityData = historicalRefs.length > 0
+    ? historicalRefs[0].velocityData
+    : null
+
+  const crossValidation = crossValidateEstimate({
+    claudeHours: hours.total,
+    historicalCalibration,
+    velocityData,
+  })
+
+  // Use reconciled hours for pricing and downstream calculations
+  const reconciledHours = crossValidation.reconciledHours
+
+  // 3b. Pricing calculation (uses reconciled hours)
   const marketHours = marketData
-    ? hours.total * (marketData.market_estimated_hours_multiplier ?? 1.8)
+    ? reconciledHours * (marketData.market_estimated_hours_multiplier ?? 1.8)
     : null
   const totalMarketCost = marketData
     ? marketData.market_hourly_rate * (marketHours ?? 0)
@@ -196,6 +301,7 @@ export async function autoGenerateEstimate(
     selectedCoefficient: undefined,
     hourlyMarketTotal: totalMarketCost ?? undefined,
   })
+
   const riskFlags = [...(pricing?.riskFlags ?? [])]
   if (!evidenceRequirementMet) {
     riskFlags.push('insufficient_evidence_sources')
@@ -203,28 +309,11 @@ export async function autoGenerateEstimate(
   if (evidenceWarnings.length > 0) {
     riskFlags.push('market_evidence_fallback_used')
   }
-
-  // Find similar projects
-  const similarProjects = await findSimilarProjects({
-    supabase,
-    specMarkdown,
-    projectType,
-    businessLine: input.businessLine ?? undefined,
-    attachmentContext: attachmentContext || undefined,
-  })
-
-  // Fetch velocity data for best matching similar project
-  let velocityData: Record<string, unknown> | null = null
-  if (similarProjects.length > 0) {
-    const { data: velocityRef } = await supabase
-      .from('github_references')
-      .select('velocity_data')
-      .eq('id', similarProjects[0].githubReferenceId)
-      .maybeSingle()
-    velocityData = velocityRef?.velocity_data ?? null
+  if (crossValidation.calibrationWarning) {
+    riskFlags.push('estimate_calibration_warning')
   }
 
-  // Module decomposition (for new_project / feature_addition)
+  // 3c. Implementation plan + speed advantage (parallel)
   let implementationPlan: ImplementationPlan | null = null
   if (projectType === 'new_project' || projectType === 'feature_addition') {
     try {
@@ -232,6 +321,7 @@ export async function autoGenerateEstimate(
         specMarkdown,
         projectType,
         attachmentContext: attachmentContext || undefined,
+        existingCodeAnalysis: codeImpact?.narrative,
         usageContext,
       })
     } catch {
@@ -239,32 +329,17 @@ export async function autoGenerateEstimate(
     }
   }
 
-  // Code impact analysis (if attachment context available)
-  let codeImpact: CodeImpactAnalysis | null = null
-  if (attachmentContext) {
-    try {
-      codeImpact = await analyzeCodeImpact({
-        repoAnalysis: attachmentContext,
-        specMarkdown,
-        projectType,
-        usageContext,
-      })
-    } catch {
-      // Code impact analysis failed — continue without it
-    }
-  }
-
-  // Speed advantage calculation
   const speedAdvantage = calculateSpeedAdvantage({
     similarProjects,
     velocityData,
     marketTeamSize: marketAssumption.teamSize,
     marketDurationMonths: marketAssumption.durationMonths,
-    ourHoursEstimate: hours.total,
+    ourHoursEstimate: reconciledHours,
     policy,
+    historicalHours: historicalCalibration.avgActualHours ?? undefined,
   })
 
-  // Evaluate Go/No-Go
+  // 3d. Go/No-Go evaluation
   let goNoGoResult: GoNoGoResult | null = null
   if (input.businessLine && pricing) {
     goNoGoResult = await evaluateGoNoGo({
@@ -278,6 +353,7 @@ export async function autoGenerateEstimate(
     })
   }
 
+  // 3e. Approval status
   const approvalTriggers = buildApprovalTriggersFromRiskFlags({
     riskFlags,
     projectType,
@@ -298,12 +374,24 @@ export async function autoGenerateEstimate(
     approvalStatus,
   })
 
-  const hoursBasedCost = isHoursOnlyType(projectType) ? null : hourlyRate * hours.total
-  const recommendedTotalCost = isHoursOnlyType(projectType) ? null : Math.max(
-    pricing!.ourPrice,
-    hoursBasedCost!,
+  const hoursBasedCost = isHoursOnlyType(projectType) ? null : hourlyRate * reconciledHours
+  const recommendedTotalCost = isHoursOnlyType(projectType) || !pricing ? null : Math.max(
+    pricing.ourPrice,
+    hoursBasedCost ?? 0,
     policy.minimumProjectFee
   )
+
+  // ═══════════════════════════════════════════════════════════
+  // DB Insert
+  // ═══════════════════════════════════════════════════════════
+
+  const evidenceBundleData = {
+    historicalCalibration,
+    codeImpact: codeImpact ? { narrative: codeImpact.narrative, impactScope: codeImpact.impactScope } : null,
+    evidenceContextBlock,
+    similarProjectCount: similarProjects.length,
+    enrichedReferenceCount: historicalRefs.length,
+  }
 
   const { data: estimate, error: estimateError } = await supabase
     .from('estimates')
@@ -319,7 +407,7 @@ export async function autoGenerateEstimate(
       evidence_appendix: evidenceAppendix,
       evidence_block_reason: evidenceBlockReason,
       your_hourly_rate: hourlyRate,
-      your_estimated_hours: hours.total,
+      your_estimated_hours: reconciledHours,
       hours_investigation: hours.investigation,
       hours_implementation: hours.implementation,
       hours_testing: hours.testing,
@@ -335,7 +423,7 @@ export async function autoGenerateEstimate(
       go_no_go_result: goNoGoResult,
       value_proposition: null,
       pricing_snapshot: isHoursOnlyType(projectType)
-        ? { hours_only: true, hourly_rate: hourlyRate, total_hours: hours.total }
+        ? { hours_only: true, hourly_rate: hourlyRate, total_hours: reconciledHours }
         : {
             policy,
             market_assumption: marketAssumption,
@@ -348,6 +436,12 @@ export async function autoGenerateEstimate(
           },
       risk_flags: riskFlags,
       market_evidence_id: marketEvidenceRecordId,
+      evidence_bundle: evidenceBundleData,
+      calibration_ratio: crossValidation.calibrationRatio,
+      historical_citations: historicalCalibration.citationText
+        ? { text: historicalCalibration.citationText, references: historicalCalibration.references.map((r) => ({ repo: r.repoFullName, hours: r.hoursSpent, score: r.matchScore })) }
+        : null,
+      cross_validation: crossValidation,
     })
     .select()
     .single()
@@ -356,7 +450,7 @@ export async function autoGenerateEstimate(
     throw new Error('見積りの自動保存に失敗しました')
   }
 
-  await supabase
+  const { error: versionError } = await supabase
     .from('estimate_versions')
     .insert({
       estimate_id: estimate.id,
@@ -367,6 +461,14 @@ export async function autoGenerateEstimate(
       snapshot: estimate,
       created_by_clerk_user_id: usageContext?.actorClerkUserId ?? null,
     })
+
+  if (versionError) {
+    logger.warn('estimate_versions insert failed', {
+      estimateId: estimate.id,
+      projectId,
+      error: versionError.message,
+    })
+  }
 
   if (usageContext?.actorClerkUserId) {
     await writeAuditLog(supabase, {
@@ -381,7 +483,10 @@ export async function autoGenerateEstimate(
         recommendedTotalCost,
         evidenceRequirementMet,
         approvalRequired,
-        totalHours: hours.total,
+        totalHours: reconciledHours,
+        rawClaudeHours: hours.total,
+        calibrationRatio: crossValidation.calibrationRatio,
+        historicalDataUsed: historicalCalibration.hasReliableData,
         hourlyRate,
       },
     })
@@ -389,7 +494,7 @@ export async function autoGenerateEstimate(
 
   return {
     estimateId: estimate.id,
-    totalHours: hours.total,
+    totalHours: reconciledHours,
     hourlyRate,
     estimateMode,
     goNoGoDecision: goNoGoResult?.decision,

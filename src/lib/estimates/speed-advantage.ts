@@ -45,6 +45,7 @@ interface CalculateSpeedAdvantageInput {
   marketDurationMonths: number
   ourHoursEstimate: number
   policy: PricingPolicy
+  historicalHours?: number
 }
 
 const HOURS_PER_MEMBER_MONTH = 160
@@ -116,6 +117,7 @@ function buildNarrative(input: {
   durationSavingsPercent: number
   hasHistoricalData: boolean
   similarProjectName?: string
+  historicalHours?: number
 }): string {
   const parts: string[] = []
 
@@ -136,7 +138,11 @@ function buildNarrative(input: {
     )
   }
 
-  if (input.hasHistoricalData && input.similarProjectName) {
+  if (input.historicalHours && input.similarProjectName) {
+    parts.push(
+      `類似プロジェクト「${input.similarProjectName}」の実績工数${input.historicalHours}時間と比較して、本見積もりの妥当性を検証しています。`
+    )
+  } else if (input.hasHistoricalData && input.similarProjectName) {
     parts.push(
       `この見積もりは、類似プロジェクト「${input.similarProjectName}」の実績データに基づいています。`
     )
@@ -153,6 +159,7 @@ function buildEvidencePoints(input: {
   marketDurationMonths: number
   ourTeamSize: number
   marketTeamSize: number
+  historicalHours?: number
 }): string[] {
   const points: string[] = []
 
@@ -162,6 +169,10 @@ function buildEvidencePoints(input: {
   points.push(
     `当社見積: ${input.ourTeamSize}名 x ${roundTwo(input.ourDurationMonths)}ヶ月`
   )
+
+  if (input.historicalHours) {
+    points.push(`類似PJ実績工数: ${input.historicalHours}時間`)
+  }
 
   if (input.speedMultiplier > 1) {
     points.push(`効率倍率: ${roundTwo(input.speedMultiplier)}x`)
@@ -194,7 +205,7 @@ function buildEvidencePoints(input: {
 export function calculateSpeedAdvantage(
   input: CalculateSpeedAdvantageInput
 ): SpeedAdvantage {
-  const { similarProjects, velocityData, marketTeamSize, marketDurationMonths, ourHoursEstimate, policy } = input
+  const { similarProjects, velocityData, marketTeamSize, marketDurationMonths, ourHoursEstimate, policy, historicalHours } = input
 
   const bestMatch = similarProjects.length > 0 ? similarProjects[0] : null
   const velocity = extractVelocityData(velocityData)
@@ -227,6 +238,7 @@ export function calculateSpeedAdvantage(
     durationSavingsPercent,
     hasHistoricalData,
     similarProjectName: bestMatch?.repoFullName,
+    historicalHours,
   })
 
   const evidencePoints = buildEvidencePoints({
@@ -237,6 +249,7 @@ export function calculateSpeedAdvantage(
     marketDurationMonths,
     ourTeamSize,
     marketTeamSize,
+    historicalHours,
   })
 
   return {
