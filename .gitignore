@@ -52,3 +52,7 @@ firebase-debug.log
 *.swp
 *.swo
 .claude/
+
+# project local
+/log/
+supabase/.temp/

@@ -58,6 +58,11 @@ const serverEnvSchema = z.object({
   SOURCE_ANALYSIS_CRON_DEFAULT_LIMIT: z.string().optional(),
   SOURCE_ANALYSIS_CRON_ACTOR_CLERK_USER_ID: z.string().optional(),
 
+  // GitHub velocity cron (optional)
+  GITHUB_VELOCITY_CRON_SECRET: z.string().optional(),
+  GITHUB_VELOCITY_CRON_DEFAULT_LIMIT: z.string().optional(),
+  GITHUB_VELOCITY_CRON_ACTOR_CLERK_USER_ID: z.string().optional(),
+
   // AI Models (optional, defaults provided by ai clients)
   ANTHROPIC_MODEL: z.string().optional(),
   XAI_MODEL: z.string().optional(),
