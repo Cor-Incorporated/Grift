@@ -2,12 +2,10 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { defaultPolicyFor } from '@/lib/pricing/engine'
 
-vi.mock('@/lib/ai/anthropic', () => ({
-  sendMessage: vi.fn(),
-}))
+// --- Mocks ---
 
-vi.mock('@/lib/ai/xai', () => ({
-  parseJsonFromResponse: vi.fn(),
+vi.mock('@/lib/estimates/hours-estimator', () => ({
+  estimateHours: vi.fn(),
 }))
 
 vi.mock('@/lib/market/evidence', () => ({
@@ -75,6 +73,15 @@ vi.mock('@/lib/estimates/speed-advantage', () => ({
   }),
 }))
 
+vi.mock('@/lib/estimates/historical-calibration', () => ({
+  enrichSimilarProjectsWithHistory: vi.fn(),
+  buildHistoricalCalibration: vi.fn(),
+}))
+
+vi.mock('@/lib/estimates/evidence-context-builder', () => ({
+  buildEvidenceContextBlock: vi.fn(),
+}))
+
 vi.mock('@/lib/pricing/engine', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/pricing/engine')>()
   return {
@@ -84,8 +91,7 @@ vi.mock('@/lib/pricing/engine', async (importOriginal) => {
 })
 
 import { autoGenerateEstimate } from '@/lib/estimates/auto-generate'
-import { sendMessage } from '@/lib/ai/anthropic'
-import { parseJsonFromResponse } from '@/lib/ai/xai'
+import { estimateHours } from '@/lib/estimates/hours-estimator'
 import { fetchMarketEvidenceFromXai } from '@/lib/market/evidence'
 import { resolveMarketEvidenceWithFallback } from '@/lib/market/evidence-fallback'
 import { fetchActivePricingPolicy } from '@/lib/pricing/policies'
@@ -99,6 +105,9 @@ import { writeAuditLog } from '@/lib/audit/log'
 import { findSimilarProjects } from '@/lib/estimates/similar-projects'
 import { evaluateGoNoGo } from '@/lib/approval/go-no-go'
 import { calculatePrice } from '@/lib/pricing/engine'
+import { enrichSimilarProjectsWithHistory, buildHistoricalCalibration } from '@/lib/estimates/historical-calibration'
+import { buildEvidenceContextBlock } from '@/lib/estimates/evidence-context-builder'
+import { buildEmptyHistoricalCalibration } from '@/lib/estimates/evidence-bundle'
 
 const MOCK_ESTIMATE_ID = 'est-123'
 const MOCK_PROJECT_ID = 'proj-456'
@@ -217,8 +226,7 @@ function createMockSupabase() {
 function setupDefaultMocks() {
   const policy = defaultPolicyFor('new_project')
   ;(fetchActivePricingPolicy as Mock).mockResolvedValue(policy)
-  ;(sendMessage as Mock).mockResolvedValue('{"investigation":10,"implementation":40,"testing":15,"buffer":10,"total":75,"breakdown":"## 工数内訳"}')
-  ;(parseJsonFromResponse as Mock).mockReturnValue(createMockHoursResponse())
+  ;(estimateHours as Mock).mockResolvedValue(createMockHoursResponse())
   ;(fetchMarketEvidenceFromXai as Mock).mockResolvedValue(createMockMarketEvidence())
   ;(resolveMarketEvidenceWithFallback as Mock).mockResolvedValue(createMockFallbackResolution())
   ;(buildEstimateEvidenceAppendix as Mock).mockReturnValue({
@@ -246,6 +254,9 @@ function setupDefaultMocks() {
     reasoning: '',
   })
   ;(writeAuditLog as Mock).mockResolvedValue(undefined)
+  ;(enrichSimilarProjectsWithHistory as Mock).mockResolvedValue([])
+  ;(buildHistoricalCalibration as Mock).mockReturnValue(buildEmptyHistoricalCalibration())
+  ;(buildEvidenceContextBlock as Mock).mockReturnValue('')
 }
 
 describe('autoGenerateEstimate', () => {
@@ -272,7 +283,8 @@ describe('autoGenerateEstimate', () => {
 
     expect(fetchMarketEvidenceFromXai).toHaveBeenCalledOnce()
     expect(resolveMarketEvidenceWithFallback).toHaveBeenCalledOnce()
-    expect(findSimilarProjects).toHaveBeenCalledOnce()
+    // semantic first, then keyword fallback (both return [])
+    expect(findSimilarProjects).toHaveBeenCalledTimes(2)
     expect(evaluateGoNoGo).toHaveBeenCalledOnce()
   })
 
@@ -400,18 +412,6 @@ describe('autoGenerateEstimate', () => {
           }),
         }
       }
-      if (table === 'github_references') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              maybeSingle: vi.fn().mockResolvedValue({
-                data: { velocity_data: { commitsPerWeek: 10, velocityScore: 75 } },
-                error: null,
-              }),
-            }),
-          }),
-        }
-      }
       return { insert: vi.fn().mockResolvedValue({ error: null }) }
     })
     const supabase = { from: fromMock } as unknown as SupabaseClient
@@ -517,7 +517,7 @@ describe('autoGenerateEstimate', () => {
     expect(writeAuditLog).not.toHaveBeenCalled()
   })
 
-  it('hours estimation respects buffer rates from Claude response', async () => {
+  it('hours estimation respects buffer rates from estimateHours response', async () => {
     const highBufferHours = {
       investigation: 5,
       implementation: 20,
@@ -526,7 +526,7 @@ describe('autoGenerateEstimate', () => {
       total: 50,
       breakdown: '## 高バッファ',
     }
-    ;(parseJsonFromResponse as Mock).mockReturnValue(highBufferHours)
+    ;(estimateHours as Mock).mockResolvedValue(highBufferHours)
     const supabase = createMockSupabase()
 
     const result = await autoGenerateEstimate({
@@ -591,7 +591,7 @@ describe('autoGenerateEstimate', () => {
     expect(fetchMarketEvidenceFromXai).not.toHaveBeenCalled()
   })
 
-  it('attachmentContext is forwarded to sendMessage and market evidence fetch', async () => {
+  it('attachmentContext is forwarded to estimateHours and market evidence fetch', async () => {
     const supabase = createMockSupabase()
     const attachmentCtx = '技術スタック: React, Next.js, TypeScript'
 
@@ -603,8 +603,9 @@ describe('autoGenerateEstimate', () => {
       attachmentContext: attachmentCtx,
     })
 
-    const sendMessageCall = (sendMessage as Mock).mock.calls[0]
-    expect(sendMessageCall[1][0].content).toContain(attachmentCtx)
+    // estimateHours(specMarkdown, projectType, attachmentContext, usageContext, evidenceContext)
+    const estimateHoursCall = (estimateHours as Mock).mock.calls[0]
+    expect(estimateHoursCall[2]).toBe(attachmentCtx)
 
     const marketCall = (fetchMarketEvidenceFromXai as Mock).mock.calls[0][0]
     expect(marketCall.context).toContain(attachmentCtx)

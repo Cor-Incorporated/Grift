@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ProjectType, BusinessLine } from '@/types/database'
+import type { UsageCallContext } from '@/lib/usage/api-usage'
+import { logger } from '@/lib/utils/logger'
 
 export interface SimilarProject {
   githubReferenceId: string
@@ -19,6 +21,8 @@ interface FindSimilarProjectsInput {
   businessLine?: BusinessLine
   attachmentContext?: string
   limit?: number
+  strategy?: 'keyword' | 'semantic'
+  usageContext?: UsageCallContext
 }
 
 // Extract keywords from text for matching
@@ -118,7 +122,28 @@ function calculateMatchScore(
 export async function findSimilarProjects(
   input: FindSimilarProjectsInput
 ): Promise<SimilarProject[]> {
-  const { supabase, specMarkdown, projectType, businessLine, attachmentContext, limit = 5 } = input
+  const { supabase, specMarkdown, projectType, businessLine, attachmentContext, limit = 5, strategy = 'keyword', usageContext } = input
+
+  // Semantic strategy: delegate to AI-based matching
+  if (strategy === 'semantic') {
+    try {
+      const { findSimilarProjectsSemantic } = await import('@/lib/estimates/semantic-similarity')
+      return await findSimilarProjectsSemantic({
+        supabase,
+        specMarkdown,
+        projectType,
+        businessLine,
+        attachmentContext,
+        limit,
+        usageContext,
+      })
+    } catch (error) {
+      logger.warn('Semantic similarity failed, falling back to keyword', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      // Fall through to keyword strategy
+    }
+  }
 
   // 1. Extract keywords from spec + attachment context
   const fullText = [specMarkdown, attachmentContext ?? ''].join('\n')

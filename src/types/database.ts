@@ -183,6 +183,10 @@ export interface Estimate {
   market_evidence_id?: string | null
   go_no_go_result: Record<string, unknown> | null
   value_proposition: Record<string, unknown> | null
+  evidence_bundle?: Record<string, unknown> | null
+  calibration_ratio?: number | null
+  historical_citations?: Record<string, unknown> | null
+  cross_validation?: Record<string, unknown> | null
   linear_project_id?: string | null
   linear_sync_status?: LinearSyncStatus
   created_at: string
