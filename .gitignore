@@ -58,3 +58,7 @@ supabase/.temp/
 *.swp
 *.swo
 .claude/
+
+# project local
+/log/
+supabase/.temp/

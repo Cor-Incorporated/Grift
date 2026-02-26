@@ -246,4 +246,8 @@ export const RATE_LIMITS = {
     maxRequests: 30,
     windowMs: ONE_MINUTE,
   },
+  'admin:github:velocity-cron:post': {
+    maxRequests: 30,
+    windowMs: ONE_MINUTE,
+  },
 } as const satisfies Record<string, RateLimitConfig>
