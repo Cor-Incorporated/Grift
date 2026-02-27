@@ -88,7 +88,8 @@ function scoreStrategicAlignment(
   const baseScore = coreAlignmentMap[businessLine]?.[projectType] ?? 50
 
   const specLower = specMarkdown.toLowerCase()
-  const matchCount = strategicKeywords[businessLine].reduce(
+  const keywords = strategicKeywords[businessLine] ?? []
+  const matchCount = keywords.reduce(
     (count, keyword) => count + (specLower.includes(keyword) ? 1 : 0),
     0
   )
