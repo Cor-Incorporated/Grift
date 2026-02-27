@@ -144,9 +144,9 @@ export function LinearSyncWidget({
               </div>
             ))}
           </div>
-          {estimate.linear_project_id && (
+          {(estimate.linear_project_url || estimate.linear_project_id) && (
             <a
-              href={`https://linear.app/project/${estimate.linear_project_id}`}
+              href={estimate.linear_project_url ?? `https://linear.app/project/${estimate.linear_project_id}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"

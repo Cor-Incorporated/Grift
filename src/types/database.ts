@@ -188,6 +188,7 @@ export interface Estimate {
   historical_citations?: Record<string, unknown> | null
   cross_validation?: Record<string, unknown> | null
   linear_project_id?: string | null
+  linear_project_url?: string | null
   linear_sync_status?: LinearSyncStatus
   created_at: string
 }

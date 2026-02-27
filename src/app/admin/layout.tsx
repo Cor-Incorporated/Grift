@@ -23,7 +23,7 @@ export default async function AdminLayout({
     user?.emailAddresses[0]?.emailAddress ?? null
   )
 
-  if (!internalRoles.has('admin')) {
+  if (internalRoles.size === 0) {
     redirect('/dashboard')
   }
 

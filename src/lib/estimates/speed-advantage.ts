@@ -46,6 +46,7 @@ interface CalculateSpeedAdvantageInput {
   ourHoursEstimate: number
   policy: PricingPolicy
   historicalHours?: number
+  implementationPlan?: { modules: Array<{ name: string }> } | null
 }
 
 const HOURS_PER_MEMBER_MONTH = 160
@@ -216,7 +217,13 @@ export function calculateSpeedAdvantage(
     : undefined
 
   const marketTotalHours = marketTeamSize * marketDurationMonths * HOURS_PER_MEMBER_MONTH
-  const ourTeamSize = policy.internalTeamSize
+
+  // Dynamic team size: derive from implementation plan module count if available
+  const moduleCount = input.implementationPlan?.modules.length ?? 0
+  const dynamicTeamSize = moduleCount > 0
+    ? Math.min(Math.ceil(moduleCount / 2), marketTeamSize)
+    : policy.internalTeamSize
+  const ourTeamSize = dynamicTeamSize
   const ourDurationMonths = ourTeamSize > 0
     ? ourHoursEstimate / (ourTeamSize * HOURS_PER_MEMBER_MONTH)
     : ourHoursEstimate / HOURS_PER_MEMBER_MONTH
