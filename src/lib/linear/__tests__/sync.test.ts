@@ -30,17 +30,31 @@ import { createLinearProject, createLinearIssue, createLinearCycle } from '../cl
 import { writeAuditLog } from '@/lib/audit/log'
 import type { Mock } from 'vitest'
 
-function createMockSupabase() {
+function createMockSupabase(overrides?: { existingLinearProjectId?: string }) {
   const updateMock = vi.fn().mockReturnValue({
     eq: vi.fn().mockResolvedValue({ error: null }),
   })
 
   const insertMock = vi.fn().mockResolvedValue({ error: null })
+  const upsertMock = vi.fn().mockResolvedValue({ error: null })
+
+  const selectMock = vi.fn().mockReturnValue({
+    eq: vi.fn().mockReturnValue({
+      single: vi.fn().mockResolvedValue({
+        data: overrides?.existingLinearProjectId
+          ? { linear_project_id: overrides.existingLinearProjectId, linear_project_url: 'https://linear.app/test/project/existing' }
+          : { linear_project_id: null, linear_project_url: null },
+        error: null,
+      }),
+    }),
+  })
 
   return {
     from: vi.fn().mockReturnValue({
       update: updateMock,
       insert: insertMock,
+      upsert: upsertMock,
+      select: selectMock,
     }),
   } as unknown as SupabaseClient
 }
@@ -102,9 +116,18 @@ describe('syncEstimateToLinear', () => {
     const updateMock = vi.fn().mockReturnValue({
       eq: vi.fn().mockResolvedValue({ error: null }),
     })
+    const selectMock = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({
+          data: { linear_project_id: null, linear_project_url: null },
+          error: null,
+        }),
+      }),
+    })
     const supabase = {
       from: vi.fn().mockReturnValue({
         update: updateMock,
+        select: selectMock,
       }),
     } as unknown as SupabaseClient
 

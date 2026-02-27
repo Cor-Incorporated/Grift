@@ -582,8 +582,8 @@ describe('Sales Engineer Pipeline Integration', () => {
       riskFlags: pricing.riskFlags,
     })
 
-    // iotrealm + new_project = 95 alignment
-    expect(goNoGoResult.scores.strategicAlignment.score).toBe(95)
+    // iotrealm + new_project = 95 base + 10 keyword bonus (ai,ml,iot,機械学習=4 matches) = 100
+    expect(goNoGoResult.scores.strategicAlignment.score).toBe(100)
     expect(goNoGoResult.scores.strategicAlignment.businessLine).toBe('iotrealm')
 
     // Step 4: Generate value proposition using go-no-go result and classified business line

@@ -6,6 +6,7 @@ import {
   getDefaultTeamId,
 } from './client'
 import { writeAuditLog } from '@/lib/audit/log'
+import { logger } from '@/lib/utils/logger'
 
 interface ModuleEstimate {
   name: string
@@ -87,12 +88,36 @@ export async function syncEstimateToLinear(
     .eq('id', estimateId)
 
   try {
-    // 2. Create Linear Project
-    const linearProject = await createLinearProject({
-      name: projectName,
-      description: `BenevolentDirector 見積り: ${estimateId}`,
-      teamIds: [teamId],
-    })
+    // 2. Check for existing Linear project or create a new one
+    const { data: existingEstimate } = await supabase
+      .from('estimates')
+      .select('linear_project_id, linear_project_url')
+      .eq('id', estimateId)
+      .single()
+
+    let linearProjectId: string
+    let linearProjectUrl: string
+
+    if (existingEstimate?.linear_project_id) {
+      linearProjectId = existingEstimate.linear_project_id
+      linearProjectUrl = existingEstimate.linear_project_url ?? ''
+      logger.info('Linear project already exists, reusing', {
+        estimateId,
+        linearProjectId,
+      })
+    } else {
+      const linearProject = await createLinearProject({
+        name: projectName,
+        description: `BenevolentDirector 見積り: ${estimateId}`,
+        teamIds: [teamId],
+      })
+      linearProjectId = linearProject.id
+      linearProjectUrl = linearProject.url
+      logger.info('Created new Linear project', {
+        estimateId,
+        linearProjectId,
+      })
+    }
 
     // 3. Create Cycles from phases (if available)
     const cycleMap = new Map<string, string>()
@@ -134,7 +159,7 @@ export async function syncEstimateToLinear(
         title: moduleItem.name,
         description: buildIssueDescription(moduleItem),
         priority: mapRiskLevelToPriority(moduleItem.riskLevel),
-        projectId: linearProject.id,
+        projectId: linearProjectId,
         cycleId,
         estimate: Math.ceil(moduleItem.hours),
       })
@@ -161,12 +186,12 @@ export async function syncEstimateToLinear(
         metadata: {},
       }))
 
-      const { error: insertError } = await supabase
+      const { error: upsertError } = await supabase
         .from('linear_issue_mappings')
-        .insert(rows)
+        .upsert(rows, { onConflict: 'estimate_id,module_name' })
 
-      if (insertError) {
-        throw new Error(`Issue mapping保存に失敗: ${insertError.message}`)
+      if (upsertError) {
+        throw new Error(`Issue mapping保存に失敗: ${upsertError.message}`)
       }
     }
 
@@ -174,8 +199,8 @@ export async function syncEstimateToLinear(
     await supabase
       .from('estimates')
       .update({
-        linear_project_id: linearProject.id,
-        linear_project_url: linearProject.url,
+        linear_project_id: linearProjectId,
+        linear_project_url: linearProjectUrl,
         linear_sync_status: 'synced',
       })
       .eq('id', estimateId)
@@ -189,8 +214,8 @@ export async function syncEstimateToLinear(
         resourceId: estimateId,
         projectId,
         payload: {
-          linearProjectId: linearProject.id,
-          linearProjectUrl: linearProject.url,
+          linearProjectId,
+          linearProjectUrl,
           issueCount: issueMappings.length,
           cycleCount: cycleMap.size,
         },
@@ -198,8 +223,8 @@ export async function syncEstimateToLinear(
     }
 
     return {
-      linearProjectId: linearProject.id,
-      linearProjectUrl: linearProject.url,
+      linearProjectId,
+      linearProjectUrl,
       issueCount: issueMappings.length,
       cycleCount: cycleMap.size,
     }
