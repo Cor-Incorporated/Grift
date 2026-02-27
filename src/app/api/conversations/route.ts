@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
     const metadata: ConversationMetadata = {
       category: aiResponse.category,
       confidence_score: aiResponse.confidence_score,
+      confirmed_categories: aiResponse.confirmed_categories,
       is_complete: aiResponse.is_complete,
       question_type: aiResponse.question_type,
       choices: aiResponse.choices,

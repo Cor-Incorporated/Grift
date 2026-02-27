@@ -52,7 +52,8 @@ function scoreProfitability(pricingResult: PriceCalculationResult): {
 
 function scoreStrategicAlignment(
   businessLine: BusinessLine,
-  projectType: ProjectType
+  projectType: ProjectType,
+  specMarkdown: string
 ): { score: number; businessLine: BusinessLine; details: string } {
   const coreAlignmentMap: Record<BusinessLine, Record<string, number>> = {
     boltsite: {
@@ -78,10 +79,30 @@ function scoreStrategicAlignment(
     },
   }
 
-  const score = coreAlignmentMap[businessLine]?.[projectType] ?? 50
-  const details = score >= 70
+  const strategicKeywords: Record<BusinessLine, string[]> = {
+    boltsite: ['wordpress', 'cms', 'ホスティング', 'ランディングページ', 'コーポレートサイト', 'web制作', 'seo'],
+    iotrealm: ['iot', 'センサー', 'デバイス', 'エッジ', 'mqtt', 'テレメトリ', 'ai', 'ml', '機械学習'],
+    tapforge: ['アプリ', 'モバイル', 'flutter', 'react native', 'ios', 'android', 'swift', 'kotlin'],
+  }
+
+  const baseScore = coreAlignmentMap[businessLine]?.[projectType] ?? 50
+
+  const specLower = specMarkdown.toLowerCase()
+  const keywords = strategicKeywords[businessLine] ?? []
+  const matchCount = keywords.reduce(
+    (count, keyword) => count + (specLower.includes(keyword) ? 1 : 0),
+    0
+  )
+
+  const keywordBonus = matchCount >= 3 ? 10 : matchCount >= 1 ? 5 : 0
+  const score = Math.min(100, baseScore + keywordBonus)
+
+  const baseDetails = score >= 70
     ? `${businessLine}事業の${projectType}案件として高い適合性`
     : `${businessLine}事業の${projectType}案件として中程度の適合性`
+  const details = keywordBonus > 0
+    ? `${baseDetails}（キーワード一致${matchCount}件で+${keywordBonus}pt）`
+    : baseDetails
 
   return { score, businessLine, details }
 }
@@ -170,7 +191,8 @@ export async function evaluateGoNoGo(
     : { score: 100, details: 'バグ修正：保証期間内のため収益性評価はスキップ' }
   const strategicAlignment = scoreStrategicAlignment(
     input.businessLine,
-    input.projectType
+    input.projectType,
+    input.specMarkdown
   )
   const capacity = await scoreCapacity(input.supabase, input.projectId)
   const technicalRisk = scoreTechnicalRisk(input.specMarkdown, input.riskFlags)

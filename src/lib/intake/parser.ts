@@ -40,6 +40,7 @@ const INTENT_TYPE_MAP: Record<string, IntakeIntentType> = {
   bug_report: 'bug_report',
   fix_request: 'fix_request',
   feature_addition: 'feature_addition',
+  new_project: 'feature_addition',
   scope_change: 'scope_change',
   account_task: 'account_task',
   billing_risk: 'billing_risk',
@@ -161,6 +162,11 @@ function parseHeuristically(message: string): IntakeParseResult {
     || normalized.includes('機能')
     || normalized.includes('チュートリアル')
     || normalized.includes('フォルダ')
+    || normalized.includes('新規開発')
+    || normalized.includes('新規プロジェクト')
+    || normalized.includes('新しいアプリ')
+    || normalized.includes('新しいシステム')
+    || normalized.includes('ゼロから')
   ) {
     intents.add('feature_addition')
   }

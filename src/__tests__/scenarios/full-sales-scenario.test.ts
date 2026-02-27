@@ -370,7 +370,7 @@ describe('Full Sales Engineer Scenario Tests', () => {
 
       // IoT typically has some hardware risk, capacity at 3 is moderate
       expect(['go', 'go_with_conditions']).toContain(goNoGo.decision)
-      expect(goNoGo.scores.strategicAlignment.score).toBe(95) // iotrealm + new_project
+      expect(goNoGo.scores.strategicAlignment.score).toBe(100) // iotrealm + new_project + keyword bonus (センサー,mqtt,iot,ai,ml=5 matches → +10)
     })
 
     it('Step 4: バリュープロポジション → IoT strengths', async () => {
@@ -476,9 +476,9 @@ describe('Full Sales Engineer Scenario Tests', () => {
         riskFlags: [],
       })
 
-      // tapforge + new_project = 85, decent margins, low active
+      // tapforge + new_project = 85 base + 5 keyword bonus (モバイル,アプリ=2 matches) = 90
       expect(['go', 'go_with_conditions']).toContain(goNoGo.decision)
-      expect(goNoGo.scores.strategicAlignment.score).toBe(85)
+      expect(goNoGo.scores.strategicAlignment.score).toBe(90)
     })
 
     it('Step 4: バリュープロポジション → TapForge strengths', async () => {

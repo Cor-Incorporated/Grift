@@ -1,5 +1,9 @@
 import { requestXaiResponse, parseJsonFromResponse } from '@/lib/ai/xai'
+import { logger } from '@/lib/utils/logger'
 import type { ProjectType } from '@/types/database'
+
+const MAX_RETRIES = 2
+const RETRY_BASE_DELAY_MS = 1000
 
 export interface HoursEstimate {
   investigation: number
@@ -73,14 +77,41 @@ export async function estimateHours(
     { role: 'user' as const, content: `${specMarkdown}${attachmentBlock}` },
   ]
 
-  const grokResponse = await requestXaiResponse(messages, {
-    model: process.env.XAI_MODEL ?? 'grok-4-1-fast',
-    temperature: 0.2,
-    maxOutputTokens: 2048,
-    usageContext,
-  })
+  let grokResponse: Awaited<ReturnType<typeof requestXaiResponse>>
+  let lastError: unknown = null
 
-  const response = grokResponse.text
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      grokResponse = await requestXaiResponse(messages, {
+        model: process.env.XAI_MODEL ?? 'grok-4-1-fast',
+        temperature: 0.2,
+        maxOutputTokens: 2048,
+        usageContext,
+      })
+      lastError = null
+      break
+    } catch (error) {
+      lastError = error
+      if (attempt < MAX_RETRIES) {
+        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
+        logger.warn('Hours estimation xAI call failed, retrying', {
+          attempt: attempt + 1,
+          maxRetries: MAX_RETRIES,
+          delayMs: delay,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+    }
+  }
+
+  if (lastError) {
+    throw new Error(
+      `工数見積りのAI呼び出しが${MAX_RETRIES + 1}回失敗しました: ${lastError instanceof Error ? lastError.message : String(lastError)}`
+    )
+  }
+
+  const response = grokResponse!.text
 
   // Separate JSON and breakdown using delimiter
   const breakdownDelimiter = '---BREAKDOWN---'
@@ -100,8 +131,10 @@ export async function estimateHours(
   let parsed: Partial<HoursEstimate>
   try {
     parsed = parseJsonFromResponse<Partial<HoursEstimate>>(jsonPart)
-  } catch {
-    parsed = {}
+  } catch (parseError) {
+    throw new Error(
+      `工数見積りのJSON解析に失敗しました: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+    )
   }
 
   const toSafeNumber = (value: unknown, fallback: number): number => {

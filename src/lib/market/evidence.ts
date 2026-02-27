@@ -94,10 +94,46 @@ function normalize(raw: Partial<RawMarketEvidence>): MarketEvidence {
   }
 }
 
-function calculateConfidence(citationsCount: number, trendCount: number): number {
+const HIGH_QUALITY_DOMAINS = [
+  'nikkei.com', 'itmedia.co.jp', 'impress.co.jp', 'zdnet.com',
+  'gartner.com', 'forrester.com', 'statista.com', 'idc.com',
+  'meti.go.jp', 'ipa.go.jp',
+]
+
+const MEDIUM_QUALITY_DOMAINS = [
+  'qiita.com', 'zenn.dev', 'note.com', 'techcrunch.com',
+  'wired.jp', 'gigazine.net', 'publickey1.jp',
+]
+
+function scoreSourceQuality(citations: Array<{ url: string; type: string }>): number {
+  if (citations.length === 0) return 0
+
+  let bonus = 0
+  for (const citation of citations) {
+    try {
+      const hostname = new URL(citation.url).hostname
+      if (HIGH_QUALITY_DOMAINS.some((d) => hostname.endsWith(d))) {
+        bonus += 0.1
+      } else if (MEDIUM_QUALITY_DOMAINS.some((d) => hostname.endsWith(d))) {
+        bonus += 0.05
+      }
+    } catch {
+      // Invalid URL — skip
+    }
+  }
+
+  return Math.min(bonus, 0.15)
+}
+
+function calculateConfidence(
+  citationsCount: number,
+  trendCount: number,
+  citations: Array<{ url: string; type: string }> = []
+): number {
   const base = citationsCount >= 2 ? 0.7 : citationsCount === 1 ? 0.55 : 0.4
   const trendBonus = Math.min(trendCount * 0.03, 0.2)
-  return Math.min(0.95, Math.round((base + trendBonus) * 100) / 100)
+  const sourceQualityBonus = scoreSourceQuality(citations)
+  return Math.min(0.95, Math.round((base + trendBonus + sourceQualityBonus) * 100) / 100)
 }
 
 export async function fetchMarketEvidenceFromXai(input: {
@@ -163,7 +199,7 @@ ${input.context.slice(0, 3000)}
       evidence: normalized,
       citations: response.citations,
       raw: response.raw,
-      confidenceScore: calculateConfidence(response.citations.length, normalized.trends.length),
+      confidenceScore: calculateConfidence(response.citations.length, normalized.trends.length, response.citations),
       usage: response.usage,
       isFallback: false,
       fallbackReason: null,
