@@ -278,7 +278,7 @@ describe('autoGenerateEstimate', () => {
 
     expect(result.estimateMode).toBe('market_comparison')
     expect(result.totalHours).toBe(75)
-    expect(result.hourlyRate).toBe(15000)
+    expect(result.hourlyRate).toBe(12500)
     expect(result.estimateId).toBe(MOCK_ESTIMATE_ID)
 
     expect(fetchMarketEvidenceFromXai).toHaveBeenCalledOnce()
@@ -663,7 +663,7 @@ describe('autoGenerateEstimate', () => {
     const insertData = estimateInsertSpy.mock.calls[0][0]
     expect(insertData.pricing_snapshot).toEqual({
       hours_only: true,
-      hourly_rate: 15000,
+      hourly_rate: 12500,
       total_hours: 75,
     })
   })

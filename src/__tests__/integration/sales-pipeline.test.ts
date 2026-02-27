@@ -303,7 +303,7 @@ describe('Sales Engineer Pipeline Integration', () => {
 
     expect(estimateResult.estimateId).toBe('est-001')
     expect(estimateResult.totalHours).toBe(75)
-    expect(estimateResult.hourlyRate).toBe(15000)
+    expect(estimateResult.hourlyRate).toBe(12500)
     expect(estimateResult.estimateMode).toBe('market_comparison')
 
     // Value proposition
@@ -350,8 +350,8 @@ describe('Sales Engineer Pipeline Integration', () => {
     })
 
     expect(estimateResult.estimateMode).toBe('hours_only')
-    // Bug reports don't have goNoGoDecision because they don't call evaluateGoNoGo (no pricing)
-    expect(estimateResult.goNoGoDecision).toBeUndefined()
+    // Bug reports now run Go/No-Go when businessLine is provided (profitability weight=0 via getWeights)
+    expect(estimateResult.goNoGoDecision).toBe('go')
 
     // Market evidence should NOT be fetched for hours_only
     expect(mockFetchMarketEvidence).not.toHaveBeenCalled()

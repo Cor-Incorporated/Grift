@@ -20,10 +20,45 @@ import { enrichSimilarProjectsWithHistory, buildHistoricalCalibration } from '@/
 import { buildEvidenceContextBlock } from '@/lib/estimates/evidence-context-builder'
 import { crossValidateEstimate } from '@/lib/estimates/cross-validate'
 import { buildEmptyHistoricalCalibration } from '@/lib/estimates/evidence-bundle'
+import { generateValueProposition, type ValueProposition } from '@/lib/estimates/value-proposition'
 import { logger } from '@/lib/utils/logger'
 import type { EstimateMode, ProjectType, BusinessLine } from '@/types/database'
 
-const DEFAULT_HOURLY_RATE = 15000
+const FALLBACK_HOURLY_RATE = 15000
+
+function averageVelocityData(
+  historicalRefs: Array<{ velocityData: Record<string, unknown> | null }>
+): Record<string, unknown> | null {
+  const refs = historicalRefs.filter((r) => r.velocityData !== null)
+  if (refs.length === 0) return null
+  if (refs.length === 1) return refs[0].velocityData
+
+  const numericKeys = [
+    'totalDevelopmentDays', 'totalCommits', 'commitsPerWeek',
+    'contributorCount', 'coreContributors', 'estimatedHours',
+    'velocityScore', 'totalAdditions', 'totalDeletions',
+  ]
+
+  const averaged: Record<string, unknown> = {}
+  for (const key of numericKeys) {
+    const values = refs
+      .map((r) => r.velocityData?.[key])
+      .filter((v): v is number => typeof v === 'number')
+
+    if (values.length > 0) {
+      averaged[key] = Math.round((values.reduce((sum, v) => sum + v, 0) / values.length) * 10) / 10
+    }
+  }
+
+  return averaged
+}
+
+function deriveHourlyRate(policy: { avgInternalCostPerMemberMonth: number }): number {
+  // Derive hourly rate from policy's monthly internal cost
+  // (monthly cost / 160 hours per month)
+  const derived = Math.round(policy.avgInternalCostPerMemberMonth / 160)
+  return derived > 0 ? derived : FALLBACK_HOURLY_RATE
+}
 
 function isHoursOnlyType(projectType: ProjectType): boolean {
   return projectType === 'bug_report' || projectType === 'fix_request'
@@ -70,7 +105,7 @@ export async function autoGenerateEstimate(
 
   const estimateMode = getEstimateMode(projectType)
   const policy = await fetchActivePricingPolicy(supabase, projectType)
-  const hourlyRate = DEFAULT_HOURLY_RATE
+  const hourlyRate = deriveHourlyRate(policy)
 
   // ═══════════════════════════════════════════════════════════
   // Phase 1: Evidence Gathering (parallel where possible)
@@ -274,9 +309,8 @@ export async function autoGenerateEstimate(
   // ═══════════════════════════════════════════════════════════
 
   // 3a. Cross-validate estimate against historical data
-  const velocityData = historicalRefs.length > 0
-    ? historicalRefs[0].velocityData
-    : null
+  // Average velocity across all historical references instead of using only the first
+  const velocityData = averageVelocityData(historicalRefs)
 
   const crossValidation = crossValidateEstimate({
     claudeHours: hours.total,
@@ -339,9 +373,9 @@ export async function autoGenerateEstimate(
     historicalHours: historicalCalibration.avgActualHours ?? undefined,
   })
 
-  // 3d. Go/No-Go evaluation
+  // 3d. Go/No-Go evaluation (runs for hours_only too — profitability weight=0 via getWeights)
   let goNoGoResult: GoNoGoResult | null = null
-  if (input.businessLine && pricing) {
+  if (input.businessLine) {
     goNoGoResult = await evaluateGoNoGo({
       supabase,
       projectId,
@@ -382,6 +416,46 @@ export async function autoGenerateEstimate(
   )
 
   // ═══════════════════════════════════════════════════════════
+  // Phase 4: Value Proposition & Comparison Report
+  // ═══════════════════════════════════════════════════════════
+
+  let valueProp: ValueProposition | null = null
+  let comparisonReport: string | null = null
+
+  if (needsMarketEvidence && input.businessLine && pricing && goNoGoResult) {
+    try {
+      valueProp = await generateValueProposition({
+        specMarkdown,
+        similarProjects,
+        goNoGoResult,
+        pricingResult: pricing,
+        businessLine: input.businessLine,
+        implementationPlan,
+        speedAdvantage,
+        usageContext,
+      })
+
+      // Build comparison report from market data and pricing
+      const marketTotal = pricing.marketTotal
+      comparisonReport = [
+        `## 市場比較レポート`,
+        `- 市場平均価格: ¥${marketTotal.toLocaleString()}`,
+        `- 当社見積価格: ¥${pricing.ourPrice.toLocaleString()}`,
+        `- 削減率: ${marketTotal > 0 ? Math.round((1 - pricing.ourPrice / marketTotal) * 100) : 0}%`,
+        `- 粗利率: ${pricing.marginPercent.toFixed(1)}%`,
+        marketData ? `- 市場時間単価: ¥${marketData.market_hourly_rate.toLocaleString()}` : '',
+        marketData ? `- 市場チーム規模: ${marketData.typical_team_size}名` : '',
+        marketData ? `- 市場開発期間: ${marketData.typical_duration_months}ヶ月` : '',
+      ].filter(Boolean).join('\n')
+    } catch (error) {
+      logger.warn('Value proposition generation failed', {
+        error: error instanceof Error ? error.message : String(error),
+        projectId,
+      })
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // DB Insert
   // ═══════════════════════════════════════════════════════════
 
@@ -415,13 +489,13 @@ export async function autoGenerateEstimate(
       hours_breakdown_report: hours.breakdown,
       market_hourly_rate: marketData?.market_hourly_rate ?? null,
       market_estimated_hours: marketHours,
-      multiplier: 1.5,
+      multiplier: marketData?.market_estimated_hours_multiplier ?? 1.5,
       total_market_cost: totalMarketCost,
-      comparison_report: null,
+      comparison_report: comparisonReport,
       grok_market_data: marketData,
       similar_projects: similarProjects.length > 0 ? similarProjects : null,
       go_no_go_result: goNoGoResult,
-      value_proposition: null,
+      value_proposition: valueProp as unknown as Record<string, unknown> | null,
       pricing_snapshot: isHoursOnlyType(projectType)
         ? { hours_only: true, hourly_rate: hourlyRate, total_hours: reconciledHours }
         : {

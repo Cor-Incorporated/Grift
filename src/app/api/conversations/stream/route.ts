@@ -11,7 +11,6 @@ import { getAuthenticatedUser, canAccessProject } from '@/lib/auth/authorization
 import { writeAuditLog } from '@/lib/audit/log'
 import { isExternalApiQuotaError } from '@/lib/usage/api-usage'
 import { classifyBusinessLine } from '@/lib/business-line/classifier'
-import { generateValueProposition } from '@/lib/estimates/value-proposition'
 import type { ProjectType, ConversationMetadata, ConcreteProjectType, BusinessLine } from '@/types/database'
 
 const METADATA_DELIMITER = '---METADATA---'
@@ -386,68 +385,13 @@ export async function POST(request: Request) {
                 savings_percent: savingsPercent,
               })
 
-              // Generate value proposition
+              // Value proposition is now generated inside autoGenerateEstimate
               if (classifiedBusinessLine && estimateResult.estimateId) {
-                try {
-                  const { findSimilarProjects } = await import('@/lib/estimates/similar-projects')
-                  const { evaluateGoNoGo } = await import('@/lib/approval/go-no-go')
-                  const { fetchActivePricingPolicy } = await import('@/lib/pricing/policies')
-                  const { calculatePrice } = await import('@/lib/pricing/engine')
-
-                  const [similarProjects, policy] = await Promise.all([
-                    findSimilarProjects({
-                      supabase,
-                      specMarkdown,
-                      projectType: currentType,
-                      businessLine: classifiedBusinessLine,
-                    }),
-                    fetchActivePricingPolicy(supabase, currentType),
-                  ])
-
-                  const pricing = calculatePrice({
-                    policy,
-                    market: {
-                      teamSize: policy.defaultTeamSize,
-                      durationMonths: policy.defaultDurationMonths,
-                      monthlyUnitPrice: policy.avgInternalCostPerMemberMonth,
-                    },
-                  })
-
-                  const goNoGoResult = await evaluateGoNoGo({
-                    supabase,
-                    projectId: validated.project_id,
-                    projectType: currentType,
-                    businessLine: classifiedBusinessLine,
-                    pricingResult: pricing,
-                    specMarkdown,
-                    riskFlags: pricing.riskFlags,
-                  })
-
-                  const valueProp = await generateValueProposition({
-                    specMarkdown,
-                    similarProjects,
-                    goNoGoResult,
-                    pricingResult: pricing,
-                    businessLine: classifiedBusinessLine,
-                    usageContext: {
-                      projectId: validated.project_id,
-                      actorClerkUserId: authUser.clerkUserId,
-                    },
-                  })
-
-                  await supabase
-                    .from('estimates')
-                    .update({ value_proposition: valueProp as unknown as Record<string, unknown> })
-                    .eq('id', estimateResult.estimateId)
-
-                  sendEvent('value_proposition_generated', {
-                    estimate_id: estimateResult.estimateId,
-                    business_line: classifiedBusinessLine,
-                    go_no_go_decision: estimateResult.goNoGoDecision ?? null,
-                  })
-                } catch {
-                  // Value proposition generation is non-critical
-                }
+                sendEvent('value_proposition_generated', {
+                  estimate_id: estimateResult.estimateId,
+                  business_line: classifiedBusinessLine,
+                  go_no_go_decision: estimateResult.goNoGoDecision ?? null,
+                })
               }
             } catch (estimateError) {
               const estimateErrorMsg = estimateError instanceof Error ? estimateError.message : '見積り自動生成に失敗'
