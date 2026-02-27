@@ -7,6 +7,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/public(.*)',
   '/api/health',
   '/api/linear/webhooks',
+  '/api/source-analysis/jobs/cron',
 ])
 
 export default clerkMiddleware(async (auth, request) => {
