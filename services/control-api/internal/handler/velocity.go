@@ -23,9 +23,15 @@ func NewVelocityHandler(store github.VelocityStore) *VelocityHandler {
 // GetRepositoryVelocity returns the latest velocity metric for a repository.
 // GET /v1/repositories/{repositoryId}/velocity
 func (h *VelocityHandler) GetRepositoryVelocity(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.TenantIDFromContext(r.Context())
-	if tenantID == "" {
+	tenantIDStr := middleware.TenantIDFromContext(r.Context())
+	if tenantIDStr == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("missing tenant context"))
+		return
+	}
+
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid tenant ID"))
 		return
 	}
 
@@ -46,24 +52,13 @@ func (h *VelocityHandler) GetRepositoryVelocity(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	metric, err := h.store.LatestByRepository(r.Context(), repoID)
+	metric, err := h.store.LatestByRepositoryAndTenant(r.Context(), repoID, tenantID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, errorBody("no velocity metrics found for this repository"))
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, errorBody("internal server error"))
-		return
-	}
-
-	// Verify the metric belongs to the requesting tenant
-	parsedTenantID, err := uuid.Parse(tenantID)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid tenant ID"))
-		return
-	}
-	if metric.TenantID != parsedTenantID {
-		writeJSON(w, http.StatusForbidden, errorBody("access denied"))
 		return
 	}
 

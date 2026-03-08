@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -16,6 +17,15 @@ const (
 	// maxVelocityResponseBody limits response body reads to 10 MB.
 	maxVelocityResponseBody = 10 * 1024 * 1024
 )
+
+// validateSlug rejects owner/repo values that could cause path traversal
+// or URL injection (e.g. containing "/?#" or "..").
+func validateSlug(s string) error {
+	if s == "" || strings.ContainsAny(s, "/?#") || strings.Contains(s, "..") {
+		return fmt.Errorf("invalid slug: %q", s)
+	}
+	return nil
+}
 
 // RawVelocityData holds raw data fetched from GitHub API endpoints.
 type RawVelocityData struct {
@@ -71,6 +81,13 @@ func NewVelocityAnalyzer(client *Client, opts ...VelocityOption) *VelocityAnalyz
 // It collects commit activity, PR merge frequency, issue close speed,
 // contributor counts, and language breakdown for the last 90 days.
 func (va *VelocityAnalyzer) Analyze(ctx context.Context, owner, repo string) (*RawVelocityData, error) {
+	if err := validateSlug(owner); err != nil {
+		return nil, fmt.Errorf("invalid owner: %w", err)
+	}
+	if err := validateSlug(repo); err != nil {
+		return nil, fmt.Errorf("invalid repo: %w", err)
+	}
+
 	raw := &RawVelocityData{
 		Languages: make(map[string]int64),
 	}
@@ -190,6 +207,11 @@ func (va *VelocityAnalyzer) fetchCommitActivity(ctx context.Context, owner, repo
 	body, err := readBody(resp)
 	if err != nil {
 		return nil, 0, 0, err
+	}
+
+	// GitHub returns 202 when stats are being computed; treat as "no data yet".
+	if resp.StatusCode == http.StatusAccepted {
+		return nil, 0, 0, nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -340,6 +362,11 @@ func (va *VelocityAnalyzer) fetchContributorCount(ctx context.Context, owner, re
 		return 0, err
 	}
 
+	// GitHub returns 202 when stats are being computed; treat as "no data yet".
+	if resp.StatusCode == http.StatusAccepted {
+		return 0, nil
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("contributors API returned %d: %s", resp.StatusCode, truncate(body, 200))
 	}
@@ -451,6 +478,7 @@ func (va *VelocityAnalyzer) doWithRateLimit(ctx context.Context, req *http.Reque
 	if err != nil {
 		return nil, fmt.Errorf("creating retry request: %w", err)
 	}
+	retryReq.Header = req.Header.Clone()
 
 	return va.client.Do(ctx, retryReq)
 }

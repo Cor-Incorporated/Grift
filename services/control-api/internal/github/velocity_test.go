@@ -485,6 +485,92 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
+func TestValidateSlug(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"valid owner", "testorg", false},
+		{"valid repo", "my-repo", false},
+		{"valid with dots", "my.repo", false},
+		{"empty", "", true},
+		{"contains slash", "test/org", true},
+		{"contains question mark", "test?org", true},
+		{"contains hash", "test#org", true},
+		{"path traversal", "..", true},
+		{"path traversal in middle", "foo..bar", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSlug(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateSlug(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestAnalyzeInvalidSlug(t *testing.T) {
+	client := NewClient(&velocityTokenProvider{token: "test-token"})
+	analyzer := NewVelocityAnalyzer(client)
+
+	_, err := analyzer.Analyze(context.Background(), "../evil", "repo")
+	if err == nil {
+		t.Fatal("Analyze() expected error for path traversal owner, got nil")
+	}
+
+	_, err = analyzer.Analyze(context.Background(), "owner", "repo?q=inject")
+	if err == nil {
+		t.Fatal("Analyze() expected error for query injection repo, got nil")
+	}
+}
+
+func TestAnalyze202Accepted(t *testing.T) {
+	mux := http.NewServeMux()
+
+	// Commit activity returns 202 (stats being computed)
+	mux.HandleFunc("GET /repos/testorg/testrepo/stats/commit_activity", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{}`))
+	})
+	mux.HandleFunc("GET /repos/testorg/testrepo/pulls", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]pullResponse{})
+	})
+	mux.HandleFunc("GET /repos/testorg/testrepo/issues", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]issueResponse{})
+	})
+	// Contributors also returns 202
+	mux.HandleFunc("GET /repos/testorg/testrepo/stats/contributors", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{}`))
+	})
+	mux.HandleFunc("GET /repos/testorg/testrepo/languages", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int64{})
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(&velocityTokenProvider{token: "test-token"})
+	analyzer := NewVelocityAnalyzer(client, WithAnalyzerBaseURL(srv.URL))
+
+	raw, err := analyzer.Analyze(context.Background(), "testorg", "testrepo")
+	if err != nil {
+		t.Fatalf("Analyze() error = %v, want nil (202 should be treated as empty data)", err)
+	}
+
+	if len(raw.WeeklyCommits) != 0 {
+		t.Errorf("WeeklyCommits len = %d, want 0 (202 = no data yet)", len(raw.WeeklyCommits))
+	}
+	if raw.ContributorCount != 0 {
+		t.Errorf("ContributorCount = %d, want 0 (202 = no data yet)", raw.ContributorCount)
+	}
+}
+
 // isRateLimitError checks if the error chain contains ErrRateLimited.
 func isRateLimitError(err error, target **ErrRateLimited) bool {
 	for e := err; e != nil; {

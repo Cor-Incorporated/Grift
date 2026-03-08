@@ -13,8 +13,9 @@ import (
 type VelocityStore interface {
 	// Insert appends a new velocity metric record (append-only, no updates).
 	Insert(ctx context.Context, metric *domain.VelocityMetric) error
-	// LatestByRepository returns the most recent velocity metric for a repository.
-	LatestByRepository(ctx context.Context, repoID uuid.UUID) (*domain.VelocityMetric, error)
+	// LatestByRepositoryAndTenant returns the most recent velocity metric
+	// for a repository scoped to the given tenant.
+	LatestByRepositoryAndTenant(ctx context.Context, repoID, tenantID uuid.UUID) (*domain.VelocityMetric, error)
 	// ListByRepository returns the most recent velocity metrics for a repository,
 	// ordered by analyzed_at descending, limited to the given count.
 	ListByRepository(ctx context.Context, repoID uuid.UUID, limit int) ([]domain.VelocityMetric, error)
@@ -64,9 +65,10 @@ func (s *SQLVelocityStore) Insert(ctx context.Context, metric *domain.VelocityMe
 	return nil
 }
 
-// LatestByRepository returns the most recent velocity metric for the given repository.
-// Returns sql.ErrNoRows wrapped in an error if no metric exists.
-func (s *SQLVelocityStore) LatestByRepository(ctx context.Context, repoID uuid.UUID) (*domain.VelocityMetric, error) {
+// LatestByRepositoryAndTenant returns the most recent velocity metric for the
+// given repository scoped to the given tenant. Returns sql.ErrNoRows wrapped
+// in an error if no metric exists.
+func (s *SQLVelocityStore) LatestByRepositoryAndTenant(ctx context.Context, repoID, tenantID uuid.UUID) (*domain.VelocityMetric, error) {
 	var m domain.VelocityMetric
 	err := s.DB.QueryRowContext(ctx,
 		`SELECT id, tenant_id, repository_id,
@@ -75,10 +77,10 @@ func (s *SQLVelocityStore) LatestByRepository(ctx context.Context, repoID uuid.U
 			velocity_score, estimated_hours,
 			analyzed_at, created_at
 		FROM velocity_metrics
-		WHERE repository_id = $1
+		WHERE repository_id = $1 AND tenant_id = $2
 		ORDER BY analyzed_at DESC
 		LIMIT 1`,
-		repoID,
+		repoID, tenantID,
 	).Scan(
 		&m.ID, &m.TenantID, &m.RepositoryID,
 		&m.CommitsPerWeek, &m.ActiveDaysPerWeek, &m.PRMergeFrequency,
