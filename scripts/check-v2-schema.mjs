@@ -128,6 +128,16 @@ expectRegex(
   'audit_logs must allow maintenance_admin SELECT'
 )
 
+// ADR-0012 / ADR-0013: opt-in columns on tenants table
+expectRegex(
+  /analytics_opt_in\s+BOOLEAN\s+NOT NULL\s+DEFAULT\s+FALSE/i,
+  'tenants must have analytics_opt_in BOOLEAN NOT NULL DEFAULT FALSE (ADR-0012)'
+)
+expectRegex(
+  /training_opt_in\s+BOOLEAN\s+NOT NULL\s+DEFAULT\s+FALSE/i,
+  'tenants must have training_opt_in BOOLEAN NOT NULL DEFAULT FALSE (ADR-0013)'
+)
+
 if (failures.length > 0) {
   console.error('v2 schema checks failed:')
   for (const failure of failures) {

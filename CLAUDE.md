@@ -32,6 +32,13 @@ mise run test            # Test all v2 services
 mise run build           # Build all v2 services
 mise run fmt             # Format all v2 code
 docker compose up -d     # Start PostgreSQL + Redis + Pub/Sub emulator
+
+# CI guardrail checks (contract-first validation)
+npm run ci:v2:openapi    # OpenAPI spec validation + tenant header checks
+npm run ci:v2:schema     # SQL schema RLS + append-only + opt-in checks
+npm run ci:v2:monorepo   # Monorepo scaffold validation
+npm run ci:v2:adr        # ADR ↔ schema/OpenAPI consistency checks
+npm run ci:v2:env        # Environment variable validation (local only)
 ```
 
 ### v1 (reference, runs from v1/)

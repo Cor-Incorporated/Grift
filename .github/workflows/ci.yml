@@ -275,6 +275,21 @@ jobs:
       - name: Validate v2 monorepo scaffold
         run: node scripts/check-v2-monorepo.mjs
 
+  v2-adr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+
+      - name: Validate ADR consistency
+        run: node scripts/check-v2-adr-consistency.mjs
+
   # ─── v2 service jobs ───
 
   v2-go-build:
@@ -381,6 +396,7 @@ jobs:
       - v2-go-build
       - v2-python-lint
       - v2-web
+      - v2-adr
       - dependency-review
     steps:
       - name: Validate required checks
@@ -397,6 +413,7 @@ jobs:
           V2_GO_BUILD: ${{ needs.v2-go-build.result }}
           V2_PYTHON_LINT: ${{ needs.v2-python-lint.result }}
           V2_WEB: ${{ needs.v2-web.result }}
+          V2_ADR: ${{ needs.v2-adr.result }}
           ENABLE_DEPENDENCY_REVIEW: ${{ vars.ENABLE_DEPENDENCY_REVIEW }}
           DEPENDENCY_REVIEW_SUPPORTED: ${{ vars.DEPENDENCY_REVIEW_SUPPORTED }}
           DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
@@ -416,6 +433,7 @@ jobs:
             V2_GO_BUILD
             V2_PYTHON_LINT
             V2_WEB
+            V2_ADR
           )
 
           for check_name in "${core_checks[@]}"; do

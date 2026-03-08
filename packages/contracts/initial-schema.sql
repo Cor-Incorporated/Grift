@@ -60,10 +60,12 @@ CREATE TABLE tenants (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name        TEXT NOT NULL,
   slug        TEXT NOT NULL UNIQUE,
-  plan        TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro', 'enterprise')),
-  settings    JSONB NOT NULL DEFAULT '{}',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  plan              TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro', 'enterprise')),
+  settings          JSONB NOT NULL DEFAULT '{}',
+  analytics_opt_in  BOOLEAN NOT NULL DEFAULT FALSE,
+  training_opt_in   BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- tenants テーブルは RLS 対象外（テナント自身の検索に使うため）

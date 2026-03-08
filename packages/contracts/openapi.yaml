@@ -123,6 +123,43 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /v1/tenants/{tenantId}/settings:
+    patch:
+      operationId: updateTenantSettings
+      tags: [admin]
+      summary: テナント設定更新（opt-in 含む）
+      description: |
+        テナント管理者がテナント設定を更新する。
+        analytics_opt_in / training_opt_in の変更はこのエンドポイントで行う（ADR-0012, ADR-0013）。
+      x-required-roles: [tenant_admin]
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/tenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantSettingsRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /v1/tenants/{tenantId}/members:
     get:
       operationId: listTenantMembers
@@ -1609,6 +1646,14 @@ components:
           enum: [free, pro, enterprise]
         settings:
           type: object
+        analytics_opt_in:
+          type: boolean
+          default: false
+          description: Cross-tenant anonymous intelligence への参加同意（ADR-0012）
+        training_opt_in:
+          type: boolean
+          default: false
+          description: 学習データとしての利用同意（ADR-0013）
         created_at:
           type: string
           format: date-time
@@ -1625,6 +1670,19 @@ components:
         slug:
           type: string
           pattern: "^[a-z0-9-]+$"
+
+    UpdateTenantSettingsRequest:
+      type: object
+      properties:
+        analytics_opt_in:
+          type: boolean
+          description: Cross-tenant anonymous intelligence への参加同意（ADR-0012）
+        training_opt_in:
+          type: boolean
+          description: 学習データとしての利用同意（ADR-0013）
+        settings:
+          type: object
+          description: テナント固有設定
 
     TenantMember:
       type: object

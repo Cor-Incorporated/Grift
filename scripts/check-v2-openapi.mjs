@@ -131,6 +131,32 @@ expectIncludes(
   'GitHub webhook must define a requestBody'
 )
 
+// ADR-0012 / ADR-0013: opt-in fields in Tenant schema
+const tenantSchemaBlock = getSchemaBlock('Tenant')
+expectIncludes(
+  tenantSchemaBlock,
+  'analytics_opt_in:',
+  'Tenant schema must include analytics_opt_in field (ADR-0012)'
+)
+expectIncludes(
+  tenantSchemaBlock,
+  'training_opt_in:',
+  'Tenant schema must include training_opt_in field (ADR-0013)'
+)
+
+// ADR-0012 / ADR-0013: settings update endpoint
+expectIncludes(
+  content,
+  '/v1/tenants/{tenantId}/settings:',
+  'Missing tenant settings endpoint for opt-in management (ADR-0012, ADR-0013)'
+)
+const settingsBlock = getPathBlock('/v1/tenants/{tenantId}/settings')
+expectIncludes(
+  settingsBlock,
+  'UpdateTenantSettingsRequest',
+  'Tenant settings endpoint must reference UpdateTenantSettingsRequest'
+)
+
 const handoffRequestBlock = getSchemaBlock('CreateHandoffRequest')
 expectIncludes(
   handoffRequestBlock,
