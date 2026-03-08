@@ -209,3 +209,8 @@ func writeJSONError(w http.ResponseWriter, msg string, status int) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
+
+// errorBody creates a simple error response body.
+func errorBody(msg string) map[string]string {
+	return map[string]string{"error": msg}
+}

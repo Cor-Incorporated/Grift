@@ -22,6 +22,10 @@ func main() {
 	repoHandler := handler.NewRepositoryHandler(nil)
 	handler.RegisterRepositoryRoutes(mux, repoHandler)
 
+	// Velocity metrics handler (store is nil until DB is wired up in P1)
+	velocityHandler := handler.NewVelocityHandler(nil)
+	mux.HandleFunc("GET /v1/repositories/{repositoryId}/velocity", velocityHandler.GetRepositoryVelocity)
+
 	// TODO(P1): Replace with AuthWithVerifier(firebaseVerifier) + TenantWithStore(sqlStore)
 	// before staging deploy. Current stubs are for Phase 0 local dev only.
 	var authMW, tenantMW func(http.Handler) http.Handler
