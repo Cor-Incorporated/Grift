@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ type fakeTenantStore struct {
 	rlsCalls   []string
 	existsErr  error
 	setRLSErr  error
+	fakeConn   *sql.Conn // nil is acceptable for tests; ConnFromContext will return nil
 }
 
 func (f *fakeTenantStore) Exists(_ context.Context, tenantID string) (bool, error) {
@@ -23,12 +25,12 @@ func (f *fakeTenantStore) Exists(_ context.Context, tenantID string) (bool, erro
 	return f.tenants[tenantID], nil
 }
 
-func (f *fakeTenantStore) SetRLS(_ context.Context, tenantID string) error {
+func (f *fakeTenantStore) SetRLS(_ context.Context, tenantID string) (*sql.Conn, error) {
 	if f.setRLSErr != nil {
-		return f.setRLSErr
+		return nil, f.setRLSErr
 	}
 	f.rlsCalls = append(f.rlsCalls, tenantID)
-	return nil
+	return f.fakeConn, nil
 }
 
 func TestTenantMiddleware_MissingHeader(t *testing.T) {

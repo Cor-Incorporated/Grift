@@ -54,7 +54,7 @@ for (const [key, m] of migrations) {
 // Check files are not empty and have no dangerous statements
 const dangerous = [
   { pattern: /DROP\s+DATABASE/i, message: 'DROP DATABASE' },
-  { pattern: /TRUNCATE\s+(?!.*\bWHERE\b)/i, message: 'TRUNCATE without WHERE' },
+  { pattern: /TRUNCATE\s+/i, message: 'TRUNCATE statement' },
 ]
 
 for (const file of files) {

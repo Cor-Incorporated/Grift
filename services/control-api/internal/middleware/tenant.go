@@ -21,12 +21,22 @@ var uuidRegex = regexp.MustCompile(
 type TenantStore interface {
 	// Exists reports whether a tenant with the given ID exists.
 	Exists(ctx context.Context, tenantID string) (bool, error)
-	// SetRLS executes SET app.current_tenant_id on the database connection
-	// to enable row-level security filtering.
-	SetRLS(ctx context.Context, tenantID string) error
+	// SetRLS configures the app.tenant_id session variable on a dedicated
+	// connection for row-level security filtering. The returned *sql.Conn
+	// must be used for all subsequent queries in the request and closed when done.
+	SetRLS(ctx context.Context, tenantID string) (*sql.Conn, error)
 }
 
-// SQLTenantStore implements TenantStore using a *sql.DB connection.
+// connKey is the context key for the per-request DB connection with RLS set.
+const connKey contextKey = "db_conn"
+
+// ConnFromContext returns the per-request *sql.Conn that has RLS configured.
+func ConnFromContext(ctx context.Context) *sql.Conn {
+	v, _ := ctx.Value(connKey).(*sql.Conn)
+	return v
+}
+
+// SQLTenantStore implements TenantStore using a *sql.DB connection pool.
 type SQLTenantStore struct {
 	DB *sql.DB
 }
@@ -43,15 +53,22 @@ func (s *SQLTenantStore) Exists(ctx context.Context, tenantID string) (bool, err
 	return exists, nil
 }
 
-// SetRLS sets the app.current_tenant_id session variable for row-level security.
-func (s *SQLTenantStore) SetRLS(ctx context.Context, tenantID string) error {
-	_, err := s.DB.ExecContext(ctx,
-		fmt.Sprintf("SET app.current_tenant_id = '%s'", tenantID),
+// SetRLS acquires a dedicated connection from the pool, sets app.tenant_id
+// using parameterized set_config (no SQL injection risk), and returns the
+// connection for use in the request scope. Caller must close the connection.
+func (s *SQLTenantStore) SetRLS(ctx context.Context, tenantID string) (*sql.Conn, error) {
+	conn, err := s.DB.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquiring connection: %w", err)
+	}
+	_, err = conn.ExecContext(ctx,
+		"SELECT set_config('app.tenant_id', $1, false)", tenantID,
 	)
 	if err != nil {
-		return fmt.Errorf("setting RLS tenant_id: %w", err)
+		conn.Close()
+		return nil, fmt.Errorf("setting RLS tenant_id: %w", err)
 	}
-	return nil
+	return conn, nil
 }
 
 // TenantIDFromContext returns the tenant ID stored in the request context.
@@ -93,10 +110,21 @@ func TenantWithStore(store TenantStore) Middleware {
 					return
 				}
 
-				if err := store.SetRLS(r.Context(), tenantID); err != nil {
+				conn, err := store.SetRLS(r.Context(), tenantID)
+				if err != nil {
 					http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 					return
 				}
+				if conn != nil {
+					defer conn.Close()
+				}
+
+				ctx := context.WithValue(r.Context(), tenantIDKey, tenantID)
+				if conn != nil {
+					ctx = context.WithValue(ctx, connKey, conn)
+				}
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
 			}
 
 			ctx := context.WithValue(r.Context(), tenantIDKey, tenantID)

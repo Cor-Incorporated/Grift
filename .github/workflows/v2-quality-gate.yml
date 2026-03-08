@@ -53,6 +53,9 @@ jobs:
       - name: ADR consistency check
         run: npm run ci:v2:adr
 
+      - name: Migration file validation
+        run: npm run ci:v2:migration
+
   # ------------------------------------------------------------------
   # Stage 2a: Go control-api checks
   # ------------------------------------------------------------------
