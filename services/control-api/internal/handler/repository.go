@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 
@@ -11,6 +10,9 @@ import (
 	"github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/middleware"
 	"github.com/google/uuid"
 )
+
+// maxLimit is the upper-bound cap for the limit query parameter.
+const maxLimit = 100
 
 // RepositoryHandler provides HTTP handlers for repository endpoints.
 type RepositoryHandler struct {
@@ -22,10 +24,23 @@ func NewRepositoryHandler(store gh.RepositoryStore) *RepositoryHandler {
 	return &RepositoryHandler{store: store}
 }
 
+// storeUnavailable returns true and writes a 503 response if the store is nil.
+func (h *RepositoryHandler) storeUnavailable(w http.ResponseWriter) bool {
+	if h.store == nil {
+		writeJSONError(w, "repository store not configured", http.StatusServiceUnavailable)
+		return true
+	}
+	return false
+}
+
 // ListRepositories handles GET /v1/repositories.
-// Query params: org (optional), limit (default 20), offset (default 0).
+// Query params: org (optional), limit (default 20, max 100), offset (default 0).
 // Response: {"data": [...], "total": N}
 func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Request) {
+	if h.storeUnavailable(w) {
+		return
+	}
+
 	tenantID := middleware.TenantIDFromContext(r.Context())
 	if tenantID == "" {
 		writeJSONError(w, "missing tenant context", http.StatusBadRequest)
@@ -53,6 +68,11 @@ func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	// HIGH-2: Cap limit to maxLimit to prevent excessive queries.
+	if opts.Limit > maxLimit {
+		opts.Limit = maxLimit
+	}
+
 	if o := r.URL.Query().Get("offset"); o != "" {
 		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
 			opts.Offset = v
@@ -61,7 +81,6 @@ func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Requ
 
 	repos, total, err := h.store.ListByTenant(r.Context(), tid, opts)
 	if err != nil {
-		log.Printf("handler: listing repositories: %v", err)
 		writeJSONError(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -81,6 +100,10 @@ func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Requ
 // GetRepository handles GET /v1/repositories/{repositoryId}.
 // Response: {"data": {...}}
 func (h *RepositoryHandler) GetRepository(w http.ResponseWriter, r *http.Request) {
+	if h.storeUnavailable(w) {
+		return
+	}
+
 	tenantID := middleware.TenantIDFromContext(r.Context())
 	if tenantID == "" {
 		writeJSONError(w, "missing tenant context", http.StatusBadRequest)
@@ -108,7 +131,6 @@ func (h *RepositoryHandler) GetRepository(w http.ResponseWriter, r *http.Request
 	// CRITICAL-2: Pass tenantID to enforce tenant-scoping (prevent IDOR).
 	repo, err := h.store.GetByID(r.Context(), id, tid)
 	if err != nil {
-		log.Printf("handler: getting repository: %v", err)
 		writeJSONError(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -130,6 +152,10 @@ type discoverRequest struct {
 // DiscoverRepositories handles POST /v1/repositories/discover.
 // Accepts {"org_names": [...]} and returns {"job_id": "..."} with 202 Accepted.
 func (h *RepositoryHandler) DiscoverRepositories(w http.ResponseWriter, r *http.Request) {
+	if h.storeUnavailable(w) {
+		return
+	}
+
 	tenantID := middleware.TenantIDFromContext(r.Context())
 	if tenantID == "" {
 		writeJSONError(w, "missing tenant context", http.StatusBadRequest)

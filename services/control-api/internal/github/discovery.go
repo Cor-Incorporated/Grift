@@ -13,6 +13,8 @@ import (
 const (
 	discoveryBaseURL = "https://api.github.com"
 	maxPerPage       = 100
+	// maxPages is a safety cap to prevent infinite pagination loops.
+	maxPages = 50
 	// maxDiscoveryResponseBody caps the size of a single API response to 10 MiB.
 	maxDiscoveryResponseBody = 10 * 1024 * 1024
 )
@@ -104,6 +106,9 @@ func (ds *DiscoveryService) ListAccessibleRepos(ctx context.Context) ([]GitHubRe
 			break
 		}
 		page++
+		if page > maxPages {
+			break
+		}
 	}
 
 	return allRepos, nil
@@ -150,6 +155,9 @@ func (ds *DiscoveryService) ListOrgRepos(ctx context.Context, org string) ([]Git
 			break
 		}
 		page++
+		if page > maxPages {
+			break
+		}
 	}
 
 	return allRepos, nil

@@ -3,12 +3,17 @@ package github
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/domain"
 	"github.com/google/uuid"
 )
+
+// ErrNotImplemented is returned when a method is defined in the interface
+// but its implementation is not yet available (schema dependency missing).
+var ErrNotImplemented = errors.New("not implemented")
 
 // ListOptions controls pagination and filtering for repository listing.
 type ListOptions struct {
@@ -206,12 +211,11 @@ func (s *SQLRepositoryStore) GetByID(ctx context.Context, id uuid.UUID, tenantID
 // FindNewAndArchived compares discovered GitHub IDs against existing records
 // for a tenant. It returns GitHub IDs not yet in the database (new) and
 // database UUIDs of records whose GitHub ID is no longer in the discovered set (archived).
-func (s *SQLRepositoryStore) FindNewAndArchived(_ context.Context, _ uuid.UUID, discovered []int64) ([]int64, []uuid.UUID, error) {
-	if len(discovered) == 0 {
-		return nil, nil, nil
-	}
-	// Safe default until the schema is extended with proper github_id indexing.
-	return nil, nil, nil
+//
+// HIGH-3: Returns ErrNotImplemented because the schema does not yet have a
+// github_id column. When the column is added, this method should be implemented.
+func (s *SQLRepositoryStore) FindNewAndArchived(_ context.Context, _ uuid.UUID, _ []int64) ([]int64, []uuid.UUID, error) {
+	return nil, nil, ErrNotImplemented
 }
 
 // pqStringArray converts a Go string slice to a PostgreSQL text array literal.

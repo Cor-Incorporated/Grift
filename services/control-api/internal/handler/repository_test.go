@@ -132,6 +132,21 @@ func TestListRepositories_StoreError(t *testing.T) {
 	}
 }
 
+func TestListRepositories_NilStore(t *testing.T) {
+	h := NewRepositoryHandler(nil)
+
+	tenantID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	req := httptest.NewRequest(http.MethodGet, "/v1/repositories", nil)
+	req = withTenant(req, tenantID.String())
+
+	rec := httptest.NewRecorder()
+	h.ListRepositories(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
 func TestGetRepository_Found(t *testing.T) {
 	tenantID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 	repoID := uuid.New()
@@ -212,6 +227,25 @@ func TestGetRepository_InvalidID(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestGetRepository_NilStore(t *testing.T) {
+	h := NewRepositoryHandler(nil)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repositories/{repositoryId}", h.GetRepository)
+
+	tenantID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	repoID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/v1/repositories/"+repoID.String(), nil)
+	req = withTenant(req, tenantID.String())
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -297,5 +331,22 @@ func TestDiscoverRepositories_MissingTenant(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestDiscoverRepositories_NilStore(t *testing.T) {
+	h := NewRepositoryHandler(nil)
+
+	tenantID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	body := `{"org_names":["org1"]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/repositories/discover", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withTenant(req, tenantID.String())
+
+	rec := httptest.NewRecorder()
+	h.DiscoverRepositories(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
