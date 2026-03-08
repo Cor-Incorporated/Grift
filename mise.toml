@@ -50,8 +50,31 @@ echo '=== React ===' && (cd apps/web && npm run build) && echo 'OK'
 """
 
 [tasks.migrate]
-description = "Apply database migrations"
-run = "echo 'Migration tooling not yet configured. See Issue #75.'"
+description = "Apply database migrations (up)"
+run = """
+cd services/control-api && go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+  -path ./migrations \
+  -database 'postgres://bd_admin:bd_local_password@localhost:5432/benevolent_director?sslmode=disable' \
+  up
+"""
+
+[tasks.migrate-down]
+description = "Rollback last database migration"
+run = """
+cd services/control-api && go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+  -path ./migrations \
+  -database 'postgres://bd_admin:bd_local_password@localhost:5432/benevolent_director?sslmode=disable' \
+  down 1
+"""
+
+[tasks.migrate-status]
+description = "Show current migration version"
+run = """
+cd services/control-api && go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+  -path ./migrations \
+  -database 'postgres://bd_admin:bd_local_password@localhost:5432/benevolent_director?sslmode=disable' \
+  version
+"""
 
 [tasks.fmt]
 description = "Format all code"
