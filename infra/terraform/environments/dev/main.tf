@@ -131,3 +131,18 @@ module "iam" {
   source_documents_bucket_name = module.storage.source_documents_bucket_name
   exports_bucket_name          = module.storage.exports_bucket_name
 }
+
+# -----------------------------------------------------
+# Scheduler (Cloud Scheduler — Crawl Job Trigger)
+# -----------------------------------------------------
+module "scheduler" {
+  source = "../../modules/scheduler"
+
+  project_id  = var.project_id
+  region      = var.region
+  environment = "dev"
+
+  schedule              = "0 3 * * *" # 3 AM JST daily
+  target_uri            = "https://bd-dev-crawler-${var.region}.a.run.app"
+  service_account_email = module.iam.control_api_service_account_email
+}
