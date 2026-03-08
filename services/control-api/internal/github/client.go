@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // Client wraps an http.Client to automatically inject GitHub App installation
@@ -17,7 +18,7 @@ type Client struct {
 // authenticate requests with GitHub installation tokens.
 func NewClient(tokenProvider TokenProvider) *Client {
 	return &Client{
-		httpClient:    &http.Client{},
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		tokenProvider: tokenProvider,
 	}
 }

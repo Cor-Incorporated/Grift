@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -363,9 +364,9 @@ func TestAppTokenProvider_InstallationToken_EmptyTokenResponse(t *testing.T) {
 func TestAppTokenProvider_InstallationToken_UsesCache(t *testing.T) {
 	config := testAppConfig(t)
 
-	callCount := 0
+	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		callCount++
+		callCount.Add(1)
 		w.WriteHeader(http.StatusCreated)
 		resp := installationTokenResponse{
 			Token:     "ghs_token_fresh",
@@ -391,8 +392,8 @@ func TestAppTokenProvider_InstallationToken_UsesCache(t *testing.T) {
 		t.Fatalf("first InstallationToken() error = %v", err)
 	}
 
-	if callCount != 1 {
-		t.Errorf("API call count = %d, want 1", callCount)
+	if c := callCount.Load(); c != 1 {
+		t.Errorf("API call count = %d, want 1", c)
 	}
 
 	// Second call — should use cache
@@ -401,8 +402,8 @@ func TestAppTokenProvider_InstallationToken_UsesCache(t *testing.T) {
 		t.Fatalf("second InstallationToken() error = %v", err)
 	}
 
-	if callCount != 1 {
-		t.Errorf("API call count after cache hit = %d, want 1", callCount)
+	if c := callCount.Load(); c != 1 {
+		t.Errorf("API call count after cache hit = %d, want 1", c)
 	}
 }
 

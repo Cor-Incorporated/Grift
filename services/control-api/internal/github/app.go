@@ -15,11 +15,6 @@ import (
 )
 
 const (
-	// defaultTokenRefreshBuffer is subtracted from the token's 1-hour lifetime
-	// to ensure we refresh before expiry. GitHub installation tokens last 1 hour;
-	// we refresh at 50 minutes to avoid racing with expiry.
-	defaultTokenRefreshBuffer = 10 * time.Minute
-
 	// defaultTokenTTL is the cache TTL for installation tokens.
 	defaultTokenTTL = 50 * time.Minute
 
@@ -150,7 +145,7 @@ func NewAppTokenProvider(config *AppConfig, cache TokenCache, opts ...AppTokenPr
 	p := &AppTokenProvider{
 		config:     config,
 		cache:      cache,
-		httpClient: http.DefaultClient,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 		baseURL:    "https://api.github.com",
 	}
 	for _, opt := range opts {
@@ -209,7 +204,7 @@ func (p *AppTokenProvider) fetchInstallationToken(ctx context.Context) (string, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 

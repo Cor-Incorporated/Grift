@@ -43,18 +43,16 @@ func NewInMemoryCache() *InMemoryCache {
 // Get retrieves a cached value by key. Returns an empty string if the key is
 // not found or has expired. Expired entries are lazily removed on access.
 func (c *InMemoryCache) Get(_ context.Context, key string) (string, error) {
-	c.mu.RLock()
-	entry, ok := c.entries[key]
-	c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
+	entry, ok := c.entries[key]
 	if !ok {
 		return "", nil
 	}
 
 	if time.Now().After(entry.expiresAt) {
-		c.mu.Lock()
 		delete(c.entries, key)
-		c.mu.Unlock()
 		return "", nil
 	}
 
