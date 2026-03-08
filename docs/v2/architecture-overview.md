@@ -286,6 +286,8 @@ BigQuery からのフィードバック:
 - チームキャパシティ予測
 - フィードバック生成（Estimation / Go-No-Go / Market Benchmark への補正値）
 - 経営判断支援（顧客継続 / 終了推奨、新規受注可否、価格改定根拠）
+- `analytics_opt_in` tenant から匿名化済み cross-tenant benchmark を生成
+- 将来の model eval / training 向け候補 cohort を整備する
 
 主な成果物:
 
@@ -294,6 +296,9 @@ BigQuery からのフィードバック:
 - `AccuracyCalibration`
 - `CapacityForecast`
 - `PricingRecommendation`
+- `CrossTenantBenchmark`
+- `DemandTrendReport`
+- `StrengthPatternReport`
 
 詳細は ADR-0004 を参照。
 
@@ -408,7 +413,20 @@ Qwen3.5 の一次情報から確認できる重要な点は以下。
 
 `BigQuery` にはイベントログ、実績データ、評価データを流す。
 
-`tenant_id` でパーティションし、テナント間のデータ分離を保証する。
+まず `tenant-scoped analytics` を保持し、その上に匿名化済み `cross-tenant analytics` を別レイヤーで構築する。
+
+tenant-scoped レイヤー:
+
+- `tenant_id` を必須とする
+- authorized views / row access policies で分離する
+- 見積補正、顧客分析、キャパシティ予測に使う
+
+cross-tenant レイヤー:
+
+- `analytics_opt_in` tenant のみ対象
+- direct identifier を持たない
+- cohort しきい値を満たす集計だけを保持する
+- customer-facing benchmark と内部 pricing index に使う
 
 格納対象:
 
@@ -419,6 +437,39 @@ Qwen3.5 の一次情報から確認できる重要な点は以下。
 - 提案受注率
 - bug / 追加判定の事後正答率
 - プロバイダ別市場エビデンスの品質スコア
+
+cross-tenant 派生例:
+
+- 月次 pricing index
+- 匿名 cohort benchmark
+- 技術スタック採用トレンド
+- capability と win rate の相関
+
+`BigQuery` は学習 corpus の本体ストアではない。学習候補の抽出、label 集計、lineage、eval set 生成に使い、実際の corpus snapshot は `GCS` に置く。
+
+詳細は ADR-0012、ADR-0013 を参照。
+
+### 10.4 Training Corpus
+
+上流工程特化モデル向けの学習データは、analytics とは別レイヤーで管理する。
+
+前提:
+
+- `training_opt_in = true` が必要
+- redaction / normalization を通したデータだけを対象にする
+- dataset version と deletion tombstone を持つ
+
+格納対象:
+
+- instruction tuning 用 JSONL
+- classification / reranker 用 Parquet
+- eval set snapshot
+
+保管先:
+
+- `GCS`: corpus snapshot
+- `BigQuery`: cohort / lineage / eval metadata
+- `Cloud SQL`: opt-in 状態と publish 履歴
 
 ## 11. イベント駆動
 
@@ -439,6 +490,8 @@ Pub/Sub で以下のドメインイベントを流す。
 - `CalibrationUpdated`
 - `CapacityForecastRefreshed`
 - `CustomerHealthChanged`
+- `CrossTenantBenchmarkRefreshed`
+- `TrainingCorpusPublished`
 
 ## 12. デプロイトポロジー
 
@@ -492,6 +545,8 @@ Cloud Run GPU
 - `llm-gateway` の導入
 - ローカル / クラウドの役割分担
 - Cloud SQL / pgvector / BigQuery / Pub/Sub の責務分割
+- tenant 内 analytics と cross-tenant anonymous intelligence の分離
+- analytics opt-in と training opt-in の分離
 - Firebase Auth / Identity Platform の採用
 - マルチテナント設計
 - Cloud Run + GKE 混在デプロイ

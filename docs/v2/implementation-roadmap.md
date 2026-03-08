@@ -159,14 +159,38 @@ Repository Intelligence は Intake パイプラインへの依存がなく、独
 - 顧客ポートフォリオ分析ダッシュボード
 - Estimation Context へのフィードバック API
 - プロバイダ別エビデンス品質トラッキング
+- anonymization job と taxonomy 正規化
+- `cross_tenant.cohort_benchmarks` / `pricing_index`
+- `analytics_opt_in` に基づく生成制御
 
 完了条件:
 
 - 案件完了時に見積 vs 実績が BigQuery に記録される
 - 次回見積時に過去実績からの補正値が反映される
 - 顧客ポートフォリオレポートが生成できる
+- 匿名 benchmark を使った pricing / demand trend が生成できる
 
-## 9. 最小検証セット
+## 9. Phase 7: Cross-Tenant Intelligence + Model Readiness
+
+期間目安: 2 週間
+
+成果物:
+
+- `training_opt_in` 管理
+- GCS corpus snapshot pipeline
+- dataset lineage / tombstone registry
+- model eval cohort export
+- pricing / strength / stack trend API
+- Qwen3.5 adapter 向け dataset versioning
+
+完了条件:
+
+- analytics と training の同意が分離される
+- opt-out / delete が corpus に追随する
+- eval cohort と training candidate が再現可能な snapshot で出力される
+- customer-facing benchmark が最小 cohort しきい値を守る
+
+## 10. 最小検証セット
 
 各 phase で最低限通すべき検証:
 
@@ -194,7 +218,15 @@ Market Benchmark 導入後に必須の評価:
 - クロスバリデーションの合意率
 - 見積採用後の実績との乖離率
 
-## 10. コスト概算
+Cross-Tenant Intelligence 導入後に必須の評価:
+
+- cohort suppression の誤作動率
+- taxonomy 正規化の一致率
+- opt-in / opt-out 反映遅延
+- benchmark API の再識別リスクレビュー
+- training dataset lineage の完全性
+
+## 11. コスト概算
 
 ### 開発期間中（dev / staging）
 
@@ -220,18 +252,20 @@ Market Benchmark 導入後に必須の評価:
 
 上記は L4 GPU 構成の概算。A10G 構成の場合は $755/月。詳細は ADR-0006 を参照。
 
-## 11. 先にやらないこと
+## 12. 初期フェーズで先にやらないこと
 
-- fine-tuning
 - 巨大モデル常時運用（122B 以上）
 - いきなりの microservices 化
 - BigQuery をオンライン RAG の主ストアにすること
 - マルチリージョンデプロイ
 - モバイルアプリ
+- foundation model の full pretraining
+
+`training_opt_in` と corpus lineage が整う前に instruction tuning を始めない。
 
 これらは v2 の初期成功条件ではない。
 
-## 12. 一次情報
+## 13. 一次情報
 
 - Qwen Team, `Qwen3.5` GitHub README
   - https://github.com/QwenLM/Qwen3.5

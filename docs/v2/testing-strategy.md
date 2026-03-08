@@ -134,6 +134,23 @@ v2 では「テストを書く」こと自体を目的にしない。
 - citation consistency
 - local vs cloud comparison
 
+### 3.7 Cross-tenant intelligence tests
+
+対象:
+
+- anonymization job
+- taxonomy normalization
+- cohort suppression
+- training opt-in / analytics opt-in separation
+
+必須項目:
+
+- `analytics_opt_in = false` の tenant が cross-tenant dataset に入らない
+- `training_opt_in = false` のデータが corpus export に入らない
+- customer-facing benchmark が最小 cohort を満たさない場合に roll-up または suppress される
+- cross-tenant dataset に raw text / direct identifier が残らない
+- delete / opt-out が lineage と corpus snapshot に反映される
+
 ## 4. CI 必須ゲート
 
 PR を通す最低条件は以下。
@@ -145,6 +162,7 @@ PR を通す最低条件は以下。
 5. tenant isolation tests
 6. webhook duplicate / replay tests
 7. representative e2e
+8. cross-tenant anonymization / suppression tests
 
 現時点で repo に追加済みの自動ゲート:
 
@@ -158,6 +176,7 @@ main マージ前に追加で必要:
 1. migration apply test
 2. llm-gateway routing integration test
 3. Qwen benchmark smoke
+4. anonymization / opt-in integration test
 
 ## 5. Definition of Done
 
@@ -191,6 +210,20 @@ main マージ前に追加で必要:
 - fallback test あり
 - prompt logging / redaction を確認済み
 
+### 新規 cross-tenant dataset
+
+- `analytics_opt_in` gate test あり
+- direct identifier exclusion test あり
+- cohort suppression test あり
+- delete propagation test あり
+
+### 新規 training corpus
+
+- `training_opt_in` gate test あり
+- dataset lineage 記録あり
+- tombstone 反映 test あり
+- eval baseline を保存済み
+
 ## 6. 推奨ディレクトリ
 
 ```text
@@ -222,6 +255,9 @@ v2 着工直後に最初に作るべきもの:
 4. duplicate GitHub webhook replay test
 5. unresolved webhook receipt visibility test
 6. OpenAPI tenant header scope test
+7. `analytics_opt_in` false tenant exclusion test
+8. customer-facing benchmark suppression test
+9. `training_opt_in` false corpus exclusion test
 
 ## 8. この文書の位置づけ
 

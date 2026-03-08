@@ -96,6 +96,7 @@ redaction 対象:
 - サポート担当は Restricted を既定で見られない
 - break-glass アクセスは期限付きかつ監査ログ必須
 - 資料ダウンロードと raw payload 閲覧は個別に監査する
+- cross-tenant analytics dataset と training corpus は内部の限定ロールだけが閲覧可能
 
 ### 5. 連携コネクタの既定値
 
@@ -103,7 +104,28 @@ redaction 対象:
 - 取得対象チャンネルは allowlist 制
 - 既定では summary / signal だけを保存する
 
-### 6. 削除とエクスポート
+### 6. 分析 / 学習 opt-in
+
+tenant 設定として以下を分離する。
+
+- `analytics_opt_in`
+  - 匿名化済み cross-tenant benchmark 生成への利用可否
+- `training_opt_in`
+  - redaction / normalization 済みデータの model eval / training 利用可否
+
+既定値:
+
+- `analytics_opt_in = false`
+- `training_opt_in = false`
+
+ルール:
+
+- analytics への同意は training への同意を意味しない
+- training 利用は別の明示同意が必要
+- customer-facing benchmark は `analytics_opt_in` tenant 由来の匿名集計だけを使う
+- training corpus は `training_opt_in` を満たしたデータのみ対象にする
+
+### 7. 削除とエクスポート
 
 tenant 単位で以下をサポートする。
 
@@ -117,10 +139,14 @@ tenant 単位で以下をサポートする。
   - GCS
   - vector data
   - BigQuery raw / aggregate
+  - training corpus snapshot
+  - lineage / tombstone registry
 
 削除要求を受けた場合、関連 vector と BigQuery データも追随削除対象に含める。
 
-### 7. Legal Hold
+学習済み dataset version に含まれていた場合は tombstone を記録し、次回以降の学習から除外する。
+
+### 8. Legal Hold
 
 法務または契約上の要件がある場合は `legal_hold` フラグで自動削除を停止できるようにする。
 
@@ -145,12 +171,14 @@ tenant 単位で以下をサポートする。
 - データ最小化の方針が実装に落ちる
 - tenant 削除や監査への対応がしやすくなる
 - Slack / Discord 連携の境界が明確になる
+- analytics と training の同意境界が明確になる
 
 ### 悪い結果
 
 - redaction と purge の実装コストが増える
 - 例外処理として legal hold を考慮する必要がある
 - 保持期間ルールの運用監視が必要になる
+- training corpus の lineage 管理が必要になる
 
 ## 代替案
 
@@ -175,3 +203,5 @@ tenant 単位で以下をサポートする。
 - ADR-0007: tenant 境界の強制方法
 - ADR-0008: embedding / vector データの寿命管理
 - ADR-0009: webhook raw payload の保存と replay
+- ADR-0012: Cross-Tenant Anonymous Intelligence
+- ADR-0013: 学習データの統制と opt-in

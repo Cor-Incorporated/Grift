@@ -18,11 +18,15 @@
 10. [ADR-0009: イベント冪等性と Webhook replay](./adr-0009-event-idempotency-and-webhook-replay.md)
 11. [ADR-0010: データガバナンスと保持期間](./adr-0010-data-governance-and-retention.md)
 12. [ADR-0011: Qwen3.5 の GCP ホスティング戦略](./adr-0011-qwen35-gcp-hosting-strategy.md)
-13. [プラットフォーム bootstrap](./platform-bootstrap.md)
-14. [Qwen3.5 PoC 合格基準](./qwen35-poc-acceptance-criteria.md)
-15. [Qwen3.5 ローカル LLM 戦略](./qwen35-local-llm-strategy.md)
-16. [実装ロードマップ](./implementation-roadmap.md)
-17. [テスト戦略](./testing-strategy.md)
+13. [ADR-0012: Cross-Tenant Anonymous Intelligence](./adr-0012-cross-tenant-anonymous-intelligence.md)
+14. [ADR-0013: 学習データの統制と opt-in](./adr-0013-training-data-governance-and-opt-in.md)
+15. [Cross-Tenant Anonymous Intelligence 設計](./cross-tenant-intelligence-architecture.md)
+16. [上流工程特化 LLM の学習戦略](./upstream-llm-training-strategy.md)
+17. [プラットフォーム bootstrap](./platform-bootstrap.md)
+18. [Qwen3.5 PoC 合格基準](./qwen35-poc-acceptance-criteria.md)
+19. [Qwen3.5 ローカル LLM 戦略](./qwen35-local-llm-strategy.md)
+20. [実装ロードマップ](./implementation-roadmap.md)
+21. [テスト戦略](./testing-strategy.md)
 
 ## この資料群の狙い
 
@@ -32,6 +36,7 @@
 - GCP 前提のスケーラブルなデータ基盤へ移行する
 - マルチプロバイダ（Grok / Brave / Perplexity / Gemini）による市場調査の信頼性を向上する
 - BigQuery による実績蓄積と見積精度のフィードバックループを構築する
+- 匿名化された cross-tenant intelligence を benchmark と学習準備資産へ変換する
 - Linear（ビジネス）と GitHub Issues（技術）の責務を明確に分割する
 - SaaS 化を見据えたマルチテナント設計を初期から組み込む
 
@@ -64,3 +69,5 @@
 | 9 | Domain Event / Webhook は冪等かつ replay 可能にする | ADR-0009 |
 | 10 | データ分類、保持期間、外部送信条件を固定する | ADR-0010 |
 | 11 | Qwen3.5 の GCP 本番基盤は GKE + vLLM を第一候補とする | ADR-0011 |
+| 12 | tenant 内分析と匿名横断 intelligence を別レイヤーで扱う | ADR-0012 |
+| 13 | analytics 利用と training 利用の同意を分離する | ADR-0013 |
