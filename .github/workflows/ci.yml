@@ -100,6 +100,63 @@ jobs:
       - name: Validate migration files
         run: npm run ci:migrations
 
+  v2-openapi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate v2 OpenAPI contract
+        run: npm run ci:v2:openapi
+
+  v2-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate v2 schema guardrails
+        run: npm run ci:v2:schema
+
+  v2-monorepo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate v2 monorepo scaffold
+        run: npm run ci:v2:monorepo
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -221,6 +278,9 @@ jobs:
       - type-check
       - unit-tests
       - migration-check
+      - v2-openapi
+      - v2-schema
+      - v2-monorepo
       - build
       - e2e-smoke
       - dependency-review
@@ -233,6 +293,9 @@ jobs:
           TYPE_CHECK_RESULT: ${{ needs.type-check.result }}
           UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
           MIGRATION_CHECK_RESULT: ${{ needs.migration-check.result }}
+          V2_OPENAPI_RESULT: ${{ needs.v2-openapi.result }}
+          V2_SCHEMA_RESULT: ${{ needs.v2-schema.result }}
+          V2_MONOREPO_RESULT: ${{ needs.v2-monorepo.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           E2E_SMOKE_RESULT: ${{ needs.e2e-smoke.result }}
           DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
@@ -244,6 +307,9 @@ jobs:
             TYPE_CHECK_RESULT
             UNIT_TESTS_RESULT
             MIGRATION_CHECK_RESULT
+            V2_OPENAPI_RESULT
+            V2_SCHEMA_RESULT
+            V2_MONOREPO_RESULT
             BUILD_RESULT
             E2E_SMOKE_RESULT
           )

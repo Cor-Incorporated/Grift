@@ -1,0 +1,5 @@
+[project]
+name = "benevolent-director-intelligence-worker"
+version = "0.0.0"
+description = "v2 intelligence worker scaffold"
+requires-python = ">=3.12"

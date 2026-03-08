@@ -1,0 +1,6 @@
+{
+  "name": "@benevolent-director/web",
+  "private": true,
+  "version": "0.0.0",
+  "description": "v2 React web client scaffold"
+}

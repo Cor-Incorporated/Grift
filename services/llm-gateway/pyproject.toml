@@ -1,0 +1,5 @@
+[project]
+name = "benevolent-director-llm-gateway"
+version = "0.0.0"
+description = "v2 llm gateway scaffold"
+requires-python = ">=3.12"

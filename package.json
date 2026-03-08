@@ -12,7 +12,11 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "type-check": "tsc --noEmit",
-    "ci:migrations": "node scripts/check-migrations.mjs"
+    "ci:migrations": "node scripts/check-migrations.mjs",
+    "ci:v2:openapi": "node scripts/check-v2-openapi.mjs",
+    "ci:v2:schema": "node scripts/check-v2-schema.mjs",
+    "ci:v2:env": "node scripts/check-v2-env.mjs",
+    "ci:v2:monorepo": "node scripts/check-v2-monorepo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

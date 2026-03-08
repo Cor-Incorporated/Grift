@@ -2,6 +2,20 @@
 
 AI 執事が顧客の曖昧な依頼を完璧な仕様書と見積りに変換し、Linear.app で開発タスクを管理する案件管理システム。
 
+## v2 再構築の準備
+
+v2 は `React + Go + Python + GCP` を前提に別アーキテクチャで再構築します。現時点のガードレールと契約は以下に集約しています。
+
+- `docs/v2`: v2 のアーキテクチャ、ADR、運用前提、PoC 合格基準、テスト戦略
+- `packages/contracts`: `openapi.yaml` と `initial-schema.sql` による contract-first の SSOT
+- `apps/web`: v2 の React Web クライアント骨格
+- `services/control-api`: v2 の Go control plane 骨格
+- `services/intelligence-worker`: v2 の Python intelligence plane 骨格
+- `services/llm-gateway`: v2 のローカル LLM / クラウド LLM ルーティング層骨格
+- `infra/terraform`: GCP 前提の Terraform 骨格
+
+現行の Next.js 実装は v1 参照実装として扱います。`.env.local` はアーカイブ対象にせず、当面は repo root に残します。
+
 ## できること
 
 | 機能 | 説明 |
@@ -85,6 +99,10 @@ npm run test:watch       # テスト (ウォッチモード)
 npm run test:coverage    # カバレッジ付きテスト
 npm run test:e2e         # E2E テスト (Playwright)
 npm run ci:migrations    # マイグレーションファイル順序検証
+npm run ci:v2:openapi    # v2 OpenAPI ガードレール検証
+npm run ci:v2:schema     # v2 DDL / RLS ガードレール検証
+npm run ci:v2:env        # v2 実装に必要な env キー検証
+npm run ci:v2:monorepo   # v2 骨格 / docs 配置検証
 ```
 
 ## 技術スタック

@@ -1,0 +1,2540 @@
+openapi: 3.1.0
+info:
+  title: BenevolentDirector v2 API
+  version: 2.0.0
+  description: |
+    受託開発会社の上流工程を AI で支援する業務基盤。
+    7 つの Bounded Context に対応する REST API を提供する。
+
+    認証: Firebase Auth ID Token (Bearer)
+    テナント分離: JWT + X-Tenant-ID ヘッダーで操作対象テナントを指定
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://api.staging.benevolentdirector.app
+    description: Staging
+  - url: https://api.benevolentdirector.app
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: health
+    description: ヘルスチェック（認証不要）
+  - name: tenants
+    description: テナント管理
+  - name: cases
+    description: "Intake Context: 案件管理"
+  - name: conversations
+    description: "Intake Context: AI ヒアリング"
+  - name: source-documents
+    description: "Intake Context: 資料取り込み"
+  - name: repositories
+    description: "Repository Intelligence Context: GitHub 連携"
+  - name: velocity
+    description: "Repository Intelligence Context: Velocity Metric"
+  - name: market-evidence
+    description: "Market Benchmark Context: 市場調査"
+  - name: estimates
+    description: "Estimation Context: 見積・Three-Way Proposal"
+  - name: proposals
+    description: "Proposal & Approval Context: 提案・承認"
+  - name: handoffs
+    description: "Handoff Context: Linear / GitHub 引き継ぎ"
+  - name: operational
+    description: "Operational Intelligence Context: 分析・フィードバック"
+  - name: admin
+    description: テナント管理者向け設定
+
+paths:
+  # ─── Health ───
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      security: []
+      summary: ヘルスチェック
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  # ─── Tenants ───
+  /v1/tenants:
+    get:
+      operationId: listTenants
+      tags: [tenants]
+      summary: テナント一覧（システム管理者用）
+      x-required-roles: [system_admin]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Tenant"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: createTenant
+      tags: [tenants]
+      summary: テナント作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/tenants/{tenantId}/members:
+    get:
+      operationId: listTenantMembers
+      tags: [tenants]
+      summary: テナントメンバー一覧
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/tenantId"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TenantMember"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: addTenantMember
+      tags: [tenants]
+      summary: テナントメンバー追加
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/tenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTenantMemberRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/TenantMember"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Cases (Intake Context) ───
+  /v1/cases:
+    get:
+      operationId: listCases
+      tags: [cases]
+      summary: 案件一覧
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/CaseStatus"
+        - name: type
+          in: query
+          schema:
+            $ref: "#/components/schemas/CaseType"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Case"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: createCase
+      tags: [cases]
+      summary: 案件作成
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCaseRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Case"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/cases/{caseId}:
+    get:
+      operationId: getCase
+      tags: [cases]
+      summary: 案件詳細
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/CaseWithDetails"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    patch:
+      operationId: updateCase
+      tags: [cases]
+      summary: 案件更新
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCaseRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Case"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      operationId: deleteCase
+      tags: [cases]
+      summary: 案件削除
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      responses:
+        "204":
+          description: No Content
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Conversations (Intake Context) ───
+  /v1/cases/{caseId}/conversations:
+    get:
+      operationId: listConversations
+      tags: [conversations]
+      summary: 会話履歴取得
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ConversationTurn"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: sendMessage
+      tags: [conversations]
+      summary: メッセージ送信（AI 応答を返す）
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ConversationTurn"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/cases/{caseId}/conversations/stream:
+    post:
+      operationId: streamConversation
+      tags: [conversations]
+      summary: SSE ストリーミング会話
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "200":
+          description: Server-Sent Events stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  イベント種別:
+                  - text_delta: テキスト差分
+                  - message_complete: メッセージ完了
+                  - spec_generated: 仕様書生成完了
+                  - estimate_generated: 見積生成完了
+                  - error: エラー
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Source Documents (Intake Context) ───
+  /v1/cases/{caseId}/source-documents:
+    get:
+      operationId: listSourceDocuments
+      tags: [source-documents]
+      summary: 資料一覧
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SourceDocument"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: uploadSourceDocument
+      tags: [source-documents]
+      summary: 資料アップロード（PDF / ZIP / URL）
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                source_url:
+                  type: string
+                  format: uri
+      responses:
+        "202":
+          description: Accepted (ingestion job queued)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/SourceDocument"
+                  job_id:
+                    type: string
+                    format: uuid
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Requirement Artifact (Estimation Context) ───
+  /v1/cases/{caseId}/requirement-artifact:
+    get:
+      operationId: getRequirementArtifact
+      tags: [estimates]
+      summary: 要件アーティファクト取得
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/RequirementArtifact"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Repositories (Repository Intelligence Context) ───
+  /v1/repositories:
+    get:
+      operationId: listRepositories
+      tags: [repositories]
+      summary: リポジトリ一覧
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - name: org
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RepositorySnapshot"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/repositories/{repositoryId}:
+    get:
+      operationId: getRepository
+      tags: [repositories]
+      summary: リポジトリ詳細
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/repositoryId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/RepositorySnapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/repositories/{repositoryId}/velocity:
+    get:
+      operationId: getRepositoryVelocity
+      tags: [velocity]
+      summary: Velocity Metric 取得
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/repositoryId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/VelocityMetric"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/repositories/discover:
+    post:
+      operationId: discoverRepositories
+      tags: [repositories]
+      summary: GitHub App 経由でリポジトリ発見
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                org_names:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "202":
+          description: Accepted (discovery job queued)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    format: uuid
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/velocity/similar:
+    get:
+      operationId: findSimilarProjects
+      tags: [velocity]
+      summary: 類似案件検索（pgvector）
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - name: description
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: top_k
+          in: query
+          schema:
+            type: integer
+            default: 5
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SimilarityResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Market Evidence (Market Benchmark Context) ───
+  /v1/market-evidence:
+    post:
+      operationId: collectMarketEvidence
+      tags: [market-evidence]
+      summary: マルチプロバイダ市場調査を実行
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CollectMarketEvidenceRequest"
+      responses:
+        "202":
+          description: Accepted (collection job queued)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    format: uuid
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/market-evidence/{evidenceId}:
+    get:
+      operationId: getMarketEvidence
+      tags: [market-evidence]
+      summary: 市場エビデンス詳細
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - name: evidenceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/AggregatedEvidence"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Estimates (Estimation Context) ───
+  /v1/cases/{caseId}/estimates:
+    get:
+      operationId: listEstimates
+      tags: [estimates]
+      summary: 見積一覧
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Estimate"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: createEstimate
+      tags: [estimates]
+      summary: 見積作成
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEstimateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Estimate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/cases/{caseId}/estimates/{estimateId}:
+    get:
+      operationId: getEstimate
+      tags: [estimates]
+      summary: 見積詳細
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - $ref: "#/components/parameters/estimateId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/EstimateWithProposal"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/cases/{caseId}/estimates/{estimateId}/three-way-proposal:
+    get:
+      operationId: getThreeWayProposal
+      tags: [estimates]
+      summary: Three-Way Proposal 取得
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - $ref: "#/components/parameters/estimateId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ThreeWayProposal"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Proposals & Approval (Proposal & Approval Context) ───
+  /v1/cases/{caseId}/proposals:
+    get:
+      operationId: listProposals
+      tags: [proposals]
+      summary: 提案一覧
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProposalSession"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: createProposal
+      tags: [proposals]
+      summary: 提案セッション作成
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProposalRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ProposalSession"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/cases/{caseId}/proposals/{proposalId}/approve:
+    post:
+      operationId: approveProposal
+      tags: [proposals]
+      summary: 提案承認
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - $ref: "#/components/parameters/proposalId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ApprovalDecision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/cases/{caseId}/proposals/{proposalId}/reject:
+    post:
+      operationId: rejectProposal
+      tags: [proposals]
+      summary: 提案拒否
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - $ref: "#/components/parameters/proposalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ApprovalDecision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/cases/{caseId}/go-no-go:
+    get:
+      operationId: getGoNoGoEvaluation
+      tags: [proposals]
+      summary: Go/No-Go 評価取得
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/GoNoGoResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Handoff (Handoff Context) ───
+  /v1/cases/{caseId}/handoffs:
+    post:
+      operationId: createHandoff
+      tags: [handoffs]
+      summary: Linear + GitHub への引き継ぎ実行
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHandoffRequest"
+      responses:
+        "202":
+          description: Accepted (handoff job queued)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/HandoffPackage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    get:
+      operationId: getHandoffStatus
+      tags: [handoffs]
+      summary: Handoff 状態取得
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/HandoffPackage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/cases/{caseId}/change-classifications:
+    post:
+      operationId: classifyChange
+      tags: [handoffs]
+      summary: 変更要求の bug / additional scope 判定
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClassifyChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ChangeClassification"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Operational Intelligence ───
+  /v1/operational/accuracy:
+    get:
+      operationId: getEstimationAccuracy
+      tags: [operational]
+      summary: 見積精度レポート
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [30d, 90d, 180d, 1y]
+            default: 90d
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/AccuracyReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/operational/portfolio:
+    get:
+      operationId: getCustomerPortfolio
+      tags: [operational]
+      summary: 顧客ポートフォリオ分析
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CustomerPortfolioEntry"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/operational/capacity:
+    get:
+      operationId: getCapacityForecast
+      tags: [operational]
+      summary: キャパシティ予測
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/CapacityForecast"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/operational/outcomes:
+    post:
+      operationId: recordProjectOutcome
+      tags: [operational]
+      summary: プロジェクト実績を記録
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [case_id, actual_hours]
+              properties:
+                case_id:
+                  type: string
+                  format: uuid
+                actual_hours:
+                  type: number
+                actual_cost:
+                  type: number
+                notes:
+                  type: string
+                completed_at:
+                  type: string
+                  format: date-time
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ProjectOutcome"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/operational/pricing-recommendations:
+    get:
+      operationId: getPricingRecommendations
+      tags: [operational]
+      summary: 価格設定推奨を取得
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PricingRecommendation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Admin ───
+  /v1/admin/pricing-policies:
+    get:
+      operationId: listPricingPolicies
+      tags: [admin]
+      summary: 価格ポリシー一覧
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PricingPolicy"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: createPricingPolicy
+      tags: [admin]
+      summary: 価格ポリシー作成
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePricingPolicyRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/PricingPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/admin/data-sources:
+    get:
+      operationId: listDataSources
+      tags: [admin]
+      summary: データソース一覧
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DataSource"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  # ─── Webhooks (inbound) ───
+  /v1/webhooks/linear:
+    post:
+      operationId: receiveLinearWebhook
+      tags: [handoffs]
+      security: []
+      summary: Linear Webhook 受信
+      description: HMAC-SHA256 署名検証
+      parameters:
+        - name: X-Linear-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: HMAC-SHA256 署名
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Linear webhook event payload
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Signature verification failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/webhooks/github:
+    post:
+      operationId: receiveGitHubWebhook
+      tags: [handoffs]
+      security: []
+      summary: GitHub Webhook 受信
+      description: HMAC-SHA256 署名検証
+      parameters:
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema:
+            type: string
+          description: HMAC-SHA256 署名
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GitHub webhook event payload
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Signature verification failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID Token
+
+  parameters:
+    tenantIdHeader:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: 操作対象のテナント（JWT claims と一致必須）
+    tenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    caseId:
+      name: caseId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    estimateId:
+      name: estimateId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    proposalId:
+      name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    repositoryId:
+      name: repositoryId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+    offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        default: 0
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: Too Many Requests
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    # ─── Error ───
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+
+    # ─── Health ───
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        checks:
+          type: object
+          properties:
+            database:
+              type: boolean
+            firebase_auth:
+              type: boolean
+            llm_gateway:
+              type: boolean
+
+    # ─── Tenant ───
+    Tenant:
+      type: object
+      required: [id, name, slug, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+        settings:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateTenantRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+          pattern: "^[a-z0-9-]+$"
+
+    TenantMember:
+      type: object
+      required: [id, tenant_id, firebase_uid, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        firebase_uid:
+          type: string
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, manager, member, viewer]
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    AddTenantMemberRequest:
+      type: object
+      required: [firebase_uid, role]
+      properties:
+        firebase_uid:
+          type: string
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, manager, member, viewer]
+
+    # ─── Case ───
+    CaseType:
+      type: string
+      enum: [new_project, bug_report, fix_request, feature_addition, undetermined]
+
+    CaseStatus:
+      type: string
+      enum: [draft, interviewing, analyzing, estimating, proposed, approved, rejected, on_hold]
+
+    Case:
+      type: object
+      required: [id, tenant_id, title, type, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        type:
+          $ref: "#/components/schemas/CaseType"
+        status:
+          $ref: "#/components/schemas/CaseStatus"
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        business_line:
+          type: string
+        existing_system_url:
+          type: string
+          format: uri
+        spec_markdown:
+          type: string
+        created_by_uid:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CaseWithDetails:
+      allOf:
+        - $ref: "#/components/schemas/Case"
+        - type: object
+          properties:
+            conversations:
+              type: array
+              items:
+                $ref: "#/components/schemas/ConversationTurn"
+            source_documents:
+              type: array
+              items:
+                $ref: "#/components/schemas/SourceDocument"
+            estimates:
+              type: array
+              items:
+                $ref: "#/components/schemas/Estimate"
+
+    CreateCaseRequest:
+      type: object
+      required: [title, type]
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        type:
+          $ref: "#/components/schemas/CaseType"
+        existing_system_url:
+          type: string
+          format: uri
+        company_name:
+          type: string
+        contact_name:
+          type: string
+        contact_email:
+          type: string
+          format: email
+
+    UpdateCaseRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        type:
+          $ref: "#/components/schemas/CaseType"
+        status:
+          $ref: "#/components/schemas/CaseStatus"
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+
+    # ─── Conversation ───
+    ConversationTurn:
+      type: object
+      required: [id, case_id, role, content, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        metadata:
+          type: object
+          properties:
+            category:
+              type: string
+            confidence_score:
+              type: number
+            is_complete:
+              type: boolean
+            question_type:
+              type: string
+              enum: [open, choice, confirmation]
+            choices:
+              type: array
+              items:
+                type: string
+        created_at:
+          type: string
+          format: date-time
+
+    SendMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 10000
+
+    # ─── Source Document ───
+    SourceDocument:
+      type: object
+      required: [id, case_id, file_name, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        file_name:
+          type: string
+        file_type:
+          type: string
+        file_size:
+          type: integer
+        source_kind:
+          type: string
+          enum: [file_upload, repository_url, website_url]
+        source_url:
+          type: string
+          format: uri
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        gcs_path:
+          type: string
+        analysis_result:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    # ─── Requirement Artifact ───
+    RequirementArtifact:
+      type: object
+      required: [id, case_id, version, markdown, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        markdown:
+          type: string
+        source_chunks:
+          type: array
+          items:
+            type: string
+            format: uuid
+        status:
+          type: string
+          enum: [draft, finalized]
+        created_by_uid:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ─── Repository ───
+    RepositorySnapshot:
+      type: object
+      required: [id, tenant_id, full_name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        org_name:
+          type: string
+        repo_name:
+          type: string
+        full_name:
+          type: string
+        description:
+          type: string
+        language:
+          type: string
+        stars:
+          type: integer
+        topics:
+          type: array
+          items:
+            type: string
+        tech_stack:
+          type: array
+          items:
+            type: string
+        total_commits:
+          type: integer
+        contributor_count:
+          type: integer
+        velocity_metric:
+          $ref: "#/components/schemas/VelocityMetric"
+        synced_at:
+          type: string
+          format: date-time
+
+    VelocityMetric:
+      type: object
+      required: [velocity_score, analyzed_at]
+      properties:
+        commits_per_week:
+          type: number
+        active_days_per_week:
+          type: number
+        churn_rate:
+          type: number
+        velocity_score:
+          type: number
+        estimated_hours:
+          type: number
+        analyzed_at:
+          type: string
+          format: date-time
+
+    SimilarityResult:
+      type: object
+      properties:
+        repository:
+          $ref: "#/components/schemas/RepositorySnapshot"
+        similarity_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        estimated_hours:
+          type: number
+
+    # ─── Market Evidence ───
+    CollectMarketEvidenceRequest:
+      type: object
+      required: [case_type, context]
+      properties:
+        case_id:
+          type: string
+          format: uuid
+        case_type:
+          $ref: "#/components/schemas/CaseType"
+        context:
+          type: string
+          description: プロジェクトの概要説明
+        region:
+          type: string
+          default: japan
+        providers:
+          type: array
+          items:
+            type: string
+            enum: [grok, brave, perplexity, gemini]
+          description: 使用するプロバイダ（省略時は全プロバイダ）
+
+    EvidenceFragment:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum: [grok, brave, perplexity, gemini]
+        hourly_rate_range:
+          $ref: "#/components/schemas/Range"
+        total_hours_range:
+          $ref: "#/components/schemas/Range"
+        team_size_range:
+          $ref: "#/components/schemas/Range"
+        duration_range:
+          $ref: "#/components/schemas/Range"
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
+        provider_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        raw_response:
+          type: string
+          writeOnly: true
+          description: プロバイダー生レスポンス（Restricted; 内部利用のみ）
+        retrieved_at:
+          type: string
+          format: date-time
+
+    AggregatedEvidence:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fragments:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceFragment"
+        consensus_hours_range:
+          $ref: "#/components/schemas/Range"
+        consensus_rate_range:
+          $ref: "#/components/schemas/Range"
+        overall_confidence:
+          type: string
+          enum: [high, medium, low]
+        contradictions:
+          type: array
+          items:
+            type: object
+            properties:
+              provider_a:
+                type: string
+              provider_b:
+                type: string
+              field:
+                type: string
+              description:
+                type: string
+        requires_human_review:
+          type: boolean
+        aggregated_at:
+          type: string
+          format: date-time
+
+    Range:
+      type: object
+      properties:
+        min:
+          type: number
+        max:
+          type: number
+
+    Citation:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        title:
+          type: string
+        source_authority:
+          type: string
+          enum: [official, industry, community, unknown]
+        snippet:
+          type: string
+
+    # ─── Estimate ───
+    Estimate:
+      type: object
+      required: [id, case_id, estimate_mode, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        estimate_mode:
+          type: string
+          enum: [market_comparison, hours_only, hybrid]
+        status:
+          type: string
+          enum: [draft, ready, approved, rejected]
+        your_hourly_rate:
+          type: number
+        your_estimated_hours:
+          type: number
+        total_your_cost:
+          type: number
+        hours_investigation:
+          type: number
+        hours_implementation:
+          type: number
+        hours_testing:
+          type: number
+        hours_buffer:
+          type: number
+        market_hourly_rate:
+          type: number
+        market_estimated_hours:
+          type: number
+        total_market_cost:
+          type: number
+        aggregated_evidence_id:
+          type: string
+          format: uuid
+        calibration_ratio:
+          type: number
+          description: BigQuery 実績補正係数
+        risk_flags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    EstimateWithProposal:
+      allOf:
+        - $ref: "#/components/schemas/Estimate"
+        - type: object
+          properties:
+            three_way_proposal:
+              $ref: "#/components/schemas/ThreeWayProposal"
+            go_no_go:
+              $ref: "#/components/schemas/GoNoGoResult"
+
+    CreateEstimateRequest:
+      type: object
+      required: [your_hourly_rate]
+      properties:
+        your_hourly_rate:
+          type: number
+          minimum: 0
+        region:
+          type: string
+          default: japan
+        include_market_evidence:
+          type: boolean
+          default: true
+
+    ThreeWayProposal:
+      type: object
+      description: 自社実績 vs 市場相場 vs 当社提案の 3 軸比較
+      properties:
+        our_track_record:
+          type: object
+          description: 自社実績軸
+          properties:
+            similar_projects:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  actual_hours:
+                    type: number
+                  similarity_score:
+                    type: number
+            median_hours:
+              type: number
+            velocity_score:
+              type: number
+        market_benchmark:
+          type: object
+          description: 市場相場軸
+          properties:
+            consensus_hours:
+              $ref: "#/components/schemas/Range"
+            consensus_rate:
+              $ref: "#/components/schemas/Range"
+            confidence:
+              type: string
+              enum: [high, medium, low]
+            provider_count:
+              type: integer
+            citations:
+              type: array
+              items:
+                $ref: "#/components/schemas/Citation"
+        our_proposal:
+          type: object
+          description: 当社提案軸
+          properties:
+            proposed_hours:
+              type: number
+            proposed_rate:
+              type: number
+            proposed_total:
+              type: number
+            savings_vs_market_percent:
+              type: number
+            competitive_advantages:
+              type: array
+              items:
+                type: string
+            calibration_note:
+              type: string
+              description: BigQuery 実績補正の説明
+
+    # ─── Proposal & Approval ───
+    ProposalSession:
+      type: object
+      required: [id, case_id, estimate_id, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        estimate_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [draft, presented, approved, rejected, expired]
+        presented_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    CreateProposalRequest:
+      type: object
+      required: [estimate_id]
+      properties:
+        estimate_id:
+          type: string
+          format: uuid
+
+    ApprovalDecision:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        proposal_id:
+          type: string
+          format: uuid
+        decision:
+          type: string
+          enum: [approved, rejected]
+        decided_by_uid:
+          type: string
+        comment:
+          type: string
+        decided_at:
+          type: string
+          format: date-time
+
+    GoNoGoResult:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum: [go, go_with_conditions, no_go]
+        scores:
+          type: object
+          properties:
+            profitability:
+              type: number
+            strategic_alignment:
+              type: number
+            capacity:
+              type: number
+            technical_risk:
+              type: number
+        weights:
+          type: object
+          description: 各評価軸の重み（bug/fix は profitability=0）
+          properties:
+            profitability:
+              type: number
+            strategic_alignment:
+              type: number
+            capacity:
+              type: number
+            technical_risk:
+              type: number
+        reasoning:
+          type: string
+
+    # ─── Handoff ───
+    CreateHandoffRequest:
+      type: object
+      required: [estimate_id, idempotency_key]
+      properties:
+        estimate_id:
+          type: string
+          format: uuid
+        idempotency_key:
+          type: string
+          format: uuid
+          description: 外部副作用を伴う handoff 実行の冪等性キー
+
+    HandoffPackage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        estimate_id:
+          type: string
+          format: uuid
+        linear_project_id:
+          type: string
+        linear_project_url:
+          type: string
+          format: uri
+        github_project_url:
+          type: string
+          format: uri
+        linear_issues:
+          type: array
+          items:
+            type: object
+            properties:
+              module_name:
+                type: string
+              linear_issue_id:
+                type: string
+              linear_issue_url:
+                type: string
+                format: uri
+              github_issue_url:
+                type: string
+                format: uri
+        status:
+          type: string
+          enum: [pending, syncing, synced, error]
+        created_at:
+          type: string
+          format: date-time
+
+    ClassifyChangeRequest:
+      type: object
+      required: [description]
+      properties:
+        description:
+          type: string
+        requirement_artifact_id:
+          type: string
+          format: uuid
+          description: 基準となる要件定義書
+
+    ChangeClassification:
+      type: object
+      properties:
+        classification:
+          type: string
+          enum: [bug_fix, additional_scope]
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reasoning:
+          type: string
+        matched_requirement_sections:
+          type: array
+          items:
+            type: string
+        is_billable:
+          type: boolean
+
+    # ─── Operational Intelligence ───
+    AccuracyReport:
+      type: object
+      properties:
+        period:
+          type: string
+        total_estimates:
+          type: integer
+        completed_projects:
+          type: integer
+        mean_deviation_percent:
+          type: number
+        median_deviation_percent:
+          type: number
+        by_case_type:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              count:
+                type: integer
+              mean_deviation:
+                type: number
+        by_provider:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              citation_count:
+                type: integer
+              mean_deviation:
+                type: number
+
+    CustomerPortfolioEntry:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        customer_name:
+          type: string
+        total_cases:
+          type: integer
+        total_hours:
+          type: number
+        total_revenue:
+          type: number
+        estimation_accuracy_percent:
+          type: number
+        bug_rate:
+          type: number
+        additional_scope_rate:
+          type: number
+        ltv_estimate:
+          type: number
+        health:
+          type: string
+          enum: [healthy, warning, at_risk]
+
+    CapacityForecast:
+      type: object
+      properties:
+        current_velocity:
+          type: number
+        active_cases:
+          type: integer
+        committed_hours:
+          type: number
+        available_hours_next_30d:
+          type: number
+        can_accept_new_case:
+          type: boolean
+        recommendation:
+          type: string
+
+    ProjectOutcome:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        actual_hours:
+          type: number
+        actual_cost:
+          type: number
+        deviation_percent:
+          type: number
+        notes:
+          type: string
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    PricingRecommendation:
+      type: object
+      properties:
+        case_type:
+          $ref: "#/components/schemas/CaseType"
+        current_coefficient:
+          type: number
+        recommended_coefficient:
+          type: number
+        reasoning:
+          type: string
+        based_on_outcomes:
+          type: integer
+          description: 推奨の根拠となったプロジェクト数
+
+    # ─── Admin ───
+    PricingPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_type:
+          $ref: "#/components/schemas/CaseType"
+        name:
+          type: string
+        coefficient_min:
+          type: number
+        coefficient_max:
+          type: number
+        default_coefficient:
+          type: number
+        minimum_project_fee:
+          type: number
+        minimum_margin_percent:
+          type: number
+        active:
+          type: boolean
+
+    CreatePricingPolicyRequest:
+      type: object
+      required: [case_type, name, coefficient_min, coefficient_max, default_coefficient]
+      properties:
+        case_type:
+          $ref: "#/components/schemas/CaseType"
+        name:
+          type: string
+        coefficient_min:
+          type: number
+        coefficient_max:
+          type: number
+        default_coefficient:
+          type: number
+        minimum_project_fee:
+          type: number
+          default: 0
+        minimum_margin_percent:
+          type: number
+          default: 20
+
+    DataSource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_key:
+          type: string
+        provider:
+          type: string
+        display_name:
+          type: string
+        trust_level:
+          type: integer
+          minimum: 1
+          maximum: 5
+        active:
+          type: boolean
