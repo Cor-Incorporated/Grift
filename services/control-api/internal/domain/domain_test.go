@@ -357,6 +357,9 @@ func TestEnumValidation(t *testing.T) {
 		{"invalid Decision", false, func() bool { return Decision("pending").IsValid() }},
 		{"valid MemberRole", true, func() bool { return MemberRoleOwner.IsValid() }},
 		{"invalid MemberRole", false, func() bool { return MemberRole("superadmin").IsValid() }},
+		{"valid AccountType Organization", true, func() bool { return AccountTypeOrganization.IsValid() }},
+		{"valid AccountType User", true, func() bool { return AccountTypeUser.IsValid() }},
+		{"invalid AccountType", false, func() bool { return AccountType("Bot").IsValid() }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -365,4 +368,220 @@ func TestEnumValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGitHubInstallationJSONRoundTrip(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	inst := GitHubInstallation{
+		ID:             uuid.New(),
+		TenantID:       uuid.New(),
+		InstallationID: 12345678,
+		AppID:          99999,
+		AccountLogin:   "my-org",
+		AccountType:    AccountTypeOrganization,
+		Permissions:    json.RawMessage(`{"contents":"read","pull_requests":"write"}`),
+		Events:         json.RawMessage(`["push","pull_request"]`),
+		Active:         true,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+
+	data, err := json.Marshal(inst)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var got GitHubInstallation
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got.InstallationID != 12345678 {
+		t.Errorf("InstallationID = %v, want 12345678", got.InstallationID)
+	}
+	if got.AppID != 99999 {
+		t.Errorf("AppID = %v, want 99999", got.AppID)
+	}
+	if got.AccountLogin != "my-org" {
+		t.Errorf("AccountLogin = %v, want my-org", got.AccountLogin)
+	}
+	if got.AccountType != AccountTypeOrganization {
+		t.Errorf("AccountType = %v, want %v", got.AccountType, AccountTypeOrganization)
+	}
+	if !got.Active {
+		t.Error("Active should be true")
+	}
+}
+
+func TestRepositoryJSONRoundTrip(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	instID := uuid.New()
+	ghID := int64(987654)
+	org := "my-org"
+	desc := "A test repository"
+	lang := "Go"
+	repo := Repository{
+		ID:               uuid.New(),
+		TenantID:         uuid.New(),
+		InstallationID:   &instID,
+		GitHubID:         &ghID,
+		OrgName:          &org,
+		RepoName:         "my-repo",
+		FullName:         "my-org/my-repo",
+		Description:      &desc,
+		Language:         &lang,
+		Stars:            42,
+		Topics:           []string{"go", "api"},
+		TechStack:        []string{"Go", "PostgreSQL"},
+		TotalCommits:     1500,
+		ContributorCount: 8,
+		IsPrivate:        true,
+		IsArchived:       false,
+		SyncedAt:         &now,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+
+	data, err := json.Marshal(repo)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var got Repository
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got.FullName != "my-org/my-repo" {
+		t.Errorf("FullName = %v, want my-org/my-repo", got.FullName)
+	}
+	if got.Stars != 42 {
+		t.Errorf("Stars = %v, want 42", got.Stars)
+	}
+	if len(got.Topics) != 2 {
+		t.Fatalf("Topics len = %d, want 2", len(got.Topics))
+	}
+	if got.Topics[0] != "go" {
+		t.Errorf("Topics[0] = %v, want go", got.Topics[0])
+	}
+	if len(got.TechStack) != 2 {
+		t.Fatalf("TechStack len = %d, want 2", len(got.TechStack))
+	}
+	if got.TotalCommits != 1500 {
+		t.Errorf("TotalCommits = %v, want 1500", got.TotalCommits)
+	}
+	if !got.IsPrivate {
+		t.Error("IsPrivate should be true")
+	}
+	if got.GitHubID == nil || *got.GitHubID != 987654 {
+		t.Errorf("GitHubID = %v, want 987654", got.GitHubID)
+	}
+}
+
+func TestRepositoryOmitsNilOptionalFields(t *testing.T) {
+	repo := Repository{
+		ID:        uuid.New(),
+		TenantID:  uuid.New(),
+		RepoName:  "minimal",
+		FullName:  "org/minimal",
+		Topics:    []string{},
+		TechStack: []string{},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	data, err := json.Marshal(repo)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("Unmarshal to map error = %v", err)
+	}
+
+	optionalFields := []string{
+		"installation_id", "github_id", "org_name",
+		"description", "language", "synced_at",
+	}
+	for _, field := range optionalFields {
+		if _, ok := m[field]; ok {
+			t.Errorf("expected field %q to be omitted when nil", field)
+		}
+	}
+}
+
+func TestVelocityMetricJSONRoundTrip(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	cpw := 25.5
+	adw := 4.2
+	churn := 0.0312
+	score := 78.5
+	hours := 120.0
+	vm := VelocityMetric{
+		ID:                uuid.New(),
+		TenantID:          uuid.New(),
+		RepositoryID:      uuid.New(),
+		CommitsPerWeek:    &cpw,
+		ActiveDaysPerWeek: &adw,
+		ChurnRate:         &churn,
+		VelocityScore:     &score,
+		EstimatedHours:    &hours,
+		AnalyzedAt:        now,
+		CreatedAt:         now,
+	}
+
+	data, err := json.Marshal(vm)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var got VelocityMetric
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got.CommitsPerWeek == nil || *got.CommitsPerWeek != 25.5 {
+		t.Errorf("CommitsPerWeek = %v, want 25.5", got.CommitsPerWeek)
+	}
+	if got.VelocityScore == nil || *got.VelocityScore != 78.5 {
+		t.Errorf("VelocityScore = %v, want 78.5", got.VelocityScore)
+	}
+	if got.EstimatedHours == nil || *got.EstimatedHours != 120.0 {
+		t.Errorf("EstimatedHours = %v, want 120.0", got.EstimatedHours)
+	}
+}
+
+func TestVelocityMetricScoreBounds(t *testing.T) {
+	tests := []struct {
+		name  string
+		score *float64
+		valid bool
+	}{
+		{"nil score is valid", nil, true},
+		{"zero score is valid", ptrFloat64(0), true},
+		{"mid score is valid", ptrFloat64(50.0), true},
+		{"max score is valid", ptrFloat64(100.0), true},
+		{"negative score is invalid", ptrFloat64(-1.0), false},
+		{"over 100 is invalid", ptrFloat64(100.01), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vm := &VelocityMetric{
+				ID:           uuid.New(),
+				TenantID:     uuid.New(),
+				RepositoryID: uuid.New(),
+				VelocityScore: tt.score,
+				AnalyzedAt:   time.Now(),
+				CreatedAt:    time.Now(),
+			}
+			if got := vm.IsScoreValid(); got != tt.valid {
+				t.Errorf("IsScoreValid() = %v, want %v", got, tt.valid)
+			}
+		})
+	}
+}
+
+func ptrFloat64(v float64) *float64 {
+	return &v
 }
