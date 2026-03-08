@@ -1,13 +1,28 @@
-# packages/domain-events
+# @bd/domain-events
 
-v2 の Domain Event 名、payload 契約、versioning 規約を置く領域。
+JSON Schema catalog for BenevolentDirector v2 Pub/Sub domain events.
 
-対象:
+## Validate
 
-- `CaseCreated`
-- `VelocityMetricRefreshed`
-- `RequirementArtifactFinalized`
-- `ProposalApproved`
-- `HandoffCreated`
+```bash
+npm install
+npm run validate
+```
 
-実装開始時に Pub/Sub schema と outbox contract をここへ集約する。
+## Event Catalog
+
+| Event | Schema | Payload basis |
+| --- | --- | --- |
+| `CaseCreated` | `schemas/CaseCreated.json` | `cases` |
+| `CaseUpdated` | `schemas/CaseUpdated.json` | `cases` |
+| `RequirementArtifactGenerated` | `schemas/RequirementArtifactGenerated.json` | `requirement_artifacts` |
+| `EstimateRequested` | `schemas/EstimateRequested.json` | `estimates` |
+| `EstimateCompleted` | `schemas/EstimateCompleted.json` | `estimates` |
+| `ApprovalDecisionMade` | `schemas/ApprovalDecisionMade.json` | `approval_decisions` |
+| `HandoffInitiated` | `schemas/HandoffInitiated.json` | `handoff_packages` |
+| `HandoffCompleted` | `schemas/HandoffCompleted.json` | `handoff_packages`, `handoff_issue_mappings` |
+| `VelocityMetricRefreshed` | `schemas/VelocityMetricRefreshed.json` | `repository_snapshots` |
+| `MarketEvidenceCollected` | `schemas/MarketEvidenceCollected.json` | `evidence_fragments` |
+| `ProjectOutcomeRecorded` | `schemas/ProjectOutcomeRecorded.json` | `project_outcomes` |
+
+All event schemas share the common envelope in `schemas/_envelope.json`.

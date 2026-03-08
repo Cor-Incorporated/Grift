@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/VelocityMetricRefreshed.json",
+  "title": "VelocityMetricRefreshed",
+  "allOf": [
+    {
+      "$ref": "./_envelope.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "VelocityMetricRefreshed"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "org_name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repo_name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "full_name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "language": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "stars": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "tech_stack": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "is_showcase": {
+              "type": "boolean"
+            },
+            "hours_spent": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "total_commits": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "commits_per_week": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "contributor_count": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "core_contributors": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "total_additions": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "total_deletions": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "first_commit_date": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date"
+            },
+            "last_commit_date": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date"
+            },
+            "velocity_data": {},
+            "velocity_analyzed_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "synced_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "org_name",
+            "repo_name",
+            "full_name",
+            "stars",
+            "topics",
+            "tech_stack",
+            "is_showcase",
+            "velocity_data",
+            "velocity_analyzed_at",
+            "created_at",
+            "updated_at"
+          ]
+        }
+      },
+      "required": [
+        "payload"
+      ]
+    }
+  ]
+}

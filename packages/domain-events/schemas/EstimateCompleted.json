@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/EstimateCompleted.json",
+  "title": "EstimateCompleted",
+  "allOf": [
+    {
+      "$ref": "./_envelope.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "EstimateCompleted"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "case_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "estimate_mode": {
+              "enum": [
+                "market_comparison",
+                "hours_only",
+                "hybrid"
+              ]
+            },
+            "status": {
+              "enum": [
+                "ready",
+                "approved",
+                "rejected"
+              ]
+            },
+            "your_hourly_rate": {
+              "type": "number"
+            },
+            "your_estimated_hours": {
+              "type": "number"
+            },
+            "total_your_cost": {
+              "type": "number"
+            },
+            "hours_investigation": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "hours_implementation": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "hours_testing": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "hours_buffer": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "hours_breakdown_report": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "market_hourly_rate": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "market_estimated_hours": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "total_market_cost": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "multiplier": {
+              "type": "number"
+            },
+            "aggregated_evidence_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "pricing_snapshot": {},
+            "risk_flags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "calibration_ratio": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "historical_citations": {},
+            "three_way_proposal": {},
+            "go_no_go_result": {},
+            "value_proposition": {},
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "case_id",
+            "estimate_mode",
+            "status",
+            "your_hourly_rate",
+            "your_estimated_hours",
+            "total_your_cost",
+            "multiplier",
+            "risk_flags",
+            "created_at",
+            "updated_at"
+          ]
+        }
+      },
+      "required": [
+        "payload"
+      ]
+    }
+  ]
+}

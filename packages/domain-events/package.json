@@ -1,0 +1,13 @@
+{
+  "name": "@bd/domain-events",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JSON Schema catalog for BenevolentDirector domain events",
+  "type": "module",
+  "scripts": {
+    "validate": "node validate.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  }
+}

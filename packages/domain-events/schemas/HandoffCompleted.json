@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/HandoffCompleted.json",
+  "title": "HandoffCompleted",
+  "allOf": [
+    {
+      "$ref": "./_envelope.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "HandoffCompleted"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "case_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "estimate_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "linear_project_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "linear_project_url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri"
+            },
+            "github_project_url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri"
+            },
+            "status": {
+              "enum": [
+                "synced",
+                "error"
+              ]
+            },
+            "error_message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "issue_mappings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "handoff_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "module_name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "phase_name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linear_issue_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linear_issue_identifier": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "linear_issue_url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uri"
+                  },
+                  "github_issue_number": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "github_issue_url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uri"
+                  },
+                  "hours_estimate": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "source_event_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "id",
+                  "handoff_id",
+                  "module_name",
+                  "created_at",
+                  "updated_at"
+                ]
+              }
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "case_id",
+            "estimate_id",
+            "status",
+            "idempotency_key",
+            "issue_mappings",
+            "created_at",
+            "updated_at"
+          ]
+        }
+      },
+      "required": [
+        "payload"
+      ]
+    }
+  ]
+}

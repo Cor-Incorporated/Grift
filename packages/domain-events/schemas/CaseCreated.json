@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/CaseCreated.json",
+  "title": "CaseCreated",
+  "allOf": [
+    {
+      "$ref": "./_envelope.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "CaseCreated"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "enum": [
+                "new_project",
+                "bug_report",
+                "fix_request",
+                "feature_addition",
+                "undetermined"
+              ]
+            },
+            "status": {
+              "enum": [
+                "draft",
+                "interviewing",
+                "analyzing",
+                "estimating",
+                "proposed",
+                "approved",
+                "rejected",
+                "on_hold"
+              ]
+            },
+            "priority": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical",
+                null
+              ]
+            },
+            "business_line": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "existing_system_url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri"
+            },
+            "spec_markdown": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "contact_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "contact_email": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "email"
+            },
+            "company_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "created_by_uid": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "type",
+            "status",
+            "created_at",
+            "updated_at"
+          ]
+        }
+      },
+      "required": [
+        "payload"
+      ]
+    }
+  ]
+}

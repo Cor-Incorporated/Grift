@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/HandoffInitiated.json",
+  "title": "HandoffInitiated",
+  "allOf": [
+    {
+      "$ref": "./_envelope.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "HandoffInitiated"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "case_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "estimate_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "linear_project_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "linear_project_url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri"
+            },
+            "github_project_url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri"
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "syncing"
+              ]
+            },
+            "error_message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "case_id",
+            "estimate_id",
+            "status",
+            "idempotency_key",
+            "created_at",
+            "updated_at"
+          ]
+        }
+      },
+      "required": [
+        "payload"
+      ]
+    }
+  ]
+}

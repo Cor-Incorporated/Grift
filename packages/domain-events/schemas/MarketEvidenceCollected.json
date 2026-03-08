@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/MarketEvidenceCollected.json",
+  "title": "MarketEvidenceCollected",
+  "allOf": [
+    {
+      "$ref": "./_envelope.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "MarketEvidenceCollected"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "case_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "provider": {
+              "enum": [
+                "grok",
+                "brave",
+                "perplexity",
+                "gemini"
+              ]
+            },
+            "case_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "query": {
+              "type": "string",
+              "minLength": 1
+            },
+            "hourly_rate_min": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "hourly_rate_max": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "total_hours_min": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "total_hours_max": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "team_size_min": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "team_size_max": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "duration_weeks_min": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "duration_weeks_max": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "citations": {
+              "type": "array",
+              "items": {}
+            },
+            "provider_confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "raw_response": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "retrieved_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "case_type",
+            "query",
+            "citations",
+            "provider_confidence",
+            "retrieved_at",
+            "created_at"
+          ]
+        }
+      },
+      "required": [
+        "payload"
+      ]
+    }
+  ]
+}

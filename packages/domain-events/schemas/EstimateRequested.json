@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/EstimateRequested.json",
+  "title": "EstimateRequested",
+  "allOf": [
+    {
+      "$ref": "./_envelope.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "EstimateRequested"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "case_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "estimate_mode": {
+              "enum": [
+                "market_comparison",
+                "hours_only",
+                "hybrid"
+              ]
+            },
+            "status": {
+              "const": "draft"
+            },
+            "your_hourly_rate": {
+              "type": "number"
+            },
+            "aggregated_evidence_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "multiplier": {
+              "type": "number"
+            },
+            "pricing_snapshot": {},
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "case_id",
+            "estimate_mode",
+            "status",
+            "your_hourly_rate",
+            "multiplier",
+            "created_at",
+            "updated_at"
+          ]
+        }
+      },
+      "required": [
+        "payload"
+      ]
+    }
+  ]
+}
