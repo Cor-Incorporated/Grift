@@ -1,8 +1,7 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
-    "allowJs": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
@@ -11,24 +10,25 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "react-jsx",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "incremental": false,
+    "allowJs": true
   },
   "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "scripts/**/*.mjs",
+    "scripts/**/*.js",
+    "scripts/**/*.cjs",
+    "*.md"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "v1",
+    "apps",
+    "services",
+    "packages",
+    "infra",
+    "coverage",
+    "playwright-report",
+    "test-results",
+    "log"
+  ]
 }

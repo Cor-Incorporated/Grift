@@ -151,7 +151,8 @@ src/
 **Migrations**: SQL files in `supabase/migrations/` with `YYYYMMDDNNNN_name.sql` naming. Applied via Supabase CLI (`supabase db push`) or SQL Editor. CI validates file ordering via `scripts/check-migrations.mjs`.
 
 ### Path Alias
-`@/*` maps to `./src/*` (configured in both `tsconfig.json` and `vitest.config.mts`).
+- v2 React web: `@/*` maps to `apps/web/src/*`
+- v1 reference app: `@/*` maps to `v1/src/*`
 
 ## Coding Conventions
 
@@ -164,8 +165,9 @@ src/
 
 ## CI Pipeline
 
-CI runs on every push to `main`/`develop` and all PRs. The `quality-gate` job requires all of these to pass:
-- `lint` → `type-check` → `unit-tests` (with coverage) → `migration-check` → `build` → `e2e-smoke`
+CI runs on every push to `main`/`develop` and all PRs. The `quality-gate` job requires both tracks:
+- v1: `lint` → `type-check` → `unit-tests` (with coverage) → `migration-check` → `build` → `e2e-smoke`
+- v2: `v2-openapi` → `v2-schema` → `v2-monorepo` → `v2-adr` → `v2-go-build` → `v2-python-lint` → `v2-web`
 
 Build requires real Clerk keys (set as GitHub Secrets). Supabase keys can be dummies for CI.
 

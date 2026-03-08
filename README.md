@@ -45,17 +45,32 @@ v2 は `React + Go + Python + GCP` を前提に別アーキテクチャで再構
 
 - Node.js 20+
 - npm 10+
-- Supabase プロジェクト
-- Clerk アカウント
+- Go 1.24+
+- Python 3.12+
+- Docker / Docker Compose
+- mise
 
 ### インストール
 
 ```bash
 git clone https://github.com/Cor-Incorporated/BenevolentDirector.git
 cd BenevolentDirector
-npm ci
 cp .env.example .env.local
 # .env.local に各種 API キーを設定（下表参照）
+```
+
+v2 のローカル基盤起動:
+
+```bash
+mise run dev
+```
+
+v1 参照実装を触る場合:
+
+```bash
+cd v1
+npm ci
+npm run dev
 ```
 
 ### 環境変数
@@ -75,80 +90,72 @@ cp .env.example .env.local
 ### DB マイグレーション
 
 ```bash
-# Supabase CLI
-supabase db push
+# v1 参照実装
+cd v1 && supabase db push
 
-# または Supabase SQL Editor で supabase/migrations/ 内の SQL を順次実行
+# v2 contract-first SSOT
+packages/contracts/initial-schema.sql
 ```
 
 ### 起動
 
 ```bash
-npm run dev       # http://localhost:3000 (Turbopack)
+mise run dev
 ```
 
 ## コマンド一覧
 
 ```bash
-npm run dev              # 開発サーバー (Turbopack)
-npm run build            # 本番ビルド (webpack)
-npm run lint             # ESLint
-npm run type-check       # TypeScript 型チェック
-npm run test             # ユニットテスト (Vitest)
-npm run test:watch       # テスト (ウォッチモード)
-npm run test:coverage    # カバレッジ付きテスト
-npm run test:e2e         # E2E テスト (Playwright)
-npm run ci:migrations    # マイグレーションファイル順序検証
+mise run dev             # v2 インフラ起動 + サービス起動コマンド表示
+mise run lint            # v2 Go / Python / React lint
+mise run test            # v2 テスト
+mise run build           # v2 ビルド
 npm run ci:v2:openapi    # v2 OpenAPI ガードレール検証
 npm run ci:v2:schema     # v2 DDL / RLS ガードレール検証
 npm run ci:v2:env        # v2 実装に必要な env キー検証
 npm run ci:v2:monorepo   # v2 骨格 / docs 配置検証
+npm run ci:v2:adr        # ADR ↔ schema/OpenAPI 整合性検証
+
+cd v1 && npm run dev           # v1 Next.js 参照実装
+cd v1 && npm run build
+cd v1 && npm run lint
+cd v1 && npm run type-check
+cd v1 && npm run test
+cd v1 && npm run test:e2e
 ```
 
 ## 技術スタック
 
 | レイヤー | 技術 |
 |---------|------|
-| Frontend | Next.js 16 (App Router, React 19) + shadcn/ui + Tailwind CSS v4 |
-| Auth | Clerk (RBAC: admin / sales / dev / customer) |
-| Database | Supabase (PostgreSQL + RLS) |
-| AI (対話・解析) | Claude (Anthropic SDK) |
-| AI (市場調査) | xAI Grok API |
-| Task Management | Linear SDK (`@linear/sdk`) |
-| Testing | Vitest + Testing Library + Playwright |
-| Validation | Zod |
+| v2 Frontend | React 19 + Vite |
+| v2 Control Plane | Go |
+| v2 Intelligence Plane | Python |
+| v2 Data / Infra | Cloud SQL, GCS, Pub/Sub, BigQuery, GCP Terraform |
+| v2 Contracts | OpenAPI 3.1 + SQL SSOT |
+| v1 Reference | Next.js 16 + Clerk + Supabase + Claude + Grok |
 
 ## プロジェクト構成
 
 ```
-src/
-├── app/                    # Next.js ページ & API ルート
-│   ├── api/                # 全 36 エンドポイント（レート制限適用済み）
-│   │   ├── health/         # ヘルスチェック（認証不要）
-│   │   ├── linear/         # Linear Webhook 受信
-│   │   └── admin/          # 管理者 API (github, linear, profile)
-│   ├── admin/              # 管理者ダッシュボード
-│   ├── dashboard/          # 顧客ダッシュボード
-│   └── projects/           # プロジェクト作成・チャット
-├── components/
-│   ├── ui/                 # shadcn/ui プリミティブ
-│   ├── chat/               # チャット UI
-│   └── estimates/          # 見積り表示 + Linear 同期ウィジェット
-├── lib/
-│   ├── ai/                 # Claude / Grok クライアント + システムプロンプト
-│   ├── approval/           # 承認ゲート + Go/No-Go 評価
-│   ├── estimates/          # 自動見積り + モジュール分解 + 類似案件検索
-│   ├── github/             # リポジトリ発見 + Velocity 分析
-│   ├── linear/             # Linear SDK クライアント + 同期 + Webhook 検証
-│   ├── market/             # 市場エビデンス (Grok + フォールバック)
-│   ├── pricing/            # 価格エンジン + ポリシー管理
-│   ├── intake/             # Intake パイプライン
-│   └── utils/              # レート制限, 構造化ログ, env 検証
-├── types/                  # TypeScript 型定義 (database.ts = SSOT)
-└── test/                   # テストセットアップ
+apps/
+└── web/                    # v2 React Web
+services/
+├── control-api/            # v2 Go API
+├── intelligence-worker/    # v2 Python worker
+└── llm-gateway/            # v2 Python LLM gateway
+packages/
+├── contracts/              # OpenAPI + DDL SSOT
+├── config/                 # shared config docs
+└── domain-events/          # event contracts
+infra/
+└── terraform/              # GCP infrastructure
+docs/
+└── v2/                     # ADRs, architecture, roadmap, testing
+v1/                         # Next.js reference implementation
 ```
 
-## 主要画面
+## v1 参照実装の主要画面
 
 | パス | 対象 | 機能 |
 |------|------|------|
@@ -159,7 +166,7 @@ src/
 | `/admin/projects/[id]` | 管理者 | 案件詳細 + 見積り調整 + Linear 同期 |
 | `/admin/github` | 管理者 | GitHub リポジトリ管理 |
 
-## API エンドポイント（主要）
+## v1 参照実装の API エンドポイント（主要）
 
 ### 顧客向け
 | メソッド | パス | 説明 |
@@ -188,11 +195,12 @@ src/
 ### CI (`.github/workflows/ci.yml`)
 
 `quality-gate` ジョブが以下すべての通過を要求：
-- `lint` → `type-check` → `unit-tests` (coverage) → `migration-check` → `build` → `e2e-smoke`
+- v1: `lint` → `type-check` → `unit-tests` → `migration-check` → `build` → `e2e-smoke`
+- v2: `v2-openapi` → `v2-schema` → `v2-monorepo` → `v2-adr` → `v2-go-build` → `v2-python-lint` → `v2-web`
 
 ### CD (`.github/workflows/cd.yml`)
 
-- `main` push 時に Vercel 自動デプロイ（シークレット設定時）
+- v1 の自動デプロイ前提。v2 の本番デプロイは GCP 前提で別管理
 
 ## セキュリティ
 

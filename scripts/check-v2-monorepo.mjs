@@ -4,8 +4,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const requiredFiles = [
+  'AGENTS.md',
+  'CLAUDE.md',
   'README.md',
   'v1/README.md',
+  'v1/vercel.json',
   'docs/v2/README.md',
   'docs/v2/architecture-overview.md',
   'docs/v2/platform-bootstrap.md',
@@ -45,6 +48,8 @@ for (const snippet of [
   'packages/contracts',
   'apps/web',
   'services/control-api',
+  'mise run dev',
+  'cd v1 && npm run dev',
 ]) {
   if (!rootReadme.includes(snippet)) {
     failures.push(`README.md must mention ${snippet}`)
@@ -69,4 +74,37 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-console.log(`v2 monorepo readiness checks passed (${requiredFiles.length} files verified)`)
+const rootTsconfig = fs.readFileSync(path.join(process.cwd(), 'tsconfig.json'), 'utf8')
+for (const staleSnippet of ['"name": "next"', 'next-env.d.ts', '.next/types/**/*.ts']) {
+  if (rootTsconfig.includes(staleSnippet)) {
+    failures.push(`root tsconfig.json must not contain stale Next.js config: ${staleSnippet}`)
+  }
+}
+
+for (const stalePath of ['.next', 'next-env.d.ts', 'tsconfig.tsbuildinfo', 'vercel.json']) {
+  if (fs.existsSync(path.join(process.cwd(), stalePath))) {
+    failures.push(`Root monorepo hygiene violation: remove ${stalePath} from repo root`)
+  }
+}
+
+const claude = fs.readFileSync(path.join(process.cwd(), 'CLAUDE.md'), 'utf8')
+for (const snippet of [
+  'monorepo',
+  'v1/                     # v1 Next.js app',
+  'apps/web/               # v2 React frontend',
+  'mise run dev',
+]) {
+  if (!claude.includes(snippet)) {
+    failures.push(`CLAUDE.md must mention ${snippet}`)
+  }
+}
+
+if (failures.length > 0) {
+  console.error('v2 monorepo readiness checks failed:')
+  for (const failure of failures) {
+    console.error(`- ${failure}`)
+  }
+  process.exit(1)
+}
+
+console.log(`v2 monorepo readiness checks passed (${requiredFiles.length} files + root hygiene verified)`)
