@@ -60,3 +60,15 @@ variable "labels" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_dlq_alerts" {
+  description = "Whether to enable DLQ non-empty alert policies"
+  type        = bool
+  default     = true
+}
+
+variable "notification_channel_ids" {
+  description = "Cloud Monitoring notification channel IDs for DLQ alerts"
+  type        = list(string)
+  default     = []
+}

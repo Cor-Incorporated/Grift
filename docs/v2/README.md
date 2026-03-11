@@ -1,6 +1,6 @@
 # Grift v2 設計ドキュメント群
 
-最終更新: 2026-03-11
+最終更新: 2026-03-12
 
 このディレクトリは、v2 を再構築するための設計資料をまとめたものです。
 
@@ -23,13 +23,14 @@
 15. [ADR-0014: llm-gateway NDJSON Streaming-First](./adr-0014-ai-gateway-ndjson-streaming-first.md)
 16. [ADR-0015: Observation Pipeline 非同期 QA 抽出](./adr-0015-observation-pipeline-async-qa-extraction.md)
 17. [ADR-0016: Estimation × Research ドメイン統合](./adr-0016-product-integration-estimation-research.md)
-18. [Cross-Tenant Anonymous Intelligence 設計](./cross-tenant-intelligence-architecture.md)
-19. [上流工程特化 LLM の学習戦略](./upstream-llm-training-strategy.md)
-20. [プラットフォーム bootstrap](./platform-bootstrap.md)
-21. [Qwen3.5 PoC 合格基準](./qwen35-poc-acceptance-criteria.md)
-22. [Qwen3.5 ローカル LLM 戦略](./qwen35-local-llm-strategy.md)
-23. [実装ロードマップ](./implementation-roadmap.md)
-24. [テスト戦略](./testing-strategy.md)
+18. [ADR-0017: イベント命名規約の段階移行（PascalCase → dot.notation）](./adr-0017-event-naming-migration-strategy.md)
+19. [Cross-Tenant Anonymous Intelligence 設計](./cross-tenant-intelligence-architecture.md)
+20. [上流工程特化 LLM の学習戦略](./upstream-llm-training-strategy.md)
+21. [プラットフォーム bootstrap](./platform-bootstrap.md)
+22. [Qwen3.5 PoC 合格基準](./qwen35-poc-acceptance-criteria.md)
+23. [Qwen3.5 ローカル LLM 戦略](./qwen35-local-llm-strategy.md)
+24. [実装ロードマップ](./implementation-roadmap.md)
+25. [テスト戦略](./testing-strategy.md)
 
 ## この資料群の狙い
 
@@ -78,3 +79,4 @@
 | 14 | llm-gateway NDJSON Streaming-First + OpenAI 互換 API | ADR-0014 |
 | 15 | Observation Pipeline 非同期 QA 抽出 + 品質スコアリング | ADR-0015 |
 | 16 | Estimation × Research ドメイン統合 | ADR-0016 |
+| 17 | イベント命名規約を dot.notation へ段階移行 | ADR-0017 |

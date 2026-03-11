@@ -1,0 +1,14 @@
+# Stub configuration for tenant-specific data-classification policy (ADR-0014 W11).
+# Real enforcement wiring will be implemented in phase-2 gateway policy middleware.
+
+default:
+  # Fail-closed fallback when tenant policy is unknown.
+  allowed_levels:
+    - restricted
+
+tenants:
+  "00000000-0000-0000-0000-000000000000":
+    allowed_levels:
+      - internal
+      - confidential
+      - restricted
