@@ -73,6 +73,8 @@ func (m *mockVelocityRunner) AnalyzeRepository(_ context.Context, repo domain.Re
 	return m.metricsByRepo[key], nil
 }
 
+// Keep in sync with integration_test.go's publishedEvent definition.
+// We keep local copies because this file is package crawler.
 type publishedEvent struct {
 	topic string
 	event any
