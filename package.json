@@ -1,8 +1,8 @@
 {
-  "name": "benevolent-director",
+  "name": "grift",
   "private": true,
   "version": "2.0.0",
-  "description": "BenevolentDirector v2 monorepo root",
+  "description": "Grift v2 monorepo root",
   "scripts": {
     "ci:v2:openapi": "node scripts/check-v2-openapi.mjs",
     "ci:v2:schema": "node scripts/check-v2-schema.mjs",

@@ -1,4 +1,4 @@
-# BenevolentDirector v2 設計ドキュメント群
+# Grift v2 設計ドキュメント群
 
 最終更新: 2026-03-11
 

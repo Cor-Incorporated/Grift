@@ -1,6 +1,6 @@
 # @bd/domain-events
 
-JSON Schema catalog for BenevolentDirector v2 Pub/Sub domain events.
+JSON Schema catalog for Grift v2 Pub/Sub domain events.
 
 ## Validate
 

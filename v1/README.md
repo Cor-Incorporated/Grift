@@ -1,4 +1,4 @@
-# BenevolentDirector v1 (参照実装)
+# Grift v1 (参照実装)
 
 v1 の Next.js 実装を参照用に退避したディレクトリです。
 

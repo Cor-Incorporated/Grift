@@ -1,1 +1,1 @@
-"""BenevolentDirector LLM Gateway service."""
+"""Grift LLM Gateway service."""

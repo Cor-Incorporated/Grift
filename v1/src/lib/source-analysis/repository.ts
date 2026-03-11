@@ -13,7 +13,7 @@ interface ParsedGitHubUrl {
 function getGitHubHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Accept': 'application/vnd.github+json',
-    'User-Agent': 'BenevolentDirector/1.0',
+    'User-Agent': 'Grift/1.0',
   }
 
   if (process.env.GITHUB_TOKEN) {

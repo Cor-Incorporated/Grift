@@ -1,5 +1,5 @@
 // Package github provides GitHub App authentication and token management
-// for the BenevolentDirector control-api service.
+// for the Grift control-api service.
 package github
 
 import (

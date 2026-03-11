@@ -4,7 +4,7 @@
 
 ## 1. この文書の目的
 
-`Qwen3.5` の公式 GitHub README を一次情報として、BenevolentDirector v2 でどのモデルをどう使うかを定義する。
+`Qwen3.5` の公式 GitHub README を一次情報として、Grift v2 でどのモデルをどう使うかを定義する。
 
 ## 2. 一次情報から確認できる事実
 
@@ -21,7 +21,7 @@
 - `transformers`、`SGLang`、`vLLM`、`llama.cpp`、`mlx` が README 内で案内されている
 - ライセンスは Apache 2.0
 
-## 3. BenevolentDirector への適合性
+## 3. Grift への適合性
 
 ### 3.1 適している点
 
@@ -230,7 +230,7 @@ Qwen3.5 に優先的に流すデータ:
 
 ## 10. 初期結論
 
-`Qwen3.5` は BenevolentDirector v2 の「ローカル知能層」に十分採用候補になる。
+`Qwen3.5` は Grift v2 の「ローカル知能層」に十分採用候補になる。
 
 ただし採用理由は「高性能だから」だけではない。v2 で重要なのは次の 3 点である。
 
@@ -245,7 +245,7 @@ Qwen3.5 に優先的に流すデータ:
 
 ## 12. この文書での推論
 
-以下は README そのものではなく、BenevolentDirector v2 への適用判断である。
+以下は README そのものではなく、Grift v2 への適用判断である。
 
 - `9B` と `35B-A3B` の初期採用
 - context ごとのモデル役割分担

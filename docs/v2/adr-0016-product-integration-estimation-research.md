@@ -10,7 +10,7 @@
 
 ## コンテキスト
 
-BenevolentDirector v2（Estimation Domain: 見積・提案自動化）と next-gen-research（Research Domain: 1-to-N AI リサーチインタビュー）は、それぞれ独立したプロダクトとして設計されてきた。
+Grift v2（Estimation Domain: 見積・提案自動化）と next-gen-research（Research Domain: 1-to-N AI リサーチインタビュー）は、それぞれ独立したプロダクトとして設計されてきた。
 
 両プロダクトを比較すると、以下の共通基盤が確認された:
 
@@ -44,7 +44,7 @@ BenevolentDirector v2（Estimation Domain: 見積・提案自動化）と next-g
 
 ### 1. 単一プロダクトとして統合する
 
-Estimation Domain と Research Domain を BenevolentDirector v2 の単一 monorepo 内で統合する。
+Estimation Domain と Research Domain を Grift v2 の単一 monorepo 内で統合する。
 
 ```text
 統合プロダクト

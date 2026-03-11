@@ -1,4 +1,4 @@
-# BenevolentDirector v2 プラットフォーム bootstrap
+# Grift v2 プラットフォーム bootstrap
 
 最終更新: 2026-03-08
 

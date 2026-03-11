@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "BenevolentDirector v2 React web client",
+  "description": "Grift v2 React web client",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

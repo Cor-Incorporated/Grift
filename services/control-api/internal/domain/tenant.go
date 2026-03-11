@@ -1,6 +1,6 @@
 // Package domain defines the core domain types for the control-api service.
 // Types are derived from the OpenAPI specification and initial-schema.sql,
-// serving as the canonical Go representation of the BenevolentDirector v2 data model.
+// serving as the canonical Go representation of the Grift v2 data model.
 package domain
 
 import (

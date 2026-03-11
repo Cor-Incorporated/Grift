@@ -1,4 +1,4 @@
-# BenevolentDirector v2 テスト戦略
+# Grift v2 テスト戦略
 
 最終更新: 2026-03-08
 

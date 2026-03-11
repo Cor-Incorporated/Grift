@@ -1,4 +1,4 @@
-# BenevolentDirector v2 実装ロードマップ
+# Grift v2 実装ロードマップ
 
 最終更新: 2026-03-11
 

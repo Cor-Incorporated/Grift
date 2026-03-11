@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BenevolentDirector is a monorepo containing both v1 (Next.js) and v2 (React + Go + Python) implementations. v2 converts unstructured requests into structured requirements, estimates, and actionable work packets for contract development firms.
+Grift is a monorepo containing both v1 (Next.js) and v2 (React + Go + Python) implementations. v2 converts unstructured requests into structured requirements, estimates, and actionable work packets for contract development firms.
 
 ## Repository Structure
 

@@ -1,1 +1,1 @@
-"""BenevolentDirector Intelligence Worker service."""
+"""Grift Intelligence Worker service."""

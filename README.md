@@ -1,43 +1,65 @@
-# BenevolentDirector
+# Grift
 
-AI 執事が顧客の曖昧な依頼を完璧な仕様書と見積りに変換し、Linear.app で開発タスクを管理する案件管理システム。
+**AI development pricing is a grift. We're here to fix that.**
 
-## v2 再構築の準備
+受託開発の見積りは不透明で、情報の非対称性が価格を歪めている。Grift はその構造を壊す — GitHub の実績データと市場エビデンスに基づいて、AI 開発の適正価格をリアルタイムで算出する。
 
-v2 は `React + Go + Python + GCP` を前提に別アーキテクチャで再構築します。現時点のガードレールと契約は以下に集約しています。
+## Who is Grift for?
 
-- `docs/v2`: v2 のアーキテクチャ、ADR、運用前提、PoC 合格基準、テスト戦略
-- `packages/contracts`: `openapi.yaml` と `initial-schema.sql` による contract-first の SSOT
-- `apps/web`: v2 の React Web クライアント骨格
-- `services/control-api`: v2 の Go control plane 骨格
-- `services/intelligence-worker`: v2 の Python intelligence plane 骨格
-- `services/llm-gateway`: v2 のローカル LLM / クラウド LLM ルーティング層骨格
-- `infra/terraform`: GCP 前提の Terraform 骨格
+### Primary: ソロ開発者 / 小規模 AI 開発チーム
 
-現行の Next.js 実装は v1 参照実装として扱います。`.env.local` はアーカイブ対象にせず、当面は repo root に残します。
+- フリーランスエンジニア、AI 受託を企画する 1-10 人のスタートアップ
+- AI 開発の価格がブレブレで、**リアルタイムの適正価格**を知りたい
+- GitHub/Git の実績を客観的に数値化して**営業資料**として使いたい
+- 自分の強み（開発速度・品質・専門性）を発注側に**データで証明**したい
 
-## できること
+### Secondary: 発注側企業の PM / CTO
+
+- 依頼中の見積りが適正か、**第三者チェック**したい
+- 複数ベンダーの提案を客観比較したい
+
+### Future: 東南アジア SIer / オフショア企業
+
+- 技術力の客観的誇示（GitHub 分析ベース）
+- 先進国クライアントとの適正取引の担保
+
+> **Why "Grift"?** — 受託見積りの不透明な価格設定こそが本当の "grift"（ぼったくり）。このツールはそれを暴く側。上流工程専門で情報の非対称性を利益源にしてきた企業がこれを嫌がるなら、名前の皮肉は成功している。
+
+## What Grift Does
 
 | 機能 | 説明 |
 |------|------|
-| AI 一問一答ヒアリング | 案件タイプ別（新規/バグ/修正/機能追加）にアキネーター形式で要件を詰める |
+| AI ヒアリング | 案件タイプ別にアキネーター形式で要件を詰める（GuideAgent パターン） |
 | 自動仕様書生成 | ヒアリング完了時に Markdown 仕様書を自動出力 |
-| 自動見積り生成 | 仕様書から工数・市場比較・価格を自動算出（バグ/修正は工数のみ） |
-| GitHub リポジトリ解析 | コードベース分析 + Velocity メトリクスで見積り精度を向上 |
-| 市場エビデンス取得 | Grok API で類似案件の市場単価を自動調査 |
-| Go/No-Go 判定 | 収益性・技術リスク・キャパシティを総合評価して受注判定 |
-| Linear 連携 | 承認済み見積りから Linear の Project/Cycle/Issue を自動作成 |
-| 管理者ダッシュボード | 全案件の状態管理、対話ログ閲覧、見積り調整 |
-| 添付ファイル解析 | ZIP/PDF/画像/URL を AI が解析し、対話・見積りに反映 |
+| リアルタイム見積り | 工数 + 市場比較 + 価格エンジンで適正価格を算出 |
+| GitHub 実績分析 | コードベース解析 + Velocity メトリクスで開発力を可視化 |
+| 市場エビデンス | 類似案件の市場単価をリアルタイム調査 |
+| Observation Pipeline | 会話から QA ペアを自動抽出し、見積り精度を継続改善 |
+| Go/No-Go 判定 | 収益性・技術リスク・キャパシティを総合評価 |
+| Linear/GitHub 連携 | 承認済み見積りからタスクを自動作成 |
 
-## 案件タイプ別の見積り方式
+### 見積りモード
 
-| タイプ | 見積り | 金額表示 |
-|--------|--------|----------|
+| タイプ | 見積り方式 | 金額表示 |
+|--------|-----------|----------|
 | `new_project` | 市場比較（工数 + 市場対比 + 価格エンジン） | あり |
 | `feature_addition` | ハイブリッド（工数 + 市場比較） | あり |
 | `bug_report` | 工数のみ（調査/修正/テスト/バッファ） | なし（保証範囲） |
 | `fix_request` | 工数のみ | なし（契約範囲） |
+
+## Architecture
+
+v2 は `React + Go + Python + GCP` で再構築中。ローカル LLM（Qwen3.5 on vLLM）をメインに、クラウド LLM をフォールバックとして使う。
+
+- `docs/v2/`: アーキテクチャ、17 ADR、ロードマップ、テスト戦略
+- `packages/contracts/`: `openapi.yaml` + `initial-schema.sql`（contract-first SSOT）
+- `apps/web/`: React 19 + Vite
+- `services/control-api/`: Go control plane
+- `services/intelligence-worker/`: Python intelligence plane
+- `services/llm-gateway/`: NDJSON Streaming-First LLM ルーティング（ADR-0014）
+- `infra/terraform/`: GCP infrastructure
+
+v1（Next.js）は参照実装として残す。
 
 ## セットアップ
 

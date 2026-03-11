@@ -108,7 +108,7 @@ export async function syncEstimateToLinear(
     } else {
       const linearProject = await createLinearProject({
         name: projectName,
-        description: `BenevolentDirector 見積り: ${estimateId}`,
+        description: `Grift 見積り: ${estimateId}`,
         teamIds: [teamId],
       })
       linearProjectId = linearProject.id
