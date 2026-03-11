@@ -38,7 +38,7 @@ BenevolentDirector v2（Estimation Domain: 見積・提案自動化）と next-g
 
 - ローカル LLM の RAG としてフィードバックループを回し、ユーザビリティを向上させるには、両ドメインのデータが同一 Training Data Lake から学習する構造が必要
 - 共通基盤（llm-gateway, Observation Pipeline, テナント管理, Event Bus, Terraform）の重複実装を避ける
-- Polls から継承可能なナレッジ（CI/CD 27 Workflows, processing_lock, Feature Flag 運用, Secret 管理）を一箇所で活用する
+- Polls から継承可能なナレッジ（CI/CD 27 Workflows, processing_lock, Feature Flag 運用, Secret 管理）を一箇所で活用する（next-gen-research 内部文書 knowledge-transfer.md に基づく）
 
 ## 決定
 
@@ -140,6 +140,8 @@ Phase 3.5 を Phase 3 と並行にする理由:
 - 実装は Phase 3 の Intake Chat からデータが流れ始めてからテスト可能
 - Pipeline 本体は Intake Chat に依存しないため、並行開発が可能
 
+**Contract-first**: 各 Phase の実装開始前に `packages/contracts/openapi.yaml` および `packages/contracts/initial-schema.sql` を先行更新する（ADR-0014 同様）。
+
 Phase 5 で Research Domain を統合する理由:
 
 - Shared Plane（llm-gateway, Observation Pipeline, Tenant Management）が Phase 2-3.5 で安定している前提
@@ -150,12 +152,14 @@ Phase 5 で Research Domain を統合する理由:
 
 | Polls 資産 | 統合プロダクトでの用途 | 移行コスト |
 |-----------|----------------------|-----------|
-| CI/CD 27 Workflows | ベースにして拡張 | 低 |
+| CI/CD 27 Workflows（※1） | ベースにして拡張 | 低 |
 | GCP Terraform 構成 | ほぼそのまま | 低 |
 | Streaming 3 層防御パターン | NDJSON 版に書き換え | 中 |
 | processing_lock（同時実行制御） | Interview 並行実行に必須 | 低 |
 | Feature Flag 運用ノウハウ | カナリアリリースに活用 | 低 |
 | Secret 管理パターン | Terraform 集約で改善 | 中 |
+
+※1: Polls の数値データ（Workflow 数、行数等）は next-gen-research 内部文書 knowledge-transfer.md に基づく。本リポジトリ内では検証不可。
 
 ## 理由
 
@@ -165,7 +169,7 @@ Phase 5 で Research Domain を統合する理由:
 
 ### GuideAgent パターンの根拠
 
-Polls の最大の失敗は「AI 出力でフロー制御する」設計だった（god usecase 996 行、asking_question_id の 6 種不一致パターン）。next-gen-research の設計調査で、コード → System Prompt 動的更新 → AI plain text の方式が保守性と会話品質の両方で優位と確認された。
+Polls の最大の失敗は「AI 出力でフロー制御する」設計だった（god usecase 996 行、asking_question_id の 6 種不一致パターン）（next-gen-research 内部文書 knowledge-transfer.md に基づく）。next-gen-research の設計調査で、コード → System Prompt 動的更新 → AI plain text の方式が保守性と会話品質の両方で優位と確認された。
 
 ### フェーズ統合の根拠
 
@@ -214,7 +218,7 @@ Research Domain を Phase 5 に配置するのは、Shared Plane の安定を待
 
 - next-gen-research: vision.md（内部設計文書）
 - next-gen-research: bounded-contexts.md（内部設計文書）
-- next-gen-research: knowledge-transfer.md（Polls 教訓分析、7 カテゴリ 718 行）
+- next-gen-research: knowledge-transfer.md（Polls 教訓分析、7 カテゴリ 718 行）— 本 ADR 内の Polls に関する数値（996 行、6 種不一致、27 Workflows 等）はこの文書に基づく
 - next-gen-research: conversation-engine.md（GuideAgent パターン設計）
 - next-gen-research: adr-0001-conversation-observation-separation.md
 - next-gen-research: adr-0002-streaming-first-design.md
