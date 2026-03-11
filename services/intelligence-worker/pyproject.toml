@@ -4,6 +4,8 @@ version = "0.0.0"
 description = "v2 intelligence worker scaffold"
 requires-python = ">=3.12"
 dependencies = [
+  "google-cloud-pubsub>=2.30.0",
+  "psycopg2-binary>=2.9.10",
   "pydantic>=2.10",
   "structlog>=24.1.0",
 ]

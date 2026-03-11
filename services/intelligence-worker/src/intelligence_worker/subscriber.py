@@ -74,13 +74,21 @@ class ConversationTurnCompletedSubscriber:
 
 def _extract_event_name(payload: dict[str, Any]) -> str | None:
     """Best-effort extraction for event name compatibility."""
-    event_name = payload.get("event_name") or payload.get("eventName")
+    event_name = (
+        payload.get("event_name")
+        or payload.get("eventName")
+        or payload.get("event_type")
+    )
     if isinstance(event_name, str):
         return event_name
 
     envelope = payload.get("envelope")
     if isinstance(envelope, dict):
-        env_event = envelope.get("event_name") or envelope.get("eventName")
+        env_event = (
+            envelope.get("event_name")
+            or envelope.get("eventName")
+            or envelope.get("event_type")
+        )
         if isinstance(env_event, str):
             return env_event
 

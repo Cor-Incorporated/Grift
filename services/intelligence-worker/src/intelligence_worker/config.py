@@ -12,14 +12,16 @@ class Config:
 
     Attributes:
         pubsub_project_id: GCP project ID for Pub/Sub.
-        pubsub_subscription_id: Pub/Sub subscription to consume from.
+        pubsub_subscription: Pub/Sub subscription to consume from.
         database_url: PostgreSQL connection string.
+        llm_gateway_url: llm-gateway base URL.
         extractor_plugins: Enabled extractor plugins.
     """
 
     pubsub_project_id: str
-    pubsub_subscription_id: str
+    pubsub_subscription: str
     database_url: str
+    llm_gateway_url: str
     extractor_plugins: tuple[str, ...]
 
 
@@ -35,9 +37,12 @@ def load_config() -> Config:
     missing: list[str] = []
     env_vars = {
         "PUBSUB_PROJECT_ID": os.environ.get("PUBSUB_PROJECT_ID"),
-        "PUBSUB_SUBSCRIPTION_ID": os.environ.get("PUBSUB_SUBSCRIPTION_ID"),
         "DATABASE_URL": os.environ.get("DATABASE_URL"),
     }
+    pubsub_subscription = os.environ.get(
+        "PUBSUB_SUBSCRIPTION", "conversation-turn-completed-sub"
+    )
+    llm_gateway_url = os.environ.get("LLM_GATEWAY_URL", "http://localhost:8081")
     extractor_plugins = tuple(
         plugin.strip()
         for plugin in os.environ.get("EXTRACTOR_PLUGINS", "estimation").split(",")
@@ -55,7 +60,8 @@ def load_config() -> Config:
 
     return Config(
         pubsub_project_id=env_vars["PUBSUB_PROJECT_ID"],  # type: ignore[arg-type]
-        pubsub_subscription_id=env_vars["PUBSUB_SUBSCRIPTION_ID"],  # type: ignore[arg-type]
+        pubsub_subscription=pubsub_subscription,
         database_url=env_vars["DATABASE_URL"],  # type: ignore[arg-type]
+        llm_gateway_url=llm_gateway_url,
         extractor_plugins=extractor_plugins,
     )
