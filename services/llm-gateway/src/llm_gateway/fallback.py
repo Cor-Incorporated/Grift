@@ -49,11 +49,15 @@ class FallbackMetrics:
 
     def record_stage_success(self, stage: str) -> None:
         with self._lock:
-            self._stage_success_total[stage] = self._stage_success_total.get(stage, 0) + 1
+            self._stage_success_total[stage] = (
+                self._stage_success_total.get(stage, 0) + 1
+            )
 
     def record_stage_failure(self, stage: str) -> None:
         with self._lock:
-            self._stage_failure_total[stage] = self._stage_failure_total.get(stage, 0) + 1
+            self._stage_failure_total[stage] = (
+                self._stage_failure_total.get(stage, 0) + 1
+            )
 
     def record_fallback_triggered(self) -> None:
         with self._lock:
@@ -136,7 +140,9 @@ def resolve_classification(raw: str | None) -> str:
 
 
 def load_fallback_engine(config_path: str | None = None) -> FallbackEngine:
-    source = _resolve_config_path(config_path or os.getenv("LLM_GATEWAY_FALLBACK_CHAIN_CONFIG", ""))
+    source = _resolve_config_path(
+        config_path or os.getenv("LLM_GATEWAY_FALLBACK_CHAIN_CONFIG", "")
+    )
     payload = json.loads(source.read_text(encoding="utf-8"))
     chain = payload.get("chain", [])
     stages = [
@@ -146,7 +152,9 @@ def load_fallback_engine(config_path: str | None = None) -> FallbackEngine:
             model=item["model"],
             timeout_seconds=int(item.get("timeout_seconds", 30)),
             enabled=bool(item.get("enabled", True)),
-            allowed_classifications=tuple(item.get("allowed_classifications", ALLOWED_CLASSIFICATIONS)),
+            allowed_classifications=tuple(
+                item.get("allowed_classifications", ALLOWED_CLASSIFICATIONS)
+            ),
         )
         for item in chain
     ]
@@ -166,4 +174,6 @@ def _resolve_config_path(raw: str) -> Path:
         if candidate.exists():
             return candidate
 
-    raise FileNotFoundError(f"fallback config not found. tried: {[str(c) for c in candidates]}")
+    raise FileNotFoundError(
+        f"fallback config not found. tried: {[str(c) for c in candidates]}"
+    )

@@ -64,7 +64,9 @@ async def chat_completions(
             fail_stages=debug_fail_stages,
         )
     except Exception as exc:  # noqa: BLE001 - surface unified gateway failure.
-        raise HTTPException(status_code=503, detail=f"llm backend unavailable: {exc}") from exc
+        raise HTTPException(
+            status_code=503, detail=f"llm backend unavailable: {exc}"
+        ) from exc
 
     response.headers["X-Fallback-Used"] = "true" if result.fallback_used else "false"
 

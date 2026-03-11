@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi.testclient import TestClient
 
 from llm_gateway.fallback import metrics
 from llm_gateway.main import create_app
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _base_payload() -> dict[str, object]:
@@ -63,7 +66,12 @@ def test_chain_order_can_be_changed_by_config_file(tmp_path: Path, monkeypatch) 
                 "model": "qwen3.5-7b",
                 "timeout_seconds": 10,
                 "enabled": True,
-                "allowed_classifications": ["public", "internal", "confidential", "restricted"],
+                "allowed_classifications": [
+                    "public",
+                    "internal",
+                    "confidential",
+                    "restricted",
+                ],
             },
             {
                 "name": "last_resort",
