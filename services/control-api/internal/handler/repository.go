@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	gh "github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/github"
-	"github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/middleware"
+	gh "github.com/Cor-Incorporated/Grift/services/control-api/internal/github"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
 	"github.com/google/uuid"
 )
 

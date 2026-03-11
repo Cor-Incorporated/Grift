@@ -1,4 +1,4 @@
-module github.com/Cor-Incorporated/BenevolentDirector/services/control-api
+module github.com/Cor-Incorporated/Grift/services/control-api
 
 go 1.24.0
 
