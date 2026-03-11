@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/crawler"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/crawler"
 )
 
 func main() {

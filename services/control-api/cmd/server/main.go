@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/handler"
-	"github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/middleware"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/handler"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
 )
 
 func main() {

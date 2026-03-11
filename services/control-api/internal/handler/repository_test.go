@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/domain"
-	gh "github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/github"
-	"github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/middleware"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
+	gh "github.com/Cor-Incorporated/Grift/services/control-api/internal/github"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
 	"github.com/google/uuid"
 )
 

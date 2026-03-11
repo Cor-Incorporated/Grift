@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/Cor-Incorporated/BenevolentDirector/services/control-api/internal/domain"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
 )
 
 // --- Mock implementations ---

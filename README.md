@@ -75,8 +75,8 @@ v1（Next.js）は参照実装として残す。
 ### インストール
 
 ```bash
-git clone https://github.com/Cor-Incorporated/BenevolentDirector.git
-cd BenevolentDirector
+git clone https://github.com/Cor-Incorporated/Grift.git
+cd Grift
 cp .env.example .env.local
 # .env.local に各種 API キーを設定（下表参照）
 ```
