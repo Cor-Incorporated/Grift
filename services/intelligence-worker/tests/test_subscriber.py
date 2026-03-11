@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import TYPE_CHECKING
 
 from intelligence_worker.subscriber import ConversationTurnCompletedSubscriber
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass
@@ -43,7 +46,9 @@ class _FakeClient:
     callback: Callable[[_FakeMessage], None] | None = None
     future: _FakeFuture = field(default_factory=_FakeFuture)
 
-    def subscribe(self, subscription: str, callback: Callable[[_FakeMessage], None]) -> _FakeFuture:
+    def subscribe(
+        self, subscription: str, callback: Callable[[_FakeMessage], None]
+    ) -> _FakeFuture:
         self.subscription = subscription
         self.callback = callback
         return self.future
