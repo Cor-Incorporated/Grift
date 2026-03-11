@@ -1,0 +1,14 @@
+{
+  "default": {
+    "confidence_reask_threshold": 0.5,
+    "completeness_done_threshold": 0.8,
+    "coherence_warning_threshold": 0.5
+  },
+  "tenants": {
+    "00000000-0000-0000-0000-000000000000": {
+      "confidence_reask_threshold": 0.55,
+      "completeness_done_threshold": 0.85,
+      "coherence_warning_threshold": 0.6
+    }
+  }
+}
