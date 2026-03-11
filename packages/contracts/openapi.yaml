@@ -438,9 +438,10 @@ paths:
     post:
       operationId: streamConversation
       tags: [conversations]
-      summary: SSE ストリーミング会話
+      summary: NDJSON ストリーミング会話
       parameters:
         - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/xDataClassificationHeader"
         - $ref: "#/components/parameters/caseId"
       requestBody:
         required: true
@@ -450,18 +451,11 @@ paths:
               $ref: "#/components/schemas/SendMessageRequest"
       responses:
         "200":
-          description: Server-Sent Events stream
+          description: NDJSON stream (`content` / `error` / `done`)
           content:
-            text/event-stream:
+            application/x-ndjson:
               schema:
-                type: string
-                description: |
-                  イベント種別:
-                  - text_delta: テキスト差分
-                  - message_complete: メッセージ完了
-                  - spec_generated: 仕様書生成完了
-                  - estimate_generated: 見積生成完了
-                  - error: エラー
+                $ref: "#/components/schemas/NDJSONStreamChunk"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1512,6 +1506,16 @@ components:
       schema:
         type: string
         format: uuid
+    xDataClassificationHeader:
+      name: X-Data-Classification
+      in: header
+      required: false
+      schema:
+        type: string
+        enum: [public, internal, confidential, restricted]
+        default: restricted
+      description: |
+        データ分類ヘッダー。未指定または不正値は `restricted` として扱う（fail-closed）。
     caseId:
       name: caseId
       in: path
@@ -1591,6 +1595,51 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    NDJSONContentChunk:
+      type: object
+      required: [type, content]
+      properties:
+        type:
+          type: string
+          enum: [content]
+        content:
+          type: string
+        data_classification:
+          type: string
+          enum: [public, internal, confidential, restricted]
+    NDJSONErrorChunk:
+      type: object
+      required: [type, error]
+      properties:
+        type:
+          type: string
+          enum: [error]
+        error:
+          type: string
+        data_classification:
+          type: string
+          enum: [public, internal, confidential, restricted]
+    NDJSONDoneChunk:
+      type: object
+      required: [type, done]
+      properties:
+        type:
+          type: string
+          enum: [done]
+        done:
+          type: boolean
+        event_type:
+          type: string
+          enum: [conversation.turn.completed]
+        data_classification:
+          type: string
+          enum: [public, internal, confidential, restricted]
+    NDJSONStreamChunk:
+      oneOf:
+        - $ref: "#/components/schemas/NDJSONContentChunk"
+        - $ref: "#/components/schemas/NDJSONErrorChunk"
+        - $ref: "#/components/schemas/NDJSONDoneChunk"
+
     # ─── Error ───
     ErrorResponse:
       type: object
