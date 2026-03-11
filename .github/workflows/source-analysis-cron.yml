@@ -1,8 +1,8 @@
 name: Source Analysis Cron
 
 on:
-  schedule:
-    - cron: '*/30 * * * *'
+  # Disabled until the legacy v1 source-analysis runner is either retired
+  # or replaced with a maintained v2 endpoint.
   workflow_dispatch:
     inputs:
       project_id:
