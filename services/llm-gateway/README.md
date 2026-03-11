@@ -11,6 +11,14 @@ v2 の LLM anti-corruption layer。
 
 アプリケーションは provider 固有 API を直接呼ばない。
 
+## Streaming interface
+
+- `POST /v1/chat/completions` は `stream=true` の場合 `application/x-ndjson` を返す
+- チャンク型: `content` / `error` / `done`
+- `stream=false`（デフォルト）は buffered JSON レスポンスを返す
+- `X-Data-Classification` ヘッダーは `public|internal|confidential|restricted`
+  - ヘッダー未指定・無効値は `restricted` として扱う（fail-closed）
+
 ## Fallback chain
 
 `/v1/chat/completions` は ADR-0014 準拠の 3 段フォールバックを実装:

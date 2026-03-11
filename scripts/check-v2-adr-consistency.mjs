@@ -33,6 +33,12 @@ function expectRegex(content, regex, message) {
   }
 }
 
+function expectNoRegex(content, regex, message) {
+  if (regex.test(content)) {
+    failures.push(message)
+  }
+}
+
 const schema = readFile('packages/contracts/initial-schema.sql')
 const openapi = readFile('packages/contracts/openapi.yaml')
 
@@ -120,6 +126,41 @@ expectIncludes(
   schema,
   'CREATE TABLE chunk_embeddings',
   'ADR-0008: chunk_embeddings table must exist'
+)
+
+// ============================================================
+// ADR-0014: NDJSON Streaming-First
+// ============================================================
+
+expectIncludes(
+  openapi,
+  'application/x-ndjson',
+  'ADR-0014: streaming endpoint must use application/x-ndjson'
+)
+expectIncludes(
+  openapi,
+  'NDJSONStreamChunk:',
+  'ADR-0014: NDJSON stream chunk schema must be defined'
+)
+expectIncludes(
+  openapi,
+  'xDataClassificationHeader:',
+  'ADR-0014 W11: X-Data-Classification header parameter must be defined'
+)
+expectRegex(
+  openapi,
+  /enum:\s*\[public,\s*internal,\s*confidential,\s*restricted\]/,
+  'ADR-0014 W11: X-Data-Classification enum must include public/internal/confidential/restricted'
+)
+expectRegex(
+  openapi,
+  /default:\s*restricted/,
+  'ADR-0014 W11: X-Data-Classification default must be restricted (fail-closed)'
+)
+expectNoRegex(
+  openapi,
+  /text\/event-stream/,
+  'ADR-0014: streaming endpoint must not use legacy text/event-stream'
 )
 
 // ============================================================

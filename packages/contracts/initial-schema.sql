@@ -149,6 +149,8 @@ CREATE TABLE conversation_turns (
   case_id     UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
   role        TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
   content     TEXT NOT NULL,
+  source_domain      TEXT NOT NULL DEFAULT 'unknown',
+  training_eligible  BOOLEAN NOT NULL DEFAULT false,
   metadata    JSONB NOT NULL DEFAULT '{}',
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -163,6 +165,38 @@ CREATE POLICY tenant_isolation_conversation_turns ON conversation_turns
   WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
 GRANT SELECT, INSERT ON conversation_turns TO app_user;
 GRANT SELECT, INSERT ON conversation_turns TO job_worker;
+
+-- ============================================================
+-- Observation QA Pairs (Observation Pipeline Context, append-only)
+-- ADR-0015: 非同期抽出された QA ペアと品質スコアを保存
+-- ============================================================
+CREATE TABLE qa_pairs (
+  id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id          UUID NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
+  session_id         UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  turn_range         INT4RANGE NOT NULL,
+  question_text      TEXT NOT NULL,
+  answer_text        TEXT NOT NULL,
+  source_domain      TEXT NOT NULL DEFAULT 'unknown',
+  training_eligible  BOOLEAN NOT NULL DEFAULT false,
+  confidence         NUMERIC(4,3) NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+  completeness       NUMERIC(4,3) NOT NULL CHECK (completeness BETWEEN 0 AND 1),
+  coherence          NUMERIC(4,3) NOT NULL CHECK (coherence BETWEEN 0 AND 1),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_qa_pairs_session ON qa_pairs(tenant_id, session_id, created_at DESC);
+CREATE INDEX idx_qa_pairs_source_domain ON qa_pairs(tenant_id, source_domain, created_at DESC);
+CREATE INDEX idx_qa_pairs_training_eligible ON qa_pairs(tenant_id, training_eligible, created_at DESC);
+
+ALTER TABLE qa_pairs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE qa_pairs FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_qa_pairs ON qa_pairs
+  USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+-- qa_pairs is append-only: SELECT + INSERT only
+GRANT SELECT, INSERT ON qa_pairs TO app_user;
+GRANT SELECT, INSERT ON qa_pairs TO job_worker;
 
 -- ============================================================
 -- Source Documents (Intake Context)

@@ -26,3 +26,24 @@ npm run validate
 | `ProjectOutcomeRecorded` | `schemas/ProjectOutcomeRecorded.json` | `project_outcomes` |
 
 All event schemas share the common envelope in `schemas/_envelope.json`.
+
+## Envelope (ADR-0009 / ADR-0015)
+
+Required fields:
+
+- `event_id`
+- `event_type`
+- `tenant_id`
+- `aggregate_type`
+- `aggregate_id`
+- `aggregate_version` (integer)
+- `idempotency_key` (string)
+- `occurred_at` (date-time)
+- `producer`
+- `source_domain`
+- `payload`
+
+Backward compatibility:
+
+- Legacy `timestamp` remains as a deprecated alias for `occurred_at`.
+- Legacy semver `version` remains as a deprecated field; use `aggregate_version` for ordering.

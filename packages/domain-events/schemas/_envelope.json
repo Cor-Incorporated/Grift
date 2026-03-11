@@ -16,13 +16,25 @@
       "type": "string",
       "format": "uuid"
     },
-    "timestamp": {
+    "aggregate_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aggregate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aggregate_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "occurred_at": {
       "type": "string",
       "format": "date-time"
     },
     "idempotency_key": {
       "type": "string",
-      "format": "uuid"
+      "minLength": 1
     },
     "correlation_id": {
       "type": "string",
@@ -36,9 +48,21 @@
       "type": "string",
       "minLength": 1
     },
+    "source_domain": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "deprecated": true,
+      "description": "Legacy alias. Use occurred_at."
+    },
     "version": {
       "type": "string",
-      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "deprecated": true,
+      "description": "Legacy semver event version. Use aggregate_version."
     },
     "payload": {}
   },
@@ -46,10 +70,13 @@
     "event_id",
     "event_type",
     "tenant_id",
-    "timestamp",
+    "aggregate_type",
+    "aggregate_id",
+    "aggregate_version",
+    "occurred_at",
     "idempotency_key",
     "producer",
-    "version",
+    "source_domain",
     "payload"
   ]
 }

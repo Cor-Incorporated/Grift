@@ -9,5 +9,6 @@ v2 で共有する設定契約を置く領域。
 - provider routing defaults
 - feature flags
 - llm-gateway fallback chain (`llm-gateway-fallback-chain.stub.json`)
+- tenant policy stubs (`tenant-data-classification-policy.stub.yaml`)
 
 `.env.local` の値そのものはここに置かない。

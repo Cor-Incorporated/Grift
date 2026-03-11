@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "v2 intelligence worker scaffold"
 requires-python = ">=3.12"
 dependencies = [
+  "pydantic>=2.10",
   "structlog>=24.1.0",
 ]
 

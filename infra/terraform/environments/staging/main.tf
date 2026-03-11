@@ -100,6 +100,21 @@ module "pubsub" {
 
   project_id  = var.project_id
   environment = "staging"
+
+  topic_names = [
+    "conversation-turns",
+    "observation-events",
+    "case-events",
+    "estimate-events",
+    "handoff-events",
+    "velocity-events",
+    "market-events",
+  ]
+
+  ack_deadline_seconds = 60
+  max_delivery_attempts = 5
+  minimum_backoff = "10s"
+  maximum_backoff = "300s"
 }
 
 # -----------------------------------------------------
