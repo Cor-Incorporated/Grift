@@ -23,6 +23,7 @@ const tenantScopedTables = [
   'tenant_members',
   'cases',
   'conversation_turns',
+  'qa_pairs',
   'source_documents',
   'document_chunks',
   'chunk_embeddings',
@@ -67,6 +68,14 @@ expectRegex(
   /GRANT SELECT, INSERT ON conversation_turns TO job_worker;/,
   'conversation_turns must be append-only for job_worker'
 )
+expectRegex(
+  /GRANT SELECT, INSERT ON qa_pairs TO app_user;/,
+  'qa_pairs must be append-only for app_user'
+)
+expectRegex(
+  /GRANT SELECT, INSERT ON qa_pairs TO job_worker;/,
+  'qa_pairs must be append-only for job_worker'
+)
 expectNoRegex(
   /GRANT [^\n]*UPDATE[^\n]*ON conversation_turns TO app_user;/,
   'conversation_turns must not grant UPDATE to app_user'
@@ -82,6 +91,22 @@ expectNoRegex(
 expectNoRegex(
   /GRANT [^\n]*DELETE[^\n]*ON conversation_turns TO job_worker;/,
   'conversation_turns must not grant DELETE to job_worker'
+)
+expectNoRegex(
+  /GRANT [^\n]*UPDATE[^\n]*ON qa_pairs TO app_user;/,
+  'qa_pairs must not grant UPDATE to app_user'
+)
+expectNoRegex(
+  /GRANT [^\n]*DELETE[^\n]*ON qa_pairs TO app_user;/,
+  'qa_pairs must not grant DELETE to app_user'
+)
+expectNoRegex(
+  /GRANT [^\n]*UPDATE[^\n]*ON qa_pairs TO job_worker;/,
+  'qa_pairs must not grant UPDATE to job_worker'
+)
+expectNoRegex(
+  /GRANT [^\n]*DELETE[^\n]*ON qa_pairs TO job_worker;/,
+  'qa_pairs must not grant DELETE to job_worker'
 )
 
 expectRegex(
