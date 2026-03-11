@@ -38,9 +38,7 @@ async def chat_completions(
     x_data_classification: str | None = Header(
         default=None, alias="X-Data-Classification"
     ),
-    x_debug_fail_stages: str | None = Header(
-        default=None, alias="X-Debug-Fail-Stages"
-    ),
+    x_debug_fail_stages: str | None = Header(default=None, alias="X-Debug-Fail-Stages"),
 ) -> Any:
     """Return a mock OpenAI-compatible chat completion response.
 
