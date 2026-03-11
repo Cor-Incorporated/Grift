@@ -463,6 +463,38 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  # ─── Observation (Phase 3.5) ───
+  /v1/cases/{caseId}/observation/qa-pairs:
+    get:
+      operationId: listObservationQAPairs
+      tags: [conversations]
+      summary: QA Pair 品質スコア一覧
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ObservationQAPair"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   # ─── Source Documents (Intake Context) ───
   /v1/cases/{caseId}/source-documents:
     get:
@@ -1915,6 +1947,55 @@ components:
         content:
           type: string
           maxLength: 10000
+
+    QualityScore:
+      type: object
+      required: [confidence, completeness, coherence, needs_followup, is_complete]
+      properties:
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: confidence < 0.5 の場合は再質問トリガー
+        completeness:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: completeness >= 0.8 の場合は完了シグナル
+        coherence:
+          type: number
+          minimum: 0
+          maximum: 1
+        rationale:
+          type: string
+          description: LLM Structured Output による根拠
+        needs_followup:
+          type: boolean
+        is_complete:
+          type: boolean
+
+    ObservationQAPair:
+      type: object
+      required: [id, case_id, session_id, question_text, answer_text, quality, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        question_text:
+          type: string
+        answer_text:
+          type: string
+        quality:
+          $ref: "#/components/schemas/QualityScore"
+        created_at:
+          type: string
+          format: date-time
 
     # ─── Source Document ───
     SourceDocument:
