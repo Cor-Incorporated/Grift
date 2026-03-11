@@ -72,7 +72,31 @@ async function main() {
     return
   }
 
-  console.log(`Validated ${loaded.length} schema files in ${schemaDir}`)
+  const hasLegacyEnvelope = loaded.some(({ file }) => file === '_envelope.json')
+  const hasDotEnvelope = loaded.some(({ file }) => file === '_envelope_v2.json')
+  const dotNotationSchemas = loaded.filter(({ file }) =>
+    /^[a-z0-9_]+\.[a-z0-9_]+\.[a-z0-9_]+\.json$/.test(file)
+  )
+  const pascalCaseSchemas = loaded.filter(({ file }) =>
+    /^[A-Z][A-Za-z0-9]+\.json$/.test(file)
+  )
+
+  if (!hasLegacyEnvelope || !hasDotEnvelope) {
+    console.error('Both legacy (_envelope.json) and dot-notation (_envelope_v2.json) envelopes are required')
+    process.exitCode = 1
+    return
+  }
+
+  if (dotNotationSchemas.length === 0 || pascalCaseSchemas.length === 0) {
+    console.error('Both PascalCase and dot.notation event schema families must coexist')
+    process.exitCode = 1
+    return
+  }
+
+  console.log(
+    `Validated ${loaded.length} schema files in ${schemaDir} ` +
+    `(legacy=${pascalCaseSchemas.length}, dot=${dotNotationSchemas.length})`
+  )
 }
 
 main().catch((error) => {

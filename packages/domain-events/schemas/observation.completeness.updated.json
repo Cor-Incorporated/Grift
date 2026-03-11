@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/observation.completeness.updated.json",
+  "title": "observation.completeness.updated",
+  "allOf": [
+    {
+      "$ref": "./_envelope_v2.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "observation.completeness.updated"
+        },
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "aggregate_type": {
+          "const": "observation"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "checklist": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "missing",
+                      "partial",
+                      "collected"
+                    ]
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": [
+                  "status",
+                  "confidence"
+                ]
+              }
+            },
+            "overall_completeness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "suggested_next_topics": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "session_id",
+            "checklist",
+            "overall_completeness",
+            "suggested_next_topics"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -24,5 +24,17 @@ npm run validate
 | `VelocityMetricRefreshed` | `schemas/VelocityMetricRefreshed.json` | `repository_snapshots` |
 | `MarketEvidenceCollected` | `schemas/MarketEvidenceCollected.json` | `evidence_fragments` |
 | `ProjectOutcomeRecorded` | `schemas/ProjectOutcomeRecorded.json` | `project_outcomes` |
+| `conversation.turn.completed` | `schemas/conversation.turn.completed.json` | `conversation_turns` |
+| `observation.qa_pair.extracted` | `schemas/observation.qa_pair.extracted.json` | `qa_pairs` |
+| `observation.completeness.updated` | `schemas/observation.completeness.updated.json` | `qa_pairs` |
 
-All event schemas share the common envelope in `schemas/_envelope.json`.
+PascalCase events use `schemas/_envelope.json` (legacy compatibility).
+dot.notation events use `schemas/_envelope_v2.json` (ADR-0009 canonical envelope).
+
+## Versioning & Compatibility
+
+- dot.notation schemas include `schema_version` (current: `1.0.0`) as a required top-level field.
+- Backward compatibility policy:
+  - Existing PascalCase schemas are kept as-is to support migration clients.
+  - New Observation Pipeline and future events must use dot.notation + `_envelope_v2.json`.
+  - Consumers must accept both formats during migration and normalize by event type alias rules (ADR-0017).
