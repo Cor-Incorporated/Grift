@@ -1,6 +1,6 @@
 # BenevolentDirector v2 設計ドキュメント群
 
-最終更新: 2026-03-08
+最終更新: 2026-03-11
 
 このディレクトリは、v2 を再構築するための設計資料をまとめたものです。
 
@@ -20,13 +20,16 @@
 12. [ADR-0011: Qwen3.5 の GCP ホスティング戦略](./adr-0011-qwen35-gcp-hosting-strategy.md)
 13. [ADR-0012: Cross-Tenant Anonymous Intelligence](./adr-0012-cross-tenant-anonymous-intelligence.md)
 14. [ADR-0013: 学習データの統制と opt-in](./adr-0013-training-data-governance-and-opt-in.md)
-15. [Cross-Tenant Anonymous Intelligence 設計](./cross-tenant-intelligence-architecture.md)
-16. [上流工程特化 LLM の学習戦略](./upstream-llm-training-strategy.md)
-17. [プラットフォーム bootstrap](./platform-bootstrap.md)
-18. [Qwen3.5 PoC 合格基準](./qwen35-poc-acceptance-criteria.md)
-19. [Qwen3.5 ローカル LLM 戦略](./qwen35-local-llm-strategy.md)
-20. [実装ロードマップ](./implementation-roadmap.md)
-21. [テスト戦略](./testing-strategy.md)
+15. [ADR-0014: llm-gateway NDJSON Streaming-First](./adr-0014-ai-gateway-ndjson-streaming-first.md)
+16. [ADR-0015: Observation Pipeline 非同期 QA 抽出](./adr-0015-observation-pipeline-async-qa-extraction.md)
+17. [ADR-0016: Estimation × Research ドメイン統合](./adr-0016-product-integration-estimation-research.md)
+18. [Cross-Tenant Anonymous Intelligence 設計](./cross-tenant-intelligence-architecture.md)
+19. [上流工程特化 LLM の学習戦略](./upstream-llm-training-strategy.md)
+20. [プラットフォーム bootstrap](./platform-bootstrap.md)
+21. [Qwen3.5 PoC 合格基準](./qwen35-poc-acceptance-criteria.md)
+22. [Qwen3.5 ローカル LLM 戦略](./qwen35-local-llm-strategy.md)
+23. [実装ロードマップ](./implementation-roadmap.md)
+24. [テスト戦略](./testing-strategy.md)
 
 ## この資料群の狙い
 
@@ -72,3 +75,6 @@
 | 11 | Qwen3.5 の GCP 本番基盤は GKE + vLLM を第一候補とする | ADR-0011 |
 | 12 | tenant 内分析と匿名横断 intelligence を別レイヤーで扱う | ADR-0012 |
 | 13 | analytics 利用と training 利用の同意を分離する | ADR-0013 |
+| 14 | llm-gateway NDJSON Streaming-First + OpenAI 互換 API | ADR-0014 |
+| 15 | Observation Pipeline 非同期 QA 抽出 + 品質スコアリング | ADR-0015 |
+| 16 | Estimation × Research ドメイン統合 | ADR-0016 |

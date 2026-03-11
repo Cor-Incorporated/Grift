@@ -1,6 +1,6 @@
 # BenevolentDirector v2 実装ロードマップ
 
-最終更新: 2026-03-08
+最終更新: 2026-03-11
 
 ## 1. 前提
 
@@ -17,6 +17,9 @@
 - v1 のデータは移行しない（クリーンスタート）
 - ローカル開発環境は Docker + mise で統一する
 - 初期からマルチテナント設計（SaaS 化前提）
+- Estimation Domain と Research Domain を統合した単一プロダクト（ADR-0016）
+- ストリーミングは NDJSON Streaming-First（ADR-0014）
+- Observation Pipeline はドメイン非依存の共通基盤（ADR-0015）
 
 ## 2. Phase 0: 境界固定 + 開発環境
 
@@ -79,6 +82,9 @@ Repository Intelligence は Intake パイプラインへの依存がなく、独
 - `Qwen3.5-9B` と `Qwen3.5-35B-A3B` の比較表
 - Terraform: GKE GPU node pool + Cloud Scheduler（夜間停止）
 - PoC 合格基準文書と benchmark 記録テンプレート
+- AI Gateway の NDJSON Streaming-First インターフェース確定（ADR-0014）
+- フォールバック戦略の 3 段チェーン定義
+- Observation Pipeline イベントスキーマ確定（ADR-0015）
 
 完了条件:
 
@@ -87,6 +93,7 @@ Repository Intelligence は Intake パイプラインへの依存がなく、独
 - 9B PoC が GKE 上で安定動作する
 - 夜間停止が自動で動作する
 - `qwen35-poc-acceptance-criteria.md` の合格条件をすべて満たす
+- AI Gateway 経由で NDJSON ストリーミングレスポンスが返る
 
 ## 5. Phase 3: Deep Ingestion + Intake
 
@@ -100,13 +107,40 @@ Repository Intelligence は Intake パイプラインへの依存がなく、独
 - Requirement Artifact への引用反映
 - ヒアリング UI（React）
 - 意図分類 + 不足情報抽出（Qwen3.5）
-- SSE ストリーミング
+- NDJSON ストリーミング（ADR-0014）
+- 会話エンジン: シンプルラッパー + GuideAgent パターン
+- source_domain / training_eligible カラムを初期テーブルに追加
 
 完了条件:
 
 - URL / PDF / ZIP を取り込み、会話中に RAG で再利用できる
 - 資料由来の根拠を内部表示できる
 - ヒアリングから仕様書生成まで一気通貫で動く
+
+## 5.5. Phase 3.5: Observation Pipeline
+
+Phase 3 と並行して実施可能。インターフェース（イベントスキーマ）は Phase 2 で確定済み。
+
+期間目安: 1-2 週間
+
+成果物:
+
+- Observation Pipeline 共通基盤（intelligence-worker 内）
+- Pub/Sub イベント受信（conversation.turn.completed）
+- QA Pair Extraction（LLM 経由、非同期）
+- Quality Scoring（confidence / completeness / coherence の 3 軸）
+- Completeness Tracker
+- Extractor プラグインインターフェース
+- EstimationExtractor 初期実装
+- Dead Letter Topic + リトライ設計
+- フィードバックループ: completeness → System Prompt 動的注入
+
+完了条件:
+
+- 会話ターンから QA Pair が非同期抽出される
+- 品質スコア 3 軸が記録される
+- 抽出失敗が会話をブロックしない
+- Completeness 結果が次ターンの System Prompt に反映される
 
 ## 6. Phase 4: Market Benchmark + Estimation
 
@@ -127,7 +161,7 @@ Repository Intelligence は Intake パイプラインへの依存がなく、独
 - 3 ソース以上の合意で confidence: high が出る
 - 矛盾検出時に人間レビューフラグが立つ
 
-## 7. Phase 5: Approval + Handoff
+## 7. Phase 5: Approval + Handoff + Research Domain 統合
 
 期間目安: 1-2 週間
 
@@ -146,6 +180,22 @@ Repository Intelligence は Intake パイプラインへの依存がなく、独
 - 合意済み要件から Linear Issue と GitHub Issue を同時生成できる
 - GitHub Issue close → Linear ステータス更新が動く
 - 変更要求に対して bug / additional scope を判定できる
+
+### Research Domain 統合（ADR-0016）
+
+成果物:
+
+- Research Design Context（AI 支援リサーチ設計）
+- Interview Context（1:N 並列インタビュー、会話エンジン共通実装を再利用）
+- ResearchExtractor 実装（Observation Pipeline プラグイン）
+- Analysis Context（クロス分析、パターン検出、レポート生成）
+- Research UI（React）
+
+完了条件:
+
+- リサーチ設計から N 並列インタビューまで一気通貫で動く
+- Observation Pipeline が Research Domain のデータを処理できる
+- 分析レポートが生成できる
 
 ## 8. Phase 6: Operational Intelligence
 
