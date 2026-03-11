@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/observation.qa_pair.extracted.json",
+  "title": "observation.qa_pair.extracted",
+  "allOf": [
+    {
+      "$ref": "./_envelope_v2.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "observation.qa_pair.extracted"
+        },
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "aggregate_type": {
+          "const": "observation"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "turn_range": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "qa_pair": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "question_intent": {
+                  "type": "string"
+                },
+                "question_text": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "answer_text": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "extracted_entities": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "question_text",
+                "answer_text"
+              ]
+            },
+            "quality": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "completeness": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "coherence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "confidence",
+                "completeness",
+                "coherence"
+              ]
+            },
+            "extraction_metadata": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "extractor": {
+                  "type": "string"
+                },
+                "model_used": {
+                  "type": "string"
+                },
+                "latency_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "extractor"
+              ]
+            }
+          },
+          "required": [
+            "session_id",
+            "turn_range",
+            "qa_pair",
+            "quality"
+          ]
+        }
+      }
+    }
+  ]
+}

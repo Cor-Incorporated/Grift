@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/_envelope_v2.json",
+  "title": "DomainEventEnvelopeV2",
+  "description": "ADR-0009 canonical envelope for dot.notation events.",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2,}$"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "tenant_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "aggregate_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aggregate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aggregate_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "causation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_domain": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "tenant_id",
+    "aggregate_type",
+    "aggregate_id",
+    "aggregate_version",
+    "idempotency_key",
+    "occurred_at",
+    "producer",
+    "source_domain",
+    "payload"
+  ]
+}

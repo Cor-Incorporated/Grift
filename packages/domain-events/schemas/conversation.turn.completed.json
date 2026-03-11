@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://benevolentdirector.app/events/conversation.turn.completed.json",
+  "title": "conversation.turn.completed",
+  "allOf": [
+    {
+      "$ref": "./_envelope_v2.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "conversation.turn.completed"
+        },
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "aggregate_type": {
+          "const": "conversation"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "turn_number": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "user",
+                "assistant",
+                "system"
+              ]
+            },
+            "content": {
+              "type": "string",
+              "minLength": 1
+            },
+            "previous_turns": {
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "assistant",
+                      "system"
+                    ]
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "turn_number": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "role",
+                  "content",
+                  "turn_number"
+                ]
+              }
+            },
+            "system_prompt_version": {
+              "type": "string"
+            },
+            "model_used": {
+              "type": "string"
+            },
+            "fallback_used": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "session_id",
+            "turn_number",
+            "role",
+            "content"
+          ]
+        }
+      }
+    }
+  ]
+}
