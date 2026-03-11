@@ -14,11 +14,13 @@ class Config:
         pubsub_project_id: GCP project ID for Pub/Sub.
         pubsub_subscription_id: Pub/Sub subscription to consume from.
         database_url: PostgreSQL connection string.
+        extractor_plugins: Enabled extractor plugins.
     """
 
     pubsub_project_id: str
     pubsub_subscription_id: str
     database_url: str
+    extractor_plugins: tuple[str, ...]
 
 
 def load_config() -> Config:
@@ -36,6 +38,11 @@ def load_config() -> Config:
         "PUBSUB_SUBSCRIPTION_ID": os.environ.get("PUBSUB_SUBSCRIPTION_ID"),
         "DATABASE_URL": os.environ.get("DATABASE_URL"),
     }
+    extractor_plugins = tuple(
+        plugin.strip()
+        for plugin in os.environ.get("EXTRACTOR_PLUGINS", "estimation").split(",")
+        if plugin.strip()
+    )
 
     for name, value in env_vars.items():
         if not value:
@@ -50,4 +57,5 @@ def load_config() -> Config:
         pubsub_project_id=env_vars["PUBSUB_PROJECT_ID"],  # type: ignore[arg-type]
         pubsub_subscription_id=env_vars["PUBSUB_SUBSCRIPTION_ID"],  # type: ignore[arg-type]
         database_url=env_vars["DATABASE_URL"],  # type: ignore[arg-type]
+        extractor_plugins=extractor_plugins,
     )

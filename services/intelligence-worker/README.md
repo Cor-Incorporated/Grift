@@ -9,5 +9,6 @@ v2 の Python intelligence plane。
 - Market Benchmark orchestration
 - Evidence aggregation
 - 非同期評価 / 補正値更新
+- Extractor プラグイン実行（初期: EstimationExtractor）
 
 同期 API は持たず、Pub/Sub と DB 契約経由で動く。
