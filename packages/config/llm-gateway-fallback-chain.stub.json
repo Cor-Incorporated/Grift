@@ -1,0 +1,36 @@
+{
+  "chain": [
+    {
+      "name": "primary",
+      "provider": "vllm-node-a",
+      "model": "qwen3.5-32b",
+      "timeout_seconds": 30,
+      "enabled": true,
+      "allowed_classifications": ["public", "internal", "confidential", "restricted"]
+    },
+    {
+      "name": "secondary",
+      "provider": "vllm-node-b",
+      "model": "qwen3.5-32b",
+      "timeout_seconds": 30,
+      "enabled": true,
+      "allowed_classifications": ["public", "internal", "confidential", "restricted"]
+    },
+    {
+      "name": "lightweight",
+      "provider": "vllm-node-a",
+      "model": "qwen3.5-7b",
+      "timeout_seconds": 15,
+      "enabled": true,
+      "allowed_classifications": ["public", "internal", "confidential", "restricted"]
+    },
+    {
+      "name": "last_resort",
+      "provider": "openrouter",
+      "model": "qwen/qwen-2.5-72b-instruct",
+      "timeout_seconds": 60,
+      "enabled": true,
+      "allowed_classifications": ["public", "internal", "confidential"]
+    }
+  ]
+}
