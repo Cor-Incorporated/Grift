@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import AsyncGenerator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Header
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 router = APIRouter()
 
@@ -72,7 +74,9 @@ async def _ndjson_chunks(classification: str) -> AsyncGenerator[str, None]:
 @router.post("/v1/chat/completions", response_model=None)
 async def chat_completions(
     request: ChatCompletionRequest,
-    x_data_classification: str | None = Header(default=None, alias="X-Data-Classification"),
+    x_data_classification: str | None = Header(
+        default=None, alias="X-Data-Classification"
+    ),
 ) -> Any:
     """Return a mock OpenAI-compatible chat completion response.
 
