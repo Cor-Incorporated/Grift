@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,22 +98,37 @@ func (f *fakeInstallationLister) ListActiveInstallations(_ context.Context) ([]c
 	return f.installations, nil
 }
 
+// Keep in sync with service_test.go's publishedEvent definition.
+// We keep local copies because this file is package crawler_test.
 type publishedEvent struct {
 	topic string
 	event any
 }
 
 type fakePublisher struct {
+	mu     sync.Mutex
 	events []publishedEvent
 	err    error
 }
 
 func (f *fakePublisher) Publish(_ context.Context, topic string, event any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if f.err != nil {
 		return f.err
 	}
 	f.events = append(f.events, publishedEvent{topic: topic, event: event})
 	return nil
+}
+
+func (f *fakePublisher) eventsSnapshot() []publishedEvent {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	events := make([]publishedEvent, len(f.events))
+	copy(events, f.events)
+	return events
 }
 
 // --- Mock GitHub API server ---
@@ -300,11 +316,12 @@ func TestIntegration_FullCrawlFlow(t *testing.T) {
 	}
 
 	// Verify events published
-	if len(publisher.events) != 2 {
-		t.Fatalf("published %d events, want 2", len(publisher.events))
+	events := publisher.eventsSnapshot()
+	if len(events) != 2 {
+		t.Fatalf("published %d events, want 2", len(events))
 	}
 
-	for i, e := range publisher.events {
+	for i, e := range events {
 		if e.topic != "velocity-metric-refreshed" {
 			t.Errorf("event[%d] topic = %q, want %q", i, e.topic, "velocity-metric-refreshed")
 		}
@@ -330,8 +347,11 @@ func TestIntegration_FullCrawlFlow(t *testing.T) {
 
 	// Verify both repos got events
 	repoNames := map[string]bool{}
-	for _, e := range publisher.events {
-		evt := e.event.(crawler.VelocityMetricRefreshedEvent)
+	for i, e := range events {
+		evt, ok := e.event.(crawler.VelocityMetricRefreshedEvent)
+		if !ok {
+			t.Fatalf("event[%d] is not VelocityMetricRefreshedEvent, got %T", i, e.event)
+		}
 		repoNames[evt.RepoFullName] = true
 	}
 	for _, r := range repos {
@@ -346,10 +366,6 @@ func TestIntegration_PartialVelocityFailure(t *testing.T) {
 	goodRepo := mockRepo{id: 2001, owner: "corp", name: "good-svc", fullName: "corp/good-svc", language: "Go"}
 
 	server := newMockGitHubServer(t, mockGitHubServerConfig{repos: []mockRepo{goodRepo}})
-
-	// Add a bad repo to discovery but don't register its velocity endpoints
-	mux := http.NewServeMux()
-	mux.Handle("/", server.Config.Handler)
 
 	// Override: discovery returns 2 repos (good + bad)
 	discoveryServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -413,12 +429,89 @@ func TestIntegration_PartialVelocityFailure(t *testing.T) {
 	}
 
 	// Only good-svc should have event
-	if len(publisher.events) != 1 {
-		t.Fatalf("published %d events, want 1", len(publisher.events))
+	events := publisher.eventsSnapshot()
+	if len(events) != 1 {
+		t.Fatalf("published %d events, want 1", len(events))
 	}
-	evt := publisher.events[0].event.(crawler.VelocityMetricRefreshedEvent)
+	evt, ok := events[0].event.(crawler.VelocityMetricRefreshedEvent)
+	if !ok {
+		t.Fatalf("event is not VelocityMetricRefreshedEvent, got %T", events[0].event)
+	}
 	if evt.RepoFullName != "corp/good-svc" {
 		t.Errorf("event repo = %q, want %q", evt.RepoFullName, "corp/good-svc")
+	}
+}
+
+func TestIntegration_DiscoveryHTTPErrors(t *testing.T) {
+	testCases := []struct {
+		name       string
+		statusCode int
+	}{
+		{name: "401 unauthorized", statusCode: http.StatusUnauthorized},
+		{name: "403 forbidden", statusCode: http.StatusForbidden},
+		{name: "500 internal server error", statusCode: http.StatusInternalServerError},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+
+			mux.HandleFunc("POST /app/installations/{installationId}/access_tokens", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"token":"test-token","expires_at":"%s"}`,
+					time.Now().Add(time.Hour).Format(time.RFC3339))
+			})
+
+			mux.HandleFunc("GET /installation/repositories", func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, http.StatusText(tc.statusCode), tc.statusCode)
+			})
+
+			server := httptest.NewServer(mux)
+			defer server.Close()
+
+			tenantID := uuid.New()
+			publisher := &fakePublisher{}
+
+			tokenProvider := &staticTokenProvider{token: "test-token"}
+			client := gh.NewClient(tokenProvider)
+			discoverySvc := gh.NewDiscoveryService(client, gh.WithDiscoveryBaseURL(server.URL))
+			velocityAnalyzer := gh.NewVelocityAnalyzer(client, gh.WithAnalyzerBaseURL(server.URL))
+
+			svc := crawler.NewService(
+				&fakeInstallationLister{installations: []crawler.TenantInstallation{
+					{TenantID: tenantID, InstallationID: 12345},
+				}},
+				&discoveryAdapter{svc: discoverySvc},
+				&velocityAdapter{analyzer: velocityAnalyzer},
+				publisher,
+				crawler.Config{MaxReposPerRun: 100, MaxRetries: 1, EventTopic: "velocity-metric-refreshed"},
+			)
+
+			result, err := svc.Run(context.Background())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.TenantsProcessed != 0 {
+				t.Errorf("TenantsProcessed = %d, want 0", result.TenantsProcessed)
+			}
+			if result.ReposDiscovered != 0 {
+				t.Errorf("ReposDiscovered = %d, want 0", result.ReposDiscovered)
+			}
+			if result.MetricsExtracted != 0 {
+				t.Errorf("MetricsExtracted = %d, want 0", result.MetricsExtracted)
+			}
+			if len(result.Errors) != 1 {
+				t.Fatalf("got %d errors, want 1", len(result.Errors))
+			}
+			if result.Errors[0].Phase != "discovery" {
+				t.Errorf("error phase = %q, want %q", result.Errors[0].Phase, "discovery")
+			}
+
+			events := publisher.eventsSnapshot()
+			if len(events) != 0 {
+				t.Errorf("published %d events, want 0", len(events))
+			}
+		})
 	}
 }
 
@@ -514,13 +607,20 @@ func TestIntegration_IdempotentCrawl(t *testing.T) {
 	}
 
 	// Each run produces 1 event, so total = 2
-	if len(publisher.events) != 2 {
-		t.Fatalf("published %d events, want 2", len(publisher.events))
+	events := publisher.eventsSnapshot()
+	if len(events) != 2 {
+		t.Fatalf("published %d events, want 2", len(events))
 	}
 
 	// Both events should reference the same repo full name
-	evt1 := publisher.events[0].event.(crawler.VelocityMetricRefreshedEvent)
-	evt2 := publisher.events[1].event.(crawler.VelocityMetricRefreshedEvent)
+	evt1, ok := events[0].event.(crawler.VelocityMetricRefreshedEvent)
+	if !ok {
+		t.Fatalf("event[0] is not VelocityMetricRefreshedEvent, got %T", events[0].event)
+	}
+	evt2, ok := events[1].event.(crawler.VelocityMetricRefreshedEvent)
+	if !ok {
+		t.Fatalf("event[1] is not VelocityMetricRefreshedEvent, got %T", events[1].event)
+	}
 	if evt1.RepoFullName != evt2.RepoFullName {
 		t.Errorf("repo mismatch: %q vs %q", evt1.RepoFullName, evt2.RepoFullName)
 	}
@@ -568,8 +668,9 @@ func TestIntegration_EmptyInstallation(t *testing.T) {
 	if result.MetricsExtracted != 0 {
 		t.Errorf("MetricsExtracted = %d, want 0", result.MetricsExtracted)
 	}
-	if len(publisher.events) != 0 {
-		t.Errorf("published %d events, want 0", len(publisher.events))
+	events := publisher.eventsSnapshot()
+	if len(events) != 0 {
+		t.Errorf("published %d events, want 0", len(events))
 	}
 }
 
@@ -619,6 +720,7 @@ type cancellingVelocityAdapter struct {
 }
 
 func (c *cancellingVelocityAdapter) AnalyzeRepository(_ context.Context, _ domain.Repository) (*domain.VelocityMetric, error) {
+	// context.CancelFunc cancels synchronously, so the caller observes cancellation immediately.
 	c.cancel()
 	return nil, context.Canceled
 }
@@ -661,13 +763,17 @@ func TestIntegration_MultiTenantIsolation(t *testing.T) {
 	}
 
 	// Each tenant gets its own events
-	if len(publisher.events) != 2 {
-		t.Fatalf("published %d events, want 2", len(publisher.events))
+	events := publisher.eventsSnapshot()
+	if len(events) != 2 {
+		t.Fatalf("published %d events, want 2", len(events))
 	}
 
 	tenantIDs := map[string]bool{}
-	for _, e := range publisher.events {
-		evt := e.event.(crawler.VelocityMetricRefreshedEvent)
+	for i, e := range events {
+		evt, ok := e.event.(crawler.VelocityMetricRefreshedEvent)
+		if !ok {
+			t.Fatalf("event[%d] is not VelocityMetricRefreshedEvent, got %T", i, e.event)
+		}
 		tenantIDs[evt.TenantID] = true
 	}
 
