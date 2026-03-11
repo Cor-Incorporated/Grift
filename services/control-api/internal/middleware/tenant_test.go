@@ -11,11 +11,11 @@ import (
 
 // fakeTenantStore is a test double for TenantStore.
 type fakeTenantStore struct {
-	tenants    map[string]bool
-	rlsCalls   []string
-	existsErr  error
-	setRLSErr  error
-	fakeConn   *sql.Conn // nil is acceptable for tests; ConnFromContext will return nil
+	tenants   map[string]bool
+	rlsCalls  []string
+	existsErr error
+	setRLSErr error
+	fakeTx    *sql.Tx // nil is acceptable for tests; TxFromContext will return nil
 }
 
 func (f *fakeTenantStore) Exists(_ context.Context, tenantID string) (bool, error) {
@@ -25,12 +25,12 @@ func (f *fakeTenantStore) Exists(_ context.Context, tenantID string) (bool, erro
 	return f.tenants[tenantID], nil
 }
 
-func (f *fakeTenantStore) SetRLS(_ context.Context, tenantID string) (*sql.Conn, error) {
+func (f *fakeTenantStore) SetRLS(_ context.Context, tenantID string) (*sql.Tx, error) {
 	if f.setRLSErr != nil {
 		return nil, f.setRLSErr
 	}
 	f.rlsCalls = append(f.rlsCalls, tenantID)
-	return f.fakeConn, nil
+	return f.fakeTx, nil
 }
 
 func TestTenantMiddleware_MissingHeader(t *testing.T) {
