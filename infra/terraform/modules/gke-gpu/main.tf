@@ -101,15 +101,15 @@ resource "google_container_cluster" "gpu" {
     master_ipv4_cidr_block  = var.master_ipv4_cidr_block
   }
 
-  dynamic "master_authorized_networks_config" {
-    for_each = length(var.master_authorized_cidr_blocks) > 0 ? [1] : []
-    content {
-      dynamic "cidr_blocks" {
-        for_each = var.master_authorized_cidr_blocks
-        content {
-          cidr_block   = cidr_blocks.value.cidr_block
-          display_name = cidr_blocks.value.display_name
-        }
+  # Always enforce master authorized networks — the variable validation
+  # ensures at least one CIDR block is provided so the endpoint is never
+  # silently open to all IPs.
+  master_authorized_networks_config {
+    dynamic "cidr_blocks" {
+      for_each = var.master_authorized_cidr_blocks
+      content {
+        cidr_block   = cidr_blocks.value.cidr_block
+        display_name = cidr_blocks.value.display_name
       }
     }
   }
@@ -293,12 +293,16 @@ resource "google_service_account" "gpu_scheduler" {
   description  = "Service account for Cloud Function that resizes GPU node pool"
 }
 
-# Permission to update GKE clusters
-resource "google_project_iam_member" "gpu_scheduler_container_admin" {
+# Permission to read cluster state and update node pools
+# Uses container.developer (narrower than clusterAdmin) which grants
+# container.clusters.get and container.nodePools.update.
+# TODO: Replace with a custom role scoped to only container.clusters.get
+# and container.nodePools.update for true least-privilege in production.
+resource "google_project_iam_member" "gpu_scheduler_container_developer" {
   count = var.enable_night_shutdown ? 1 : 0
 
   project = var.project_id
-  role    = "roles/container.clusterAdmin"
+  role    = "roles/container.developer"
   member  = "serviceAccount:${google_service_account.gpu_scheduler[0].email}"
 }
 

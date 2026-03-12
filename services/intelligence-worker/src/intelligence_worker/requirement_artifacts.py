@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from string import Template
 from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
@@ -54,18 +55,18 @@ class RequirementArtifactOutline(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
 
 
-_PROMPT_TEMPLATE = """\
+_PROMPT_TEMPLATE = Template("""\
 You generate a requirement artifact outline for an estimation case.
 
 Conversation:
-{conversation}
+$conversation
 
 Retrieved source context:
-{source_context}
+$source_context
 
 Return JSON with this schema:
-{schema}
-"""
+$schema
+""")
 
 
 class RequirementArtifactGenerator:
@@ -97,7 +98,7 @@ class RequirementArtifactGenerator:
         llm_client = self._llm_client
         if llm_client is None:
             raise RuntimeError("llm client is required for structured generation")
-        prompt = _PROMPT_TEMPLATE.format(
+        prompt = _PROMPT_TEMPLATE.safe_substitute(
             conversation=_render_turns(turns),
             source_context=_render_source_context(source_chunks),
             schema=json.dumps(
@@ -221,15 +222,6 @@ class RequirementArtifactRepository:
             ):
                 cur.execute(
                     """
-                        SELECT COALESCE(MAX(version), 0) + 1
-                        FROM requirement_artifacts
-                        WHERE tenant_id = %s AND case_id = %s
-                        """,
-                    (tenant_id, case_id),
-                )
-                next_version = int(cur.fetchone()[0])
-                cur.execute(
-                    """
                         INSERT INTO requirement_artifacts (
                             tenant_id,
                             case_id,
@@ -239,18 +231,27 @@ class RequirementArtifactRepository:
                             status,
                             created_by_uid
                         )
-                        VALUES (%s, %s, %s, %s, %s::uuid[], 'draft', %s)
+                        VALUES (
+                            %s, %s,
+                            (SELECT COALESCE(MAX(version), 0) + 1
+                             FROM requirement_artifacts
+                             WHERE tenant_id = %s AND case_id = %s),
+                            %s, %s::uuid[], 'draft', %s
+                        )
+                        RETURNING version
                         """,
                     (
                         tenant_id,
                         case_id,
-                        next_version,
+                        tenant_id,
+                        case_id,
                         draft.markdown,
                         list(draft.source_chunks),
                         created_by_uid,
                     ),
                 )
-                return next_version
+                row = cur.fetchone()
+                return int(row[0]) if row else None
         except psycopg_errors.UndefinedTable:
             logger.warning("requirement_artifacts_table_missing_skip_persist")
             return None

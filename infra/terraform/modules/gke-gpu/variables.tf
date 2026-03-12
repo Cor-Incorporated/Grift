@@ -39,12 +39,19 @@ variable "private_subnet_id" {
 # -----------------------------------------------------
 
 variable "master_authorized_cidr_blocks" {
-  description = "CIDR blocks authorized to access the GKE master endpoint"
+  description = "CIDR blocks authorized to access the GKE master endpoint. Must not be empty — explicitly specify allowed CIDRs to avoid an open master endpoint."
   type = list(object({
     cidr_block   = string
     display_name = string
   }))
-  default = []
+  # No default — callers must explicitly provide authorized CIDRs.
+  # To allow all access (NOT recommended for production), pass:
+  #   [{ cidr_block = "0.0.0.0/0", display_name = "all-access" }]
+
+  validation {
+    condition     = length(var.master_authorized_cidr_blocks) > 0
+    error_message = "master_authorized_cidr_blocks must contain at least one entry. An empty list would leave the GKE master endpoint open to all IPs."
+  }
 }
 
 variable "master_ipv4_cidr_block" {

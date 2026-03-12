@@ -82,6 +82,8 @@ export function getApiErrorMessage(
 }
 
 // ─── Conversation API helpers ───────────────────────────────
+// TODO: Auth headers will be added when Firebase Auth is integrated (ADR-0003).
+// Currently listConversationTurns and streamMessage send X-Tenant-ID only.
 
 import type { ConversationTurn, NDJSONChunk } from '@/types/conversation'
 
@@ -152,6 +154,9 @@ export async function* streamMessage(
         yield JSON.parse(trimmed) as NDJSONChunk
       }
     }
+
+    // Flush any remaining multi-byte UTF-8 sequences from the decoder
+    buffer += decoder.decode()
 
     if (buffer.trim() !== '') {
       yield JSON.parse(buffer.trim()) as NDJSONChunk

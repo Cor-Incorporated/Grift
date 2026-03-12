@@ -151,9 +151,16 @@ class DeadLetterEventStore:
                 conn,
                 conn.cursor() as cur,
             ):
+                backoff_filter = (
+                    "AND retry_count < max_retries "
+                    "AND (last_retried_at IS NULL "
+                    "     OR last_retried_at + "
+                    "        (interval '1 minute' * power(2, retry_count)) "
+                    "        < %s)"
+                )
                 if tenant_id is not None:
                     cur.execute(
-                        """
+                        f"""
                             SELECT
                                 id::text,
                                 tenant_id::text,
@@ -167,14 +174,15 @@ class DeadLetterEventStore:
                             FROM dead_letter_events
                             WHERE tenant_id = %s
                               AND resolved_at IS NULL
+                              {backoff_filter}
                             ORDER BY created_at ASC
                             LIMIT %s
                             """,
-                        (tenant_id, limit),
+                        (tenant_id, current_time, limit),
                     )
                 else:
                     cur.execute(
-                        """
+                        f"""
                             SELECT
                                 id::text,
                                 tenant_id::text,
@@ -187,17 +195,18 @@ class DeadLetterEventStore:
                                 original_payload
                             FROM dead_letter_events
                             WHERE resolved_at IS NULL
+                              {backoff_filter}
                             ORDER BY created_at ASC
                             LIMIT %s
                             """,
-                        (limit,),
+                        (current_time, limit),
                     )
                 rows = cur.fetchall()
         except psycopg_errors.UndefinedTable:
             logger.warning("dead_letter_events_table_missing_skip_load")
             return []
 
-        events = [
+        return [
             DeadLetterEvent(
                 id=row[0],
                 tenant_id=row[1],
@@ -211,7 +220,6 @@ class DeadLetterEventStore:
             )
             for row in rows
         ]
-        return [event for event in events if event.is_due(current_time)]
 
     def mark_retry_failure(
         self,

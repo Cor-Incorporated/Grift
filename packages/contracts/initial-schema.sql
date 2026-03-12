@@ -263,7 +263,7 @@ CREATE POLICY dead_letter_job_worker ON dead_letter_events
 
 -- app_user は自テナントの参照のみ
 CREATE POLICY dead_letter_app_user ON dead_letter_events
-  FOR SELECT TO app_user USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
+  FOR SELECT TO app_user USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 GRANT SELECT, INSERT, UPDATE ON dead_letter_events TO job_worker;
 GRANT SELECT ON dead_letter_events TO app_user;

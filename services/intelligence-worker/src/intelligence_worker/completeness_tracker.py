@@ -248,10 +248,38 @@ class CompletenessTrackingRepository:
                 )
                 column_list = ", ".join(values.keys())
                 placeholders = ", ".join(["%s"] * len(values))
+
+                # Resolve the actual column names used for the
+                # unique constraint (tenant_id, session_id, source_domain).
+                conflict_col_session = (
+                    "session_id" if "session_id" in columns else "case_id"
+                )
+                conflict_col_domain = (
+                    "source_domain" if "source_domain" in columns else "domain"
+                )
+                conflict_cols = (
+                    f"tenant_id, {conflict_col_session}, {conflict_col_domain}"
+                )
+
+                # Build SET clause for upsert (exclude conflict keys).
+                conflict_key_set = {
+                    "tenant_id",
+                    conflict_col_session,
+                    conflict_col_domain,
+                }
+                update_cols = [c for c in values if c not in conflict_key_set]
+                update_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+                if update_clause:
+                    update_clause += ", updated_at = now()"
+                else:
+                    update_clause = "updated_at = now()"
+
                 cur.execute(
                     (
                         "INSERT INTO completeness_tracking "
-                        f"({column_list}) VALUES ({placeholders})"
+                        f"({column_list}) VALUES ({placeholders}) "
+                        f"ON CONFLICT ({conflict_cols}) DO UPDATE SET "
+                        f"{update_clause}"
                     ),
                     tuple(values.values()),
                 )
