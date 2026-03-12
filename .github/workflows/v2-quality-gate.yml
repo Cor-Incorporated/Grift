@@ -120,9 +120,15 @@ jobs:
           python-version: '3.12'
 
       - name: Install uv
+        id: setup-uv
         uses: astral-sh/setup-uv@v5
         with:
-          version: latest
+          version: '0.6.x'
+        continue-on-error: true
+
+      - name: Fallback install uv via pip
+        if: steps.setup-uv.outcome == 'failure'
+        run: pip install uv
 
       - name: Install dependencies
         run: uv sync --all-extras
