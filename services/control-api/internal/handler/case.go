@@ -1,26 +1,22 @@
 package handler
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
-	"github.com/google/uuid"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/service"
 )
 
-// CaseHandler handles case CRUD operations.
+// CaseHandler handles case CRUD operations via the service layer.
 type CaseHandler struct {
-	db *sql.DB
+	svc *service.CaseService
 }
 
-// NewCaseHandler constructs a CaseHandler.
-func NewCaseHandler(db *sql.DB) *CaseHandler {
-	return &CaseHandler{db: db}
+// NewCaseHandler constructs a CaseHandler backed by the given service.
+func NewCaseHandler(svc *service.CaseService) *CaseHandler {
+	return &CaseHandler{svc: svc}
 }
 
 // RegisterCaseRoutes registers case routes.
@@ -32,11 +28,6 @@ func RegisterCaseRoutes(mux *http.ServeMux, h *CaseHandler) {
 
 // CreateCase handles POST /v1/cases.
 func (h *CaseHandler) CreateCase(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
-		writeJSONError(w, "database not configured", http.StatusServiceUnavailable)
-		return
-	}
-
 	tenantID, ok := parseTenantUUID(w, r)
 	if !ok {
 		return
@@ -47,54 +38,46 @@ func (h *CaseHandler) CreateCase(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(req.Title) == "" {
-		writeJSONError(w, "title is required", http.StatusBadRequest)
-		return
-	}
-	if !domain.CaseType(req.Type).IsValid() {
-		writeJSONError(w, "invalid case type", http.StatusBadRequest)
+
+	result, err := h.svc.Create(r.Context(), tenantID, service.CreateInput{
+		Title:             req.Title,
+		CaseType:          domain.CaseType(req.Type),
+		ExistingSystemURL: nilIfBlank(req.ExistingSystemURL),
+		CompanyName:       nilIfBlank(req.CompanyName),
+		ContactName:       nilIfBlank(req.ContactName),
+		ContactEmail:      nilIfBlank(req.ContactEmail),
+		CreatedByUID:      nilIfBlank(middleware.UserIDFromContext(r.Context())),
+	})
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	record, err := h.insertCase(r.Context(), tenantID, req)
-	if err != nil {
-		writeJSONError(w, "failed to create case", http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": record})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // ListCases handles GET /v1/cases.
 func (h *CaseHandler) ListCases(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
-		writeJSONError(w, "database not configured", http.StatusServiceUnavailable)
-		return
-	}
-
 	tenantID, ok := parseTenantUUID(w, r)
 	if !ok {
 		return
 	}
 
 	limit, offset := parsePagination(r)
-	records, total, err := h.listCases(r.Context(), tenantID, r.URL.Query().Get("status"), r.URL.Query().Get("type"), limit, offset)
+	statusFilter := r.URL.Query().Get("status")
+	typeFilter := r.URL.Query().Get("type")
+
+	records, total, err := h.svc.List(r.Context(), tenantID, statusFilter, typeFilter, limit, offset)
 	if err != nil {
 		writeJSONError(w, "failed to list cases", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data":  records,
-		"total": total,
-	})
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": records, "total": total})
 }
 
 // GetCase handles GET /v1/cases/{caseId}.
 func (h *CaseHandler) GetCase(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
-		writeJSONError(w, "database not configured", http.StatusServiceUnavailable)
-		return
-	}
-
 	tenantID, ok := parseTenantUUID(w, r)
 	if !ok {
 		return
@@ -104,126 +87,27 @@ func (h *CaseHandler) GetCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := h.getCase(r.Context(), tenantID, caseID)
-	if err == sql.ErrNoRows {
-		writeJSONError(w, "case not found", http.StatusNotFound)
-		return
-	}
+	record, err := h.svc.Get(r.Context(), tenantID, caseID)
 	if err != nil {
 		writeJSONError(w, "failed to get case", http.StatusInternalServerError)
 		return
 	}
-
-	turns, _, err := listConversationTurns(r.Context(), h.db, tenantID, caseID, maxLimit, 0)
-	if err != nil {
-		writeJSONError(w, "failed to get case conversations", http.StatusInternalServerError)
+	if record == nil {
+		writeJSONError(w, "case not found", http.StatusNotFound)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": caseWithDetails{
 			Case:          *record,
-			Conversations: turns,
+			Conversations: []conversationTurnResponse{},
 			SourceDocs:    []any{},
 			Estimates:     []any{},
 		},
 	})
 }
 
-func (h *CaseHandler) insertCase(ctx context.Context, tenantID uuid.UUID, req createCaseRequest) (*domain.Case, error) {
-	record := &domain.Case{
-		ID:                uuid.New(),
-		TenantID:          tenantID,
-		Title:             strings.TrimSpace(req.Title),
-		Type:              domain.CaseType(req.Type),
-		Status:            domain.CaseStatusDraft,
-		ExistingSystemURL: nilIfBlank(req.ExistingSystemURL),
-		CompanyName:       nilIfBlank(req.CompanyName),
-		ContactName:       nilIfBlank(req.ContactName),
-		ContactEmail:      nilIfBlank(req.ContactEmail),
-		CreatedByUID:      nilIfBlank(middleware.UserIDFromContext(ctx)),
-	}
-
-	row := dbExecutorFromContext(ctx, h.db).QueryRowContext(
-		ctx,
-		`INSERT INTO cases (
-			id, tenant_id, title, type, status,
-			existing_system_url, company_name, contact_name, contact_email, created_by_uid
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		RETURNING created_at, updated_at`,
-		record.ID,
-		record.TenantID,
-		record.Title,
-		record.Type,
-		record.Status,
-		record.ExistingSystemURL,
-		record.CompanyName,
-		record.ContactName,
-		record.ContactEmail,
-		record.CreatedByUID,
-	)
-	if err := row.Scan(&record.CreatedAt, &record.UpdatedAt); err != nil {
-		return nil, fmt.Errorf("insert case: %w", err)
-	}
-	return record, nil
-}
-
-func (h *CaseHandler) listCases(ctx context.Context, tenantID uuid.UUID, statusFilter string, typeFilter string, limit int, offset int) ([]domain.Case, int, error) {
-	query := `SELECT id, tenant_id, title, type, status, priority, business_line, existing_system_url, spec_markdown, contact_name, contact_email, company_name, created_by_uid, created_at, updated_at FROM cases WHERE tenant_id = $1`
-	countQuery := `SELECT COUNT(*) FROM cases WHERE tenant_id = $1`
-	args := []any{tenantID}
-
-	if statusFilter != "" && domain.CaseStatus(statusFilter).IsValid() {
-		query += fmt.Sprintf(" AND status = $%d", len(args)+1)
-		countQuery += fmt.Sprintf(" AND status = $%d", len(args)+1)
-		args = append(args, statusFilter)
-	}
-	if typeFilter != "" && domain.CaseType(typeFilter).IsValid() {
-		query += fmt.Sprintf(" AND type = $%d", len(args)+1)
-		countQuery += fmt.Sprintf(" AND type = $%d", len(args)+1)
-		args = append(args, typeFilter)
-	}
-
-	var total int
-	if err := dbExecutorFromContext(ctx, h.db).QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count cases: %w", err)
-	}
-
-	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
-	args = append(args, limit, offset)
-
-	rows, err := dbExecutorFromContext(ctx, h.db).QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list cases: %w", err)
-	}
-	defer rows.Close()
-
-	var records []domain.Case
-	for rows.Next() {
-		record, err := scanCase(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		records = append(records, *record)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate cases: %w", err)
-	}
-	return records, total, nil
-}
-
-func (h *CaseHandler) getCase(ctx context.Context, tenantID uuid.UUID, caseID uuid.UUID) (*domain.Case, error) {
-	row := dbExecutorFromContext(ctx, h.db).QueryRowContext(
-		ctx,
-		`SELECT id, tenant_id, title, type, status, priority, business_line, existing_system_url, spec_markdown, contact_name, contact_email, company_name, created_by_uid, created_at, updated_at
-		FROM cases
-		WHERE tenant_id = $1 AND id = $2`,
-		tenantID,
-		caseID,
-	)
-	return scanCase(row)
-}
-
+// createCaseRequest is the JSON body for POST /v1/cases.
 type createCaseRequest struct {
 	Title             string `json:"title"`
 	Type              string `json:"type"`
@@ -233,41 +117,10 @@ type createCaseRequest struct {
 	ContactEmail      string `json:"contact_email"`
 }
 
+// caseWithDetails wraps a case with related sub-resources for GET /v1/cases/{caseId}.
 type caseWithDetails struct {
 	domain.Case
 	Conversations []conversationTurnResponse `json:"conversations"`
 	SourceDocs    []any                      `json:"source_documents"`
 	Estimates     []any                      `json:"estimates"`
 }
-
-func scanCase(scanner rowScanner) (*domain.Case, error) {
-	var record domain.Case
-	var priority sql.NullString
-	if err := scanner.Scan(
-		&record.ID,
-		&record.TenantID,
-		&record.Title,
-		&record.Type,
-		&record.Status,
-		&priority,
-		&record.BusinessLine,
-		&record.ExistingSystemURL,
-		&record.SpecMarkdown,
-		&record.ContactName,
-		&record.ContactEmail,
-		&record.CompanyName,
-		&record.CreatedByUID,
-		&record.CreatedAt,
-		&record.UpdatedAt,
-	); err != nil {
-		return nil, err
-	}
-	if priority.Valid {
-		value := domain.CasePriority(priority.String)
-		record.Priority = &value
-	}
-	return &record, nil
-}
-
-// parseTenantUUID, parseCaseUUID, parsePagination, nilIfBlank,
-// rowScanner, dbExecutor, and dbExecutorFromContext are defined in helpers.go.

@@ -18,6 +18,8 @@ import (
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/handler"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/llmclient"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/service"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/store"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -55,7 +57,9 @@ func main() {
 	sourceDocumentHandler := handler.NewSourceDocumentHandler(nil, nil)
 	handler.RegisterSourceDocumentRoutes(mux, sourceDocumentHandler)
 
-	caseHandler := handler.NewCaseHandler(db)
+	caseStore := store.NewSQLCaseStore(db)
+	caseService := service.NewCaseService(caseStore)
+	caseHandler := handler.NewCaseHandler(caseService)
 	handler.RegisterCaseRoutes(mux, caseHandler)
 
 	llm := llmclient.NewHTTPLLMClient(os.Getenv("LLM_GATEWAY_URL"), nil)
