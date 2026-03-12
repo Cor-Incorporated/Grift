@@ -92,10 +92,18 @@ func main() {
 		authMW = middleware.Auth
 		tenantMW = middleware.TenantWithStore(&middleware.SQLTenantStore{DB: db})
 	} else {
-		// TODO(wave1): wire AuthWithVerifier(firebaseVerifier) here.
-		// Wave 0 uses stub auth for local development only.
-		// DO NOT deploy to production without real auth.
-		authMW = middleware.Auth
+		firebaseProjectID := os.Getenv("FIREBASE_PROJECT_ID")
+		if firebaseProjectID == "" {
+			log.Fatal("FIREBASE_PROJECT_ID is required when AUTH_DISABLED is not set")
+		}
+
+		verifier, err := middleware.NewFirebaseVerifier(ctx, firebaseProjectID)
+		if err != nil {
+			log.Fatalf("initialize Firebase auth: %v", err)
+		}
+		log.Printf("Firebase auth enabled (project: %s)", firebaseProjectID)
+
+		authMW = middleware.AuthWithVerifier(verifier)
 		tenantMW = middleware.TenantWithStore(&middleware.SQLTenantStore{DB: db})
 	}
 
