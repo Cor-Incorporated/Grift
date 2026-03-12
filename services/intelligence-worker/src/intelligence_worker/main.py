@@ -8,21 +8,43 @@ import sys
 import threading
 import urllib.error
 import urllib.request
-from typing import NoReturn
+from dataclasses import dataclass
+from typing import Any, NoReturn, Protocol
 
 import structlog
 from google.cloud import pubsub_v1
 from psycopg2 import errors as psycopg_errors
 
-from intelligence_worker.completeness_tracker import calculate_completeness
+from intelligence_worker.classification import (
+    ControlAPICaseTypeClient,
+    GatewayIntentClassifier,
+    IntentClassifier,
+)
+from intelligence_worker.completeness_tracker import (
+    CompletenessTrackingRepository,
+    build_tracking_snapshot,
+    calculate_completeness,
+    infer_collected_items_from_pairs,
+    infer_collected_items_from_texts,
+)
 from intelligence_worker.config import load_config
 from intelligence_worker.db import RLSConnectionManager
+from intelligence_worker.dead_letter_events import (
+    DatabaseDeadLetterPublisher,
+    DeadLetterEventStore,
+    DeadLetterRetryLoop,
+    DeadLetterRetryProcessor,
+)
 from intelligence_worker.qa_extraction import (
     ConversationTurn,
     QAPair,
     QAPairExtractor,
 )
 from intelligence_worker.quality_scoring import score_from_llm_output
+from intelligence_worker.requirement_artifacts import (
+    RequirementArtifactGenerator,
+    RequirementArtifactRepository,
+)
 from intelligence_worker.subscriber import ConversationTurnCompletedSubscriber
 
 logger = structlog.get_logger()
@@ -31,12 +53,7 @@ _shutdown_event = threading.Event()
 
 
 def _handle_signal(signum: int, _frame: object) -> None:
-    """Handle termination signals for graceful shutdown.
-
-    Args:
-        signum: The signal number received.
-        _frame: The current stack frame (unused).
-    """
+    """Handle termination signals for graceful shutdown."""
     sig_name = signal.Signals(signum).name
     logger.info("signal_received", signal=sig_name)
     _shutdown_event.set()
@@ -45,8 +62,9 @@ def _handle_signal(signum: int, _frame: object) -> None:
 class GatewayLLMClient:
     """Best-effort adapter from llm-gateway chat completions to extractor JSON."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, *, model: str = "qwen3.5-7b") -> None:
         self._url = base_url.rstrip("/") + "/v1/chat/completions"
+        self._model = model
 
     def extract_structured(
         self, *, prompt: str, response_schema: dict[str, object]
@@ -57,7 +75,7 @@ class GatewayLLMClient:
     def _request(self, prompt: str) -> str:
         payload = json.dumps(
             {
-                "model": "stub",
+                "model": self._model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
             }
@@ -65,7 +83,10 @@ class GatewayLLMClient:
         request = urllib.request.Request(
             self._url,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "X-Data-Classification": "restricted",
+            },
             method="POST",
         )
         try:
@@ -73,23 +94,25 @@ class GatewayLLMClient:
                 body = json.loads(response.read().decode("utf-8"))
         except (TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
             logger.warning("llm_gateway_request_failed", error=str(exc))
-            return json.dumps({"qa_pairs": []}, ensure_ascii=False)
+            raise RuntimeError("llm gateway request failed") from exc
 
-        content = (
-            body.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", '{"qa_pairs": []}')
-        )
+        choices = body.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("llm gateway response missing choices")
+
+        content = choices[0].get("message", {}).get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("llm gateway response missing message content")
+
         try:
             json.loads(content)
-            return content
-        except json.JSONDecodeError:
-            logger.info("llm_gateway_returned_non_json_stub")
-            return json.dumps({"qa_pairs": []}, ensure_ascii=False)
+        except json.JSONDecodeError as exc:
+            raise ValueError("llm gateway response was not valid JSON") from exc
+        return content
 
 
 class LoggingDeadLetterPublisher:
-    """DLQ placeholder until dedicated topic wiring is added."""
+    """Logging-only dead letter publisher for fallback scenarios."""
 
     def publish(self, *, reason: str, payload: dict[str, object]) -> None:
         logger.warning("qa_extraction_dlq", reason=reason, payload=payload)
@@ -109,23 +132,9 @@ class PostgresQAPairRepository:
         session_id: str,
         pairs: list[QAPair],
     ) -> None:
+        del case_id
         if not pairs:
             return
-        self._save_sync(
-            tenant_id,
-            case_id,
-            session_id,
-            pairs,
-        )
-
-    def _save_sync(
-        self,
-        tenant_id: str,
-        case_id: str,
-        session_id: str,
-        pairs: list[QAPair],
-    ) -> None:
-        del case_id
         try:
             with (
                 self._conn_manager.get_connection(tenant_id) as conn,
@@ -144,23 +153,23 @@ class PostgresQAPairRepository:
                     )
                     cur.execute(
                         """
-                            INSERT INTO qa_pairs (
-                                tenant_id,
-                                session_id,
-                                turn_range,
-                                question_text,
-                                answer_text,
-                                source_domain,
-                                training_eligible,
-                                confidence,
-                                completeness,
-                                coherence
-                            )
-                            VALUES (
-                                %s, %s, int4range(%s, %s, '[]'), %s, %s,
-                                %s, false, %s, %s, %s
-                            )
-                            """,
+                        INSERT INTO qa_pairs (
+                            tenant_id,
+                            session_id,
+                            turn_range,
+                            question_text,
+                            answer_text,
+                            source_domain,
+                            training_eligible,
+                            confidence,
+                            completeness,
+                            coherence
+                        )
+                        VALUES (
+                            %s, %s, int4range(%s, %s, '[]'), %s, %s,
+                            %s, false, %s, %s, %s
+                        )
+                        """,
                         (
                             tenant_id,
                             session_id,
@@ -185,9 +194,6 @@ class ConversationTurnRepository:
         self._conn_manager = conn_manager
 
     def load_turns(self, *, tenant_id: str, case_id: str) -> list[ConversationTurn]:
-        return self._load_sync(tenant_id, case_id)
-
-    def _load_sync(self, tenant_id: str, case_id: str) -> list[ConversationTurn]:
         with (
             self._conn_manager.get_connection(tenant_id) as conn,
             conn,
@@ -195,11 +201,11 @@ class ConversationTurnRepository:
         ):
             cur.execute(
                 """
-                    SELECT role, content
-                    FROM conversation_turns
-                    WHERE tenant_id = %s AND case_id = %s
-                    ORDER BY created_at ASC, id ASC
-                    """,
+                SELECT role, content
+                FROM conversation_turns
+                WHERE tenant_id = %s AND case_id = %s
+                ORDER BY created_at ASC, id ASC
+                """,
                 (tenant_id, case_id),
             )
             return [
@@ -212,6 +218,23 @@ class ConversationTurnRepository:
             ]
 
 
+@dataclass(frozen=True)
+class TurnCompletedContext:
+    """Normalized event context for a conversation.turn.completed message."""
+
+    tenant_id: str
+    session_id: str
+    source_domain: str
+    payload: dict[str, Any]
+    turns: list[ConversationTurn]
+
+
+class CaseTypeSyncClient(Protocol):
+    """PATCH cases.type contract."""
+
+    def patch_case_type(self, *, tenant_id: str, case_id: str, intent: str) -> str: ...
+
+
 class TurnCompletedHandler:
     """Sync Pub/Sub callback for the QA pipeline."""
 
@@ -220,19 +243,51 @@ class TurnCompletedHandler:
         *,
         conversation_repo: ConversationTurnRepository,
         extractor: QAPairExtractor,
+        intent_classifier: IntentClassifier | None = None,
+        case_type_client: CaseTypeSyncClient | None = None,
+        completeness_repository: CompletenessTrackingRepository | None = None,
+        artifact_repository: RequirementArtifactRepository | None = None,
+        artifact_generator: RequirementArtifactGenerator | None = None,
+        retry_processor: DeadLetterRetryProcessor | None = None,
     ) -> None:
         self._conversation_repo = conversation_repo
         self._extractor = extractor
+        self._intent_classifier = intent_classifier
+        self._case_type_client = case_type_client
+        self._completeness_repository = completeness_repository
+        self._artifact_repository = artifact_repository
+        self._artifact_generator = artifact_generator
+        self._retry_processor = retry_processor
 
     def __call__(self, payload: dict[str, object]) -> None:
-        self._handle(payload)
+        context = self._load_context(payload)
+        if context is None:
+            return
 
-    def _handle(self, payload: dict[str, object]) -> None:
+        if self._retry_processor is not None:
+            self._retry_processor.run_once(tenant_id=context.tenant_id)
+
+        self._classify_case_type(context)
+        pairs = self._extract_current_turn(context, raise_on_failure=False)
+        self._persist_completeness(context, pairs)
+        self._persist_requirement_artifact(context)
+
+    def retry_dead_letter(self, payload: dict[str, Any]) -> None:
+        context = self._load_context(payload)
+        if context is None:
+            return
+        self._extract_current_turn(context, raise_on_failure=True)
+
+    def set_retry_processor(self, retry_processor: DeadLetterRetryProcessor) -> None:
+        """Attach a retry processor after handler construction."""
+        self._retry_processor = retry_processor
+
+    def _load_context(self, payload: dict[str, object]) -> TurnCompletedContext | None:
         tenant_id = str(payload.get("tenant_id") or "")
         envelope_payload = payload.get("payload")
         if not isinstance(envelope_payload, dict):
             logger.warning("turn_completed_missing_payload")
-            return
+            return None
 
         session_id = str(
             envelope_payload.get("session_id") or payload.get("aggregate_id") or ""
@@ -244,7 +299,7 @@ class TurnCompletedHandler:
                 tenant_id=tenant_id,
                 session_id=session_id,
             )
-            return
+            return None
 
         turns = self._conversation_repo.load_turns(
             tenant_id=tenant_id,
@@ -252,14 +307,159 @@ class TurnCompletedHandler:
         )
         if not turns:
             logger.info("turn_completed_no_turns", session_id=session_id)
-            return
+            return None
 
-        self._extractor.extract_and_persist(
+        return TurnCompletedContext(
             tenant_id=tenant_id,
-            case_id=session_id,
             session_id=session_id,
             source_domain=source_domain,
+            payload=dict(payload),
             turns=turns,
+        )
+
+    def _classify_case_type(self, context: TurnCompletedContext) -> None:
+        if self._intent_classifier is None or self._case_type_client is None:
+            return
+
+        raw_text = "\n".join(
+            turn.content.strip()
+            for turn in context.turns
+            if turn.role == "user" and turn.content.strip()
+        )
+        if not raw_text:
+            raw_text = "\n".join(
+                turn.content.strip() for turn in context.turns if turn.content.strip()
+            )
+        if not raw_text:
+            return
+
+        result = self._intent_classifier.classify(raw_text)
+        try:
+            patched_type = self._case_type_client.patch_case_type(
+                tenant_id=context.tenant_id,
+                case_id=context.session_id,
+                intent=result.intent,
+            )
+            logger.info(
+                "case_type_synced",
+                case_id=context.session_id,
+                tenant_id=context.tenant_id,
+                intent=result.intent,
+                case_type=patched_type,
+                confidence=result.confidence,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "case_type_sync_failed",
+                case_id=context.session_id,
+                tenant_id=context.tenant_id,
+                intent=result.intent,
+                error=str(exc),
+            )
+
+    def _extract_current_turn(
+        self,
+        context: TurnCompletedContext,
+        *,
+        raise_on_failure: bool,
+    ) -> list[QAPair]:
+        dead_letter_context = dict(context.payload)
+        dead_letter_context.update(
+            {
+                "tenant_id": context.tenant_id,
+                "case_id": context.session_id,
+                "session_id": context.session_id,
+                "source_domain": context.source_domain,
+                "event_type": str(
+                    context.payload.get("event_type")
+                    or context.payload.get("event_name")
+                    or "conversation.turn.completed"
+                ),
+                "event_id": str(
+                    context.payload.get("event_id")
+                    or context.payload.get("id")
+                    or context.payload.get("idempotency_key")
+                    or (
+                        f"{context.session_id}:"
+                        f"{context.payload.get('aggregate_version') or ''}"
+                    )
+                ),
+                "original_payload": context.payload,
+            }
+        )
+        return self._extractor.extract_and_persist(
+            tenant_id=context.tenant_id,
+            case_id=context.session_id,
+            session_id=context.session_id,
+            source_domain=context.source_domain,
+            turns=context.turns,
+            dead_letter_context=dead_letter_context,
+            re_raise_errors=raise_on_failure,
+        )
+
+    def _persist_completeness(
+        self,
+        context: TurnCompletedContext,
+        pairs: list[QAPair],
+    ) -> None:
+        if self._completeness_repository is None:
+            return
+        try:
+            collected_items = infer_collected_items_from_pairs(
+                context.source_domain,
+                pairs,
+            )
+            if not collected_items:
+                collected_items = infer_collected_items_from_texts(
+                    context.source_domain,
+                    [turn.content for turn in context.turns],
+                )
+            snapshot = build_tracking_snapshot(
+                domain=context.source_domain,
+                collected_items=collected_items,
+                turn_count=len(context.turns),
+            )
+            self._completeness_repository.save_snapshot(
+                tenant_id=context.tenant_id,
+                session_id=context.session_id,
+                snapshot=snapshot,
+            )
+        except ValueError:
+            logger.info(
+                "completeness_tracking_skipped_for_domain",
+                source_domain=context.source_domain,
+            )
+
+    def _persist_requirement_artifact(self, context: TurnCompletedContext) -> None:
+        if (
+            self._artifact_repository is None
+            or self._artifact_generator is None
+            or context.source_domain != "estimation"
+        ):
+            return
+
+        source_chunks = self._artifact_repository.load_source_chunks(
+            tenant_id=context.tenant_id,
+            case_id=context.session_id,
+        )
+        artifact = self._artifact_generator.generate(
+            turns=context.turns,
+            source_chunks=source_chunks,
+        )
+        version = self._artifact_repository.save_artifact(
+            tenant_id=context.tenant_id,
+            case_id=context.session_id,
+            draft=artifact,
+            created_by_uid="intelligence-worker",
+        )
+        if version is None:
+            return
+        logger.info(
+            "requirement_artifact_persisted",
+            tenant_id=context.tenant_id,
+            case_id=context.session_id,
+            version=version,
+            citation_count=len(artifact.source_chunks),
         )
 
 
@@ -271,23 +471,62 @@ def run() -> None:
         min_conn=config.db_pool_min,
         max_conn=config.db_pool_max,
     )
-    llm_client = GatewayLLMClient(config.llm_gateway_url)
+    llm_client = GatewayLLMClient(
+        config.llm_gateway_url,
+        model=config.structured_output_model,
+    )
     repository = PostgresQAPairRepository(conn_manager)
     conversation_repo = ConversationTurnRepository(conn_manager)
-    extractor = QAPairExtractor(
-        llm_client=llm_client,
-        repository=repository,
-        dead_letter_publisher=LoggingDeadLetterPublisher(),
+    completeness_repository = CompletenessTrackingRepository(conn_manager)
+    artifact_repository = RequirementArtifactRepository(conn_manager)
+    artifact_generator = RequirementArtifactGenerator(llm_client=llm_client)
+    dead_letter_store = DeadLetterEventStore(
+        conn_manager,
+        max_retries=config.dead_letter_max_retries,
     )
+    handler = TurnCompletedHandler(
+        conversation_repo=conversation_repo,
+        extractor=QAPairExtractor(
+            llm_client=llm_client,
+            repository=repository,
+            dead_letter_publisher=DatabaseDeadLetterPublisher(dead_letter_store),
+        ),
+        intent_classifier=IntentClassifier(
+            gateway_client=GatewayIntentClassifier(
+                base_url=config.llm_gateway_url,
+                model=config.intent_classifier_model,
+            )
+        ),
+        case_type_client=ControlAPICaseTypeClient(
+            base_url=config.control_api_url,
+            bearer_token=config.control_api_token,
+        ),
+        completeness_repository=completeness_repository,
+        artifact_repository=artifact_repository,
+        artifact_generator=artifact_generator,
+    )
+    retry_processor = DeadLetterRetryProcessor(
+        store=dead_letter_store,
+        retry_handler=handler.retry_dead_letter,
+    )
+    handler.set_retry_processor(retry_processor)
+    retry_loop = DeadLetterRetryLoop(
+        processor=retry_processor,
+    )
+    retry_thread = threading.Thread(
+        target=retry_loop.run,
+        args=(_shutdown_event,),
+        name="dead-letter-retry-loop",
+        daemon=True,
+    )
+    retry_thread.start()
+
     subscriber_client = pubsub_v1.SubscriberClient()
     subscriber = ConversationTurnCompletedSubscriber(
         client=subscriber_client,
         project_id=config.pubsub_project_id,
         subscription_id=config.pubsub_subscription,
-        handler=TurnCompletedHandler(
-            conversation_repo=conversation_repo,
-            extractor=extractor,
-        ),
+        handler=handler,
     )
 
     future = subscriber.start()
@@ -301,6 +540,7 @@ def run() -> None:
         _shutdown_event.wait()
     finally:
         future.cancel()
+        retry_thread.join(timeout=1)
         subscriber_client.close()
         conn_manager.close_all()
 

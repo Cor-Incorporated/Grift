@@ -56,6 +56,7 @@ class TestGatewayLLMClient:
         """Base URL trailing slash is normalised before appending path."""
         client = GatewayLLMClient("http://gw:8081/")
         assert client._url == "http://gw:8081/v1/chat/completions"
+        assert client._model == "qwen3.5-7b"
 
     def test_extract_structured_delegates_to_request(self) -> None:
         """extract_structured calls _request with the prompt."""
@@ -88,32 +89,28 @@ class TestGatewayLLMClient:
 
         assert json.loads(result) == {"qa_pairs": [{"q": "a"}]}
 
-    def test_request_returns_fallback_on_timeout(self) -> None:
-        """Timeout returns empty qa_pairs fallback JSON."""
+    def test_request_raises_on_timeout(self) -> None:
+        """Timeout errors propagate so extractor can dead-letter the event."""
         client = GatewayLLMClient("http://gw:8081")
         with patch(
             "intelligence_worker.main.urllib.request.urlopen",
             side_effect=TimeoutError("connection timed out"),
-        ):
-            result = client._request("prompt")
+        ), pytest.raises(RuntimeError, match="llm gateway request failed"):
+            client._request("prompt")
 
-        assert json.loads(result) == {"qa_pairs": []}
-
-    def test_request_returns_fallback_on_url_error(self) -> None:
-        """URLError returns empty qa_pairs fallback JSON."""
+    def test_request_raises_on_url_error(self) -> None:
+        """URLError propagates as gateway request failure."""
         import urllib.error
 
         client = GatewayLLMClient("http://gw:8081")
         with patch(
             "intelligence_worker.main.urllib.request.urlopen",
             side_effect=urllib.error.URLError("unreachable"),
-        ):
-            result = client._request("prompt")
+        ), pytest.raises(RuntimeError, match="llm gateway request failed"):
+            client._request("prompt")
 
-        assert json.loads(result) == {"qa_pairs": []}
-
-    def test_request_returns_fallback_on_non_json_content(self) -> None:
-        """Non-JSON content from gateway returns fallback."""
+    def test_request_raises_on_non_json_content(self) -> None:
+        """Non-JSON content is rejected so callers can fall back explicitly."""
         client = GatewayLLMClient("http://gw:8081")
         response_body = json.dumps(
             {"choices": [{"message": {"content": "this is not json"}}]}
@@ -127,13 +124,11 @@ class TestGatewayLLMClient:
         with patch(
             "intelligence_worker.main.urllib.request.urlopen",
             return_value=fake_response,
-        ):
-            result = client._request("prompt")
-
-        assert json.loads(result) == {"qa_pairs": []}
+        ), pytest.raises(ValueError, match="not valid JSON"):
+            client._request("prompt")
 
     def test_request_raises_on_empty_choices(self) -> None:
-        """Empty choices array raises IndexError (unhandled edge case)."""
+        """Empty choices array raises a descriptive validation error."""
         client = GatewayLLMClient("http://gw:8081")
         response_body = json.dumps({"choices": []}).encode("utf-8")
 
@@ -147,12 +142,12 @@ class TestGatewayLLMClient:
                 "intelligence_worker.main.urllib.request.urlopen",
                 return_value=fake_response,
             ),
-            pytest.raises(IndexError),
+            pytest.raises(ValueError, match="missing choices"),
         ):
             client._request("prompt")
 
-    def test_request_returns_fallback_on_json_decode_error(self) -> None:
-        """Malformed JSON response body returns fallback."""
+    def test_request_raises_on_json_decode_error(self) -> None:
+        """Malformed JSON response body propagates as gateway request failure."""
         client = GatewayLLMClient("http://gw:8081")
 
         fake_response = MagicMock()
@@ -163,10 +158,8 @@ class TestGatewayLLMClient:
         with patch(
             "intelligence_worker.main.urllib.request.urlopen",
             return_value=fake_response,
-        ):
-            result = client._request("prompt")
-
-        assert json.loads(result) == {"qa_pairs": []}
+        ), pytest.raises(RuntimeError, match="llm gateway request failed"):
+            client._request("prompt")
 
 
 # ---------------------------------------------------------------------------
@@ -358,10 +351,92 @@ class _FakeConversationRepo:
 @dataclass
 class _FakeExtractorForHandler:
     called_with: list[dict[str, Any]] = field(default_factory=list)
+    return_pairs: list[QAPair] = field(default_factory=list)
 
     def extract_and_persist(self, **kwargs: Any) -> list[QAPair]:
         self.called_with.append(kwargs)
+        return self.return_pairs
+
+
+@dataclass
+class _FakeIntentClassifier:
+    intent: str = "feature_addition"
+    calls: list[str] = field(default_factory=list)
+
+    def classify(self, raw_text: str) -> Any:
+        self.calls.append(raw_text)
+        return type(
+            "ClassificationResultLike",
+            (),
+            {
+                "intent": self.intent,
+                "confidence": 0.82,
+            },
+        )()
+
+
+@dataclass
+class _FakeCaseTypeClient:
+    calls: list[dict[str, str]] = field(default_factory=list)
+
+    def patch_case_type(self, *, tenant_id: str, case_id: str, intent: str) -> str:
+        self.calls.append(
+            {"tenant_id": tenant_id, "case_id": case_id, "intent": intent}
+        )
+        return intent
+
+
+@dataclass
+class _FakeCompletenessRepository:
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    def save_snapshot(self, **kwargs: Any) -> None:
+        self.calls.append(kwargs)
+
+
+@dataclass
+class _FakeArtifactRepository:
+    loaded: list[dict[str, Any]] = field(default_factory=list)
+    saved: list[dict[str, Any]] = field(default_factory=list)
+
+    def load_source_chunks(self, **kwargs: Any) -> list[Any]:
+        self.loaded.append(kwargs)
         return []
+
+    def save_artifact(self, **kwargs: Any) -> int:
+        self.saved.append(kwargs)
+        return 1
+
+
+@dataclass
+class _FakeArtifactGenerator:
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    def generate(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        return type(
+            "RequirementArtifactDraftLike",
+            (),
+            {
+                "markdown": "# Requirement Artifact",
+                "source_chunks": (),
+            },
+        )()
+
+
+@dataclass
+class _FakeRetryProcessor:
+    calls: list[str] = field(default_factory=list)
+
+    def run_once(self, *, tenant_id: str) -> int:
+        self.calls.append(tenant_id)
+        return 0
+
+
+class _BoomExtractor:
+    def extract_and_persist(self, **kwargs: Any) -> list[QAPair]:
+        assert kwargs["re_raise_errors"] is True
+        raise RuntimeError("retry failed")
 
 
 class TestTurnCompletedHandler:
@@ -374,10 +449,30 @@ class TestTurnCompletedHandler:
             ConversationTurn(role="assistant", content="a", turn_number=2),
         ]
         conv_repo = _FakeConversationRepo(turns=turns)
-        extractor = _FakeExtractorForHandler()
+        extractor = _FakeExtractorForHandler(
+            return_pairs=[
+                QAPair(
+                    question_text="技術スタックは？",
+                    answer_text="React です",
+                    turn_range=[1, 2],
+                    confidence=0.8,
+                    source_domain="estimation",
+                )
+            ]
+        )
+        intent_classifier = _FakeIntentClassifier()
+        case_type_client = _FakeCaseTypeClient()
+        completeness_repository = _FakeCompletenessRepository()
+        artifact_repository = _FakeArtifactRepository()
+        artifact_generator = _FakeArtifactGenerator()
         handler = TurnCompletedHandler(
             conversation_repo=conv_repo,
             extractor=extractor,
+            intent_classifier=intent_classifier,
+            case_type_client=case_type_client,
+            completeness_repository=completeness_repository,
+            artifact_repository=artifact_repository,
+            artifact_generator=artifact_generator,
         )
 
         handler(
@@ -392,6 +487,18 @@ class TestTurnCompletedHandler:
         assert len(extractor.called_with) == 1
         assert extractor.called_with[0]["tenant_id"] == "t1"
         assert extractor.called_with[0]["session_id"] == "s1"
+        assert extractor.called_with[0]["dead_letter_context"]["event_type"] == (
+            "conversation.turn.completed"
+        )
+        assert intent_classifier.calls == ["q"]
+        assert case_type_client.calls == [
+            {"tenant_id": "t1", "case_id": "s1", "intent": "feature_addition"}
+        ]
+        assert len(completeness_repository.calls) == 1
+        assert completeness_repository.calls[0]["snapshot"].domain == "estimation"
+        assert len(artifact_repository.loaded) == 1
+        assert len(artifact_repository.saved) == 1
+        assert len(artifact_generator.calls) == 1
 
     def test_skips_when_payload_field_missing(self) -> None:
         """Missing envelope payload results in early return."""
@@ -489,3 +596,35 @@ class TestTurnCompletedHandler:
         )
 
         assert extractor.called_with[0]["source_domain"] == "estimation"
+
+    def test_runs_retry_processor_before_handling_new_payload(self) -> None:
+        turns = [ConversationTurn(role="user", content="q", turn_number=1)]
+        conv_repo = _FakeConversationRepo(turns=turns)
+        extractor = _FakeExtractorForHandler()
+        retry_processor = _FakeRetryProcessor()
+        handler = TurnCompletedHandler(
+            conversation_repo=conv_repo,
+            extractor=extractor,
+            retry_processor=retry_processor,
+        )
+
+        handler({"tenant_id": "t1", "payload": {"session_id": "s1"}})
+
+        assert retry_processor.calls == ["t1"]
+
+    def test_retry_dead_letter_re_raises_extractor_failure(self) -> None:
+        turns = [ConversationTurn(role="user", content="q", turn_number=1)]
+        conv_repo = _FakeConversationRepo(turns=turns)
+        handler = TurnCompletedHandler(
+            conversation_repo=conv_repo,
+            extractor=_BoomExtractor(),
+        )
+
+        with pytest.raises(RuntimeError, match="retry failed"):
+            handler.retry_dead_letter(
+                {
+                    "tenant_id": "t1",
+                    "event_id": "evt-1",
+                    "payload": {"session_id": "s1"},
+                }
+            )
