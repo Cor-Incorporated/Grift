@@ -222,6 +222,17 @@ class RequirementArtifactRepository:
             ):
                 cur.execute(
                     """
+                        SELECT COALESCE(MAX(version), 0)
+                        FROM requirement_artifacts
+                        WHERE tenant_id = %s AND case_id = %s
+                        FOR UPDATE
+                        """,
+                    (tenant_id, case_id),
+                )
+                max_row = cur.fetchone()
+                next_version = (max_row[0] if max_row else 0) + 1
+                cur.execute(
+                    """
                         INSERT INTO requirement_artifacts (
                             tenant_id,
                             case_id,
@@ -231,21 +242,13 @@ class RequirementArtifactRepository:
                             status,
                             created_by_uid
                         )
-                        VALUES (
-                            %s, %s,
-                            (SELECT COALESCE(MAX(version), 0) + 1
-                             FROM requirement_artifacts
-                             WHERE tenant_id = %s AND case_id = %s
-                             FOR UPDATE),
-                            %s, %s::uuid[], 'draft', %s
-                        )
+                        VALUES (%s, %s, %s, %s, %s::uuid[], 'draft', %s)
                         RETURNING version
                         """,
                     (
                         tenant_id,
                         case_id,
-                        tenant_id,
-                        case_id,
+                        next_version,
                         draft.markdown,
                         list(draft.source_chunks),
                         created_by_uid,

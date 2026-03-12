@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -20,8 +21,32 @@ type visitor struct {
 	lastReset time.Time
 }
 
+// clientIP extracts the real client IP, preferring X-Forwarded-For
+// (set by GKE ingress / Cloud Run proxy) over RemoteAddr.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For: client, proxy1, proxy2 — use leftmost
+		if idx := len(xff); idx > 0 {
+			for i := 0; i < len(xff); i++ {
+				if xff[i] == ',' {
+					return xff[:i]
+				}
+			}
+			return xff
+		}
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 // RateLimit returns a middleware that limits requests using a fixed-window
-// counter keyed by RemoteAddr (with X-Tenant-ID as secondary discriminator).
+// counter keyed by client IP (with X-Tenant-ID as secondary discriminator).
 func RateLimit(cfg RateLimitConfig) Middleware {
 	var mu sync.Mutex
 	visitors := make(map[string]*visitor)
@@ -29,9 +54,9 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Use RemoteAddr as primary key to prevent client-controlled
-			// key abuse; append tenant ID for per-tenant fairness.
-			key := r.RemoteAddr
+			// Use real client IP (X-Forwarded-For behind proxy)
+			// with tenant ID for per-tenant fairness.
+			key := clientIP(r)
 			if tid := r.Header.Get("X-Tenant-ID"); tid != "" {
 				key = tid + ":" + key
 			}

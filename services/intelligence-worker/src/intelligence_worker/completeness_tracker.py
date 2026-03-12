@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -219,22 +220,31 @@ class CompletenessTrackingRepository:
     """Persist completeness feedback loop state."""
 
     _columns_cache: dict[str, set[str]] | None = None
+    _columns_cache_at: float = 0.0
+    _CACHE_TTL_SECONDS: float = 300.0  # Re-query after 5 minutes
     _columns_lock = threading.Lock()
 
     def __init__(self, conn_manager: ConnectionManager) -> None:
         self._conn_manager = conn_manager
 
+    def _cache_is_valid(self) -> bool:
+        return (
+            CompletenessTrackingRepository._columns_cache is not None
+            and (time.monotonic() - CompletenessTrackingRepository._columns_cache_at)
+            < CompletenessTrackingRepository._CACHE_TTL_SECONDS
+        )
+
     def _get_columns(self, tenant_id: str) -> set[str] | None:
         """Return cached column names for completeness_tracking table."""
-        if CompletenessTrackingRepository._columns_cache is not None:
-            return CompletenessTrackingRepository._columns_cache.get(
+        if self._cache_is_valid():
+            return CompletenessTrackingRepository._columns_cache.get(  # type: ignore[union-attr]
                 "completeness_tracking"
             )
 
         with CompletenessTrackingRepository._columns_lock:
             # Double-check after acquiring the lock.
-            if CompletenessTrackingRepository._columns_cache is not None:
-                return CompletenessTrackingRepository._columns_cache.get(
+            if self._cache_is_valid():
+                return CompletenessTrackingRepository._columns_cache.get(  # type: ignore[union-attr]
                     "completeness_tracking"
                 )
 
@@ -259,6 +269,7 @@ class CompletenessTrackingRepository:
                 CompletenessTrackingRepository._columns_cache = {
                     "completeness_tracking": columns,
                 }
+                CompletenessTrackingRepository._columns_cache_at = time.monotonic()
                 return columns
 
     def save_snapshot(

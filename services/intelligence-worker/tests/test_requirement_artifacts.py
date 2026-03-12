@@ -133,7 +133,8 @@ def test_repository_load_source_chunks_reads_case_related_chunks() -> None:
 
 def test_repository_save_artifact_increments_version() -> None:
     mock_cursor = MagicMock()
-    mock_cursor.fetchone.return_value = (2,)
+    # First fetchone: SELECT MAX(version) → 1; Second: RETURNING version → 2
+    mock_cursor.fetchone.side_effect = [(1,), (2,)]
     mock_conn = MagicMock()
     mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
@@ -160,8 +161,10 @@ def test_repository_save_artifact_increments_version() -> None:
     )
 
     assert version == 2
-    # Atomic INSERT with embedded SELECT — single execute call
-    insert_call = mock_cursor.execute.call_args_list[0]
-    assert "COALESCE" in insert_call.args[0]
-    # params: (tenant_id, case_id, tenant_id, case_id, markdown, source_chunks, uid)
-    assert insert_call.args[1][5] == ["11111111-1111-1111-1111-111111111111"]
+    # Two execute calls: SELECT MAX(version) FOR UPDATE, then INSERT
+    assert mock_cursor.execute.call_count == 2
+    select_call = mock_cursor.execute.call_args_list[0]
+    assert "FOR UPDATE" in select_call.args[0]
+    insert_call = mock_cursor.execute.call_args_list[1]
+    assert "INSERT INTO" in insert_call.args[0]
+    assert insert_call.args[1][4] == ["11111111-1111-1111-1111-111111111111"]

@@ -41,6 +41,7 @@ export function useNDJSONStream(): UseNDJSONStreamReturn {
             accumulated += chunk.content
             setStreamingContent(accumulated)
           } else if (chunk.type === 'error') {
+            setStreamingContent('')
             setError(chunk.error)
             return null
           } else if (chunk.type === 'done') {
