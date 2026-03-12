@@ -92,10 +92,13 @@ class TestGatewayLLMClient:
     def test_request_raises_on_timeout(self) -> None:
         """Timeout errors propagate so extractor can dead-letter the event."""
         client = GatewayLLMClient("http://gw:8081")
-        with patch(
-            "intelligence_worker.main.urllib.request.urlopen",
-            side_effect=TimeoutError("connection timed out"),
-        ), pytest.raises(RuntimeError, match="llm gateway request failed"):
+        with (
+            patch(
+                "intelligence_worker.main.urllib.request.urlopen",
+                side_effect=TimeoutError("connection timed out"),
+            ),
+            pytest.raises(RuntimeError, match="llm gateway request failed"),
+        ):
             client._request("prompt")
 
     def test_request_raises_on_url_error(self) -> None:
@@ -103,10 +106,13 @@ class TestGatewayLLMClient:
         import urllib.error
 
         client = GatewayLLMClient("http://gw:8081")
-        with patch(
-            "intelligence_worker.main.urllib.request.urlopen",
-            side_effect=urllib.error.URLError("unreachable"),
-        ), pytest.raises(RuntimeError, match="llm gateway request failed"):
+        with (
+            patch(
+                "intelligence_worker.main.urllib.request.urlopen",
+                side_effect=urllib.error.URLError("unreachable"),
+            ),
+            pytest.raises(RuntimeError, match="llm gateway request failed"),
+        ):
             client._request("prompt")
 
     def test_request_raises_on_non_json_content(self) -> None:
@@ -121,10 +127,13 @@ class TestGatewayLLMClient:
         fake_response.__enter__ = MagicMock(return_value=fake_response)
         fake_response.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "intelligence_worker.main.urllib.request.urlopen",
-            return_value=fake_response,
-        ), pytest.raises(ValueError, match="not valid JSON"):
+        with (
+            patch(
+                "intelligence_worker.main.urllib.request.urlopen",
+                return_value=fake_response,
+            ),
+            pytest.raises(ValueError, match="not valid JSON"),
+        ):
             client._request("prompt")
 
     def test_request_raises_on_empty_choices(self) -> None:
@@ -155,10 +164,13 @@ class TestGatewayLLMClient:
         fake_response.__enter__ = MagicMock(return_value=fake_response)
         fake_response.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "intelligence_worker.main.urllib.request.urlopen",
-            return_value=fake_response,
-        ), pytest.raises(RuntimeError, match="llm gateway request failed"):
+        with (
+            patch(
+                "intelligence_worker.main.urllib.request.urlopen",
+                return_value=fake_response,
+            ),
+            pytest.raises(RuntimeError, match="llm gateway request failed"),
+        ):
             client._request("prompt")
 
 

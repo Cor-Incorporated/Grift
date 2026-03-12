@@ -120,7 +120,7 @@ export async function* streamMessage(
         'X-Tenant-ID': DEFAULT_TENANT_ID,
       },
       body: JSON.stringify({ content }),
-      signal,
+      signal: signal ?? null,
     },
   )
 

@@ -132,9 +132,7 @@ class RequirementArtifactGenerator:
         ]
         outline = RequirementArtifactOutline(
             summary=(
-                user_turns[-1]
-                if user_turns
-                else "No user requirements captured yet."
+                user_turns[-1] if user_turns else "No user requirements captured yet."
             ),
             functional_requirements=_limit_items(user_turns, 4),
             constraints=_limit_items(assistant_turns, 3),
@@ -330,10 +328,7 @@ def _render_markdown(
         "",
         "## Retrieved Context",
         *_render_bullets(
-            [
-                f"[chunk:{chunk.chunk_id}] {chunk.content}"
-                for chunk in source_chunks
-            ]
+            [f"[chunk:{chunk.chunk_id}] {chunk.content}" for chunk in source_chunks]
             or ["No retrieved source context available."]
         ),
     ]

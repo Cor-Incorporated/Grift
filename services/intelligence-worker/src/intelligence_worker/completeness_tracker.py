@@ -150,9 +150,7 @@ def build_checklist_status(
     return statuses
 
 
-def infer_collected_items_from_pairs(
-    domain: str, pairs: Iterable[QAPair]
-) -> set[str]:
+def infer_collected_items_from_pairs(domain: str, pairs: Iterable[QAPair]) -> set[str]:
     """Infer covered checklist items from extracted QA pairs."""
     if domain != "estimation":
         return set()
@@ -167,9 +165,7 @@ def infer_collected_items_from_pairs(
     return collected
 
 
-def infer_collected_items_from_texts(
-    domain: str, texts: Iterable[str]
-) -> set[str]:
+def infer_collected_items_from_texts(domain: str, texts: Iterable[str]) -> set[str]:
     """Infer covered checklist items from raw transcript text."""
     if domain != "estimation":
         return set()

@@ -137,11 +137,7 @@ class GatewayIntentClassifier:
             close = getattr(response, "close", None)
             if callable(close):
                 close()
-        content = (
-            body.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content")
-        )
+        content = body.get("choices", [{}])[0].get("message", {}).get("content")
         if not isinstance(content, str) or not content.strip():
             raise ValueError("llm-gateway response missing message content")
 
