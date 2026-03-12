@@ -10,14 +10,13 @@ import urllib.error
 import urllib.request
 from typing import NoReturn
 
-import psycopg2
 import structlog
 from google.cloud import pubsub_v1
 from psycopg2 import errors as psycopg_errors
-from psycopg2 import pool as psycopg_pool
 
 from intelligence_worker.completeness_tracker import calculate_completeness
 from intelligence_worker.config import load_config
+from intelligence_worker.db import RLSConnectionManager
 from intelligence_worker.qa_extraction import (
     ConversationTurn,
     QAPair,
@@ -99,8 +98,8 @@ class LoggingDeadLetterPublisher:
 class PostgresQAPairRepository:
     """Persist extracted QA pairs with derived quality scores."""
 
-    def __init__(self, pool: psycopg_pool.SimpleConnectionPool) -> None:
-        self._pool = pool
+    def __init__(self, conn_manager: RLSConnectionManager) -> None:
+        self._conn_manager = conn_manager
 
     def save_qa_pairs(
         self,
@@ -127,10 +126,12 @@ class PostgresQAPairRepository:
         pairs: list[QAPair],
     ) -> None:
         del case_id
-        conn: psycopg2.extensions.connection | None = None
         try:
-            conn = self._pool.getconn()
-            with conn, conn.cursor() as cur:
+            with (
+                self._conn_manager.get_connection(tenant_id) as conn,
+                conn,
+                conn.cursor() as cur,
+            ):
                 for pair in pairs:
                     completeness = calculate_completeness(pair.source_domain, set())
                     score = score_from_llm_output(
@@ -143,23 +144,23 @@ class PostgresQAPairRepository:
                     )
                     cur.execute(
                         """
-                        INSERT INTO qa_pairs (
-                            tenant_id,
-                            session_id,
-                            turn_range,
-                            question_text,
-                            answer_text,
-                            source_domain,
-                            training_eligible,
-                            confidence,
-                            completeness,
-                            coherence
-                        )
-                        VALUES (
-                            %s, %s, int4range(%s, %s, '[]'), %s, %s,
-                            %s, false, %s, %s, %s
-                        )
-                        """,
+                            INSERT INTO qa_pairs (
+                                tenant_id,
+                                session_id,
+                                turn_range,
+                                question_text,
+                                answer_text,
+                                source_domain,
+                                training_eligible,
+                                confidence,
+                                completeness,
+                                coherence
+                            )
+                            VALUES (
+                                %s, %s, int4range(%s, %s, '[]'), %s, %s,
+                                %s, false, %s, %s, %s
+                            )
+                            """,
                         (
                             tenant_id,
                             session_id,
@@ -175,43 +176,40 @@ class PostgresQAPairRepository:
                     )
         except psycopg_errors.UndefinedTable:
             logger.warning("qa_pairs_table_missing_skip_persist")
-        finally:
-            if conn is not None:
-                self._pool.putconn(conn)
 
 
 class ConversationTurnRepository:
     """Load conversation turns for extraction."""
 
-    def __init__(self, pool: psycopg_pool.SimpleConnectionPool) -> None:
-        self._pool = pool
+    def __init__(self, conn_manager: RLSConnectionManager) -> None:
+        self._conn_manager = conn_manager
 
     def load_turns(self, *, tenant_id: str, case_id: str) -> list[ConversationTurn]:
         return self._load_sync(tenant_id, case_id)
 
     def _load_sync(self, tenant_id: str, case_id: str) -> list[ConversationTurn]:
-        conn = self._pool.getconn()
-        try:
-            with conn, conn.cursor() as cur:
-                cur.execute(
-                    """
+        with (
+            self._conn_manager.get_connection(tenant_id) as conn,
+            conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute(
+                """
                     SELECT role, content
                     FROM conversation_turns
                     WHERE tenant_id = %s AND case_id = %s
                     ORDER BY created_at ASC, id ASC
                     """,
-                    (tenant_id, case_id),
+                (tenant_id, case_id),
+            )
+            return [
+                ConversationTurn(
+                    role=role,
+                    content=content,
+                    turn_number=index,
                 )
-                return [
-                    ConversationTurn(
-                        role=role,
-                        content=content,
-                        turn_number=index,
-                    )
-                    for index, (role, content) in enumerate(cur.fetchall(), start=1)
-                ]
-        finally:
-            self._pool.putconn(conn)
+                for index, (role, content) in enumerate(cur.fetchall(), start=1)
+            ]
 
 
 class TurnCompletedHandler:
@@ -268,10 +266,14 @@ class TurnCompletedHandler:
 def run() -> None:
     """Start the worker runtime and block until shutdown."""
     config = load_config()
-    pool = psycopg_pool.SimpleConnectionPool(1, 5, dsn=config.database_url)
+    conn_manager = RLSConnectionManager(
+        dsn=config.database_url,
+        min_conn=config.db_pool_min,
+        max_conn=config.db_pool_max,
+    )
     llm_client = GatewayLLMClient(config.llm_gateway_url)
-    repository = PostgresQAPairRepository(pool)
-    conversation_repo = ConversationTurnRepository(pool)
+    repository = PostgresQAPairRepository(conn_manager)
+    conversation_repo = ConversationTurnRepository(conn_manager)
     extractor = QAPairExtractor(
         llm_client=llm_client,
         repository=repository,
@@ -300,7 +302,7 @@ def run() -> None:
     finally:
         future.cancel()
         subscriber_client.close()
-        pool.closeall()
+        conn_manager.close_all()
 
 
 def main() -> NoReturn:

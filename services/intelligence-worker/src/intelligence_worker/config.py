@@ -16,6 +16,8 @@ class Config:
         database_url: PostgreSQL connection string.
         llm_gateway_url: llm-gateway base URL.
         extractor_plugins: Enabled extractor plugins.
+        db_pool_min: Minimum idle connections in the pool.
+        db_pool_max: Maximum connections the pool will open.
     """
 
     pubsub_project_id: str
@@ -23,6 +25,8 @@ class Config:
     database_url: str
     llm_gateway_url: str
     extractor_plugins: tuple[str, ...]
+    db_pool_min: int = 1
+    db_pool_max: int = 5
 
 
 def load_config() -> Config:
@@ -43,6 +47,8 @@ def load_config() -> Config:
         "PUBSUB_SUBSCRIPTION", "conversation-turn-completed-sub"
     )
     llm_gateway_url = os.environ.get("LLM_GATEWAY_URL", "http://localhost:8081")
+    db_pool_min = int(os.environ.get("DB_POOL_MIN", "1"))
+    db_pool_max = int(os.environ.get("DB_POOL_MAX", "5"))
     extractor_plugins = tuple(
         plugin.strip()
         for plugin in os.environ.get("EXTRACTOR_PLUGINS", "estimation").split(",")
@@ -64,4 +70,6 @@ def load_config() -> Config:
         database_url=env_vars["DATABASE_URL"],  # type: ignore[arg-type]
         llm_gateway_url=llm_gateway_url,
         extractor_plugins=extractor_plugins,
+        db_pool_min=db_pool_min,
+        db_pool_max=db_pool_max,
     )
