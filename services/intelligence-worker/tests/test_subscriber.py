@@ -91,6 +91,26 @@ def test_subscriber_acks_after_successful_handler() -> None:
     assert msg.nacked is False
 
 
+def test_subscriber_accepts_event_type_envelope() -> None:
+    client = _FakeClient()
+    handled: list[dict[str, object]] = []
+    subscriber = ConversationTurnCompletedSubscriber(
+        client=client,
+        project_id="proj",
+        subscription_id="sub",
+        handler=lambda payload: handled.append(payload),
+    )
+    subscriber.start()
+    assert client.callback is not None
+
+    msg = _FakeMessage(payload={"event_type": "conversation.turn.completed", "id": 1})
+    client.callback(msg)
+
+    assert len(handled) == 1
+    assert msg.acked is True
+    assert msg.nacked is False
+
+
 def test_subscriber_nacks_when_handler_raises() -> None:
     client = _FakeClient()
 

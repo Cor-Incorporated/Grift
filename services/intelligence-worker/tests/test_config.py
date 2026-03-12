@@ -17,15 +17,15 @@ class TestLoadConfig:
         """All required env vars are read into a frozen Config."""
         env = {
             "PUBSUB_PROJECT_ID": "my-project",
-            "PUBSUB_SUBSCRIPTION_ID": "my-sub",
             "DATABASE_URL": "postgresql://localhost/db",
         }
         with patch.dict(os.environ, env, clear=False):
             cfg = load_config()
 
         assert cfg.pubsub_project_id == "my-project"
-        assert cfg.pubsub_subscription_id == "my-sub"
+        assert cfg.pubsub_subscription == "conversation-turn-completed-sub"
         assert cfg.database_url == "postgresql://localhost/db"
+        assert cfg.llm_gateway_url == "http://localhost:8081"
         assert cfg.extractor_plugins == ("estimation",)
 
     def test_raises_when_env_vars_missing(self) -> None:
@@ -40,8 +40,9 @@ class TestLoadConfig:
         """Config dataclass is frozen and rejects attribute assignment."""
         cfg = Config(
             pubsub_project_id="p",
-            pubsub_subscription_id="s",
+            pubsub_subscription="s",
             database_url="d",
+            llm_gateway_url="http://localhost:8081",
             extractor_plugins=("estimation",),
         )
         with pytest.raises(AttributeError):
@@ -51,11 +52,14 @@ class TestLoadConfig:
         """Extractor plugin config is parsed from comma separated env var."""
         env = {
             "PUBSUB_PROJECT_ID": "my-project",
-            "PUBSUB_SUBSCRIPTION_ID": "my-sub",
             "DATABASE_URL": "postgresql://localhost/db",
             "EXTRACTOR_PLUGINS": "estimation, custom_plugin",
+            "PUBSUB_SUBSCRIPTION": "custom-sub",
+            "LLM_GATEWAY_URL": "http://gateway:8081",
         }
         with patch.dict(os.environ, env, clear=False):
             cfg = load_config()
 
         assert cfg.extractor_plugins == ("estimation", "custom_plugin")
+        assert cfg.pubsub_subscription == "custom-sub"
+        assert cfg.llm_gateway_url == "http://gateway:8081"
