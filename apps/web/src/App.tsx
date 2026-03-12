@@ -1,21 +1,20 @@
-import { createBrowserRouter, Outlet } from 'react-router-dom'
+import { createBrowserRouter } from 'react-router-dom'
+import { AppLayout } from '@/components/layout/AppLayout'
+import { CaseCreate } from '@/pages/CaseCreate'
+import { CaseDetail } from '@/pages/CaseDetail'
+import { CaseList } from '@/pages/CaseList'
 import { Dashboard } from '@/pages/Dashboard'
 import { NotFound } from '@/pages/NotFound'
-
-function RootLayout() {
-  return (
-    <div>
-      <Outlet />
-    </div>
-  )
-}
 
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <RootLayout />,
+    element: <AppLayout />,
     children: [
       { index: true, element: <Dashboard /> },
+      { path: 'cases', element: <CaseList /> },
+      { path: 'cases/new', element: <CaseCreate /> },
+      { path: 'cases/:caseId', element: <CaseDetail /> },
       { path: '*', element: <NotFound /> },
     ],
   },
