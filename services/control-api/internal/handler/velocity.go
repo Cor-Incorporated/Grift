@@ -65,4 +65,4 @@ func (h *VelocityHandler) GetRepositoryVelocity(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, map[string]any{"data": metric})
 }
 
-// writeJSON and errorBody are defined in repository.go (shared handler helpers)
+// writeJSON and errorBody are defined in helpers.go.
