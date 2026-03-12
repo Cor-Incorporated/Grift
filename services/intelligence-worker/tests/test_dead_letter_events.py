@@ -98,11 +98,15 @@ def test_store_record_failure_inserts_new_row() -> None:
         occurred_at=occurred_at,
     )
 
-    insert_call = mock_cursor.execute.call_args_list[1]
+    # Single INSERT ... ON CONFLICT — only one execute call
+    assert mock_cursor.execute.call_count == 1
+    insert_call = mock_cursor.execute.call_args_list[0]
+    assert "ON CONFLICT" in insert_call.args[0]
+    assert "RETURNING retry_count" in insert_call.args[0]
     assert insert_call.args[1][0] == "t1"
     assert insert_call.args[1][1] == "e1"
-    assert insert_call.args[1][4] == 3
-    assert insert_call.args[1][5] == occurred_at
+    assert insert_call.args[1][2] == "conversation.turn.completed"
+    assert insert_call.args[1][3] == "qa_extraction_failed"
 
 
 def test_retry_processor_marks_resolution_on_success() -> None:
