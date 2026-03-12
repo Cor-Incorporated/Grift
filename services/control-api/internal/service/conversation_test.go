@@ -255,12 +255,11 @@ func TestAutoTransitionDraftToInterviewing(t *testing.T) {
 	caseID := uuid.New()
 
 	tests := []struct {
-		name               string
-		convStore          *mockConversationStore
-		caseStore          *mockCaseStore
-		wantTransitionFrom domain.CaseStatus
-		wantTransitionTo   domain.CaseStatus
-		wantTransitioned   bool
+		name      string
+		convStore *mockConversationStore
+		caseStore *mockCaseStore
+		wantErr   bool
+		errMsg    string
 	}{
 		{
 			name: "first message triggers draft to interviewing",
@@ -277,7 +276,6 @@ func TestAutoTransitionDraftToInterviewing(t *testing.T) {
 					return true, nil
 				},
 			},
-			wantTransitioned: true,
 		},
 		{
 			name: "second message does not trigger transition",
@@ -291,7 +289,6 @@ func TestAutoTransitionDraftToInterviewing(t *testing.T) {
 					return false, fmt.Errorf("TransitionStatus should not be called when turns exist")
 				},
 			},
-			wantTransitioned: false,
 		},
 		{
 			name: "non-draft case is not transitioned",
@@ -301,12 +298,37 @@ func TestAutoTransitionDraftToInterviewing(t *testing.T) {
 				},
 			},
 			caseStore: &mockCaseStore{
-				transitionStatusFn: func(_ context.Context, _, _ uuid.UUID, from, to domain.CaseStatus) (bool, error) {
+				transitionStatusFn: func(_ context.Context, _, _ uuid.UUID, _, _ domain.CaseStatus) (bool, error) {
 					// WHERE clause won't match, so 0 rows affected
 					return false, nil
 				},
 			},
-			wantTransitioned: false,
+		},
+		{
+			name: "TransitionStatus error propagates",
+			convStore: &mockConversationStore{
+				listTurnsFunc: func(_ context.Context, _, _ uuid.UUID, _, _ int) ([]store.ConversationTurn, int, error) {
+					return nil, 0, nil
+				},
+			},
+			caseStore: &mockCaseStore{
+				transitionStatusFn: func(_ context.Context, _, _ uuid.UUID, _, _ domain.CaseStatus) (bool, error) {
+					return false, fmt.Errorf("connection refused")
+				},
+			},
+			wantErr: true,
+			errMsg:  "failed to transition case status",
+		},
+		{
+			name: "ListTurns error during transition check propagates",
+			convStore: &mockConversationStore{
+				listTurnsFunc: func(_ context.Context, _, _ uuid.UUID, _, _ int) ([]store.ConversationTurn, int, error) {
+					return nil, 0, fmt.Errorf("db unavailable")
+				},
+			},
+			caseStore: &mockCaseStore{},
+			wantErr:   true,
+			errMsg:    "failed to transition case status",
 		},
 	}
 
@@ -318,8 +340,13 @@ func TestAutoTransitionDraftToInterviewing(t *testing.T) {
 				CaseID:   caseID,
 				Content:  "hello",
 			})
-			if err != nil {
-				t.Fatalf("SendMessage() unexpected error: %v", err)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("SendMessage() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && tt.errMsg != "" && err != nil {
+				if got := err.Error(); len(got) < len(tt.errMsg) || got[:len(tt.errMsg)] != tt.errMsg {
+					t.Errorf("SendMessage() error = %q, want prefix %q", got, tt.errMsg)
+				}
 			}
 		})
 	}
