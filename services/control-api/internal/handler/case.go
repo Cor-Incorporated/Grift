@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
@@ -241,23 +240,6 @@ type caseWithDetails struct {
 	Estimates     []any                      `json:"estimates"`
 }
 
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
-type dbExecutor interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-func dbExecutorFromContext(ctx context.Context, db *sql.DB) dbExecutor {
-	if tx := middleware.TxFromContext(ctx); tx != nil {
-		return tx
-	}
-	return db
-}
-
 func scanCase(scanner rowScanner) (*domain.Case, error) {
 	var record domain.Case
 	var priority sql.NullString
@@ -287,49 +269,5 @@ func scanCase(scanner rowScanner) (*domain.Case, error) {
 	return &record, nil
 }
 
-func parseTenantUUID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	raw := middleware.TenantIDFromContext(r.Context())
-	if raw == "" {
-		writeJSONError(w, "missing tenant context", http.StatusBadRequest)
-		return uuid.Nil, false
-	}
-	value, err := uuid.Parse(raw)
-	if err != nil {
-		writeJSONError(w, "invalid tenant ID", http.StatusBadRequest)
-		return uuid.Nil, false
-	}
-	return value, true
-}
-
-func parseCaseUUID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	value, err := uuid.Parse(r.PathValue("caseId"))
-	if err != nil {
-		writeJSONError(w, "invalid case ID", http.StatusBadRequest)
-		return uuid.Nil, false
-	}
-	return value, true
-}
-
-func parsePagination(r *http.Request) (int, int) {
-	limit := 20
-	offset := 0
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= maxLimit {
-			limit = parsed
-		}
-	}
-	if raw := r.URL.Query().Get("offset"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
-	return limit, offset
-}
-
-func nilIfBlank(value string) *string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}
+// parseTenantUUID, parseCaseUUID, parsePagination, nilIfBlank,
+// rowScanner, dbExecutor, and dbExecutorFromContext are defined in helpers.go.

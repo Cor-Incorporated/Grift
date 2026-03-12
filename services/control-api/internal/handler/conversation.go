@@ -385,30 +385,5 @@ func metadataBool(metadata map[string]any, key string) bool {
 	return false
 }
 
-type statusError struct {
-	status int
-	msg    string
-}
-
-func (e statusError) Error() string {
-	return e.msg
-}
-
-func errWithStatus(msg string, status int) error {
-	return statusError{status: status, msg: msg}
-}
-
-func httpStatusForError(err error) int {
-	if typed, ok := err.(statusError); ok {
-		return typed.status
-	}
-	return http.StatusInternalServerError
-}
-
-func writeStreamError(w http.ResponseWriter, err error) {
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"type":  "error",
-		"error": err.Error(),
-	})
-}
+// statusError, errWithStatus, httpStatusForError, and writeStreamError
+// are defined in helpers.go.
