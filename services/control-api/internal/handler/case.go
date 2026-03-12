@@ -7,6 +7,7 @@ import (
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/service"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/store"
 )
 
 // CaseHandler handles case CRUD operations via the service layer.
@@ -100,7 +101,7 @@ func (h *CaseHandler) GetCase(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": caseWithDetails{
 			Case:          *record,
-			Conversations: []conversationTurnResponse{},
+			Conversations: []store.ConversationTurn{},
 			SourceDocs:    []any{},
 			Estimates:     []any{},
 		},
@@ -120,7 +121,7 @@ type createCaseRequest struct {
 // caseWithDetails wraps a case with related sub-resources for GET /v1/cases/{caseId}.
 type caseWithDetails struct {
 	domain.Case
-	Conversations []conversationTurnResponse `json:"conversations"`
+	Conversations []store.ConversationTurn `json:"conversations"`
 	SourceDocs    []any                      `json:"source_documents"`
 	Estimates     []any                      `json:"estimates"`
 }

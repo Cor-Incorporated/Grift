@@ -57,6 +57,7 @@ func main() {
 	sourceDocumentHandler := handler.NewSourceDocumentHandler(nil, nil)
 	handler.RegisterSourceDocumentRoutes(mux, sourceDocumentHandler)
 
+	conversationStore := store.NewSQLConversationStore(db)
 	caseStore := store.NewSQLCaseStore(db)
 	caseService := service.NewCaseService(caseStore)
 	caseHandler := handler.NewCaseHandler(caseService)
@@ -70,7 +71,8 @@ func main() {
 			os.Getenv("PUBSUB_TOPIC"),
 		)
 	}
-	conversationHandler := handler.NewConversationHandler(db, publisher, llm)
+	conversationService := service.NewConversationService(conversationStore, publisher, llm)
+	conversationHandler := handler.NewConversationHandler(conversationService)
 	handler.RegisterConversationRoutes(mux, conversationHandler)
 
 	var authMW, tenantMW func(http.Handler) http.Handler

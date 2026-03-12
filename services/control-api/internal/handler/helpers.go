@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -32,26 +30,6 @@ func writeJSONError(w http.ResponseWriter, msg string, status int) {
 // errorBody creates a simple error response body.
 func errorBody(msg string) map[string]string {
 	return map[string]string{"error": msg}
-}
-
-// rowScanner abstracts *sql.Row and *sql.Rows for scanning.
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
-// dbExecutor abstracts *sql.DB and *sql.Tx for query execution.
-type dbExecutor interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-// dbExecutorFromContext returns the active transaction from context, or falls back to db.
-func dbExecutorFromContext(ctx context.Context, db *sql.DB) dbExecutor {
-	if tx := middleware.TxFromContext(ctx); tx != nil {
-		return tx
-	}
-	return db
 }
 
 // parseTenantUUID extracts and validates the tenant UUID from request context.
@@ -118,14 +96,6 @@ func (e statusError) Error() string {
 // errWithStatus creates a statusError with the given message and HTTP status.
 func errWithStatus(msg string, status int) error {
 	return statusError{status: status, msg: msg}
-}
-
-// httpStatusForError extracts the HTTP status from a statusError, defaulting to 500.
-func httpStatusForError(err error) int {
-	if typed, ok := err.(statusError); ok {
-		return typed.status
-	}
-	return http.StatusInternalServerError
 }
 
 // writeStreamError writes an NDJSON error frame for streaming responses.
