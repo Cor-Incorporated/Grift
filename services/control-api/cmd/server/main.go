@@ -42,7 +42,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handler.Healthz)
+	mux.HandleFunc("GET /health", handler.Health)
 
 	repoHandler := handler.NewRepositoryHandler(&github.SQLRepositoryStore{DB: db})
 	handler.RegisterRepositoryRoutes(mux, repoHandler)

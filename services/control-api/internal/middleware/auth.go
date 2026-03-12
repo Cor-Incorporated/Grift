@@ -33,11 +33,11 @@ func UserEmailFromContext(ctx context.Context) string {
 }
 
 // AuthWithVerifier creates an authentication middleware that verifies Firebase
-// ID tokens from the Authorization header. The /healthz endpoint is excluded.
+// ID tokens from the Authorization header. The /health endpoint is excluded.
 func AuthWithVerifier(verifier TokenVerifier) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/healthz" {
+			if r.URL.Path == "/health" {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -83,12 +83,12 @@ func TestTenantMiddleware_ValidUUID_NoStore(t *testing.T) {
 	}
 }
 
-func TestTenantMiddleware_HealthzSkipsTenantCheck(t *testing.T) {
+func TestTenantMiddleware_HealthSkipsTenantCheck(t *testing.T) {
 	handler := Tenant(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -184,7 +184,7 @@ func TestTenantWithStore_SetRLSError(t *testing.T) {
 	}
 }
 
-func TestTenantWithStore_HealthzSkips(t *testing.T) {
+func TestTenantWithStore_HealthSkips(t *testing.T) {
 	store := &fakeTenantStore{
 		tenants: map[string]bool{},
 	}
@@ -193,7 +193,7 @@ func TestTenantWithStore_HealthzSkips(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -201,6 +201,6 @@ func TestTenantWithStore_HealthzSkips(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	if len(store.rlsCalls) != 0 {
-		t.Errorf("SetRLS should not be called for healthz, got %v", store.rlsCalls)
+		t.Errorf("SetRLS should not be called for health, got %v", store.rlsCalls)
 	}
 }
