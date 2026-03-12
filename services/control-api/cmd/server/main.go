@@ -74,6 +74,11 @@ func main() {
 	caseHandler := handler.NewCaseHandler(caseService)
 	handler.RegisterCaseRoutes(mux, caseHandler)
 
+	tenantStore := store.NewSQLTenantStore(db)
+	tenantService := service.NewTenantService(tenantStore)
+	tenantHandler := handler.NewTenantHandler(tenantService)
+	handler.RegisterTenantRoutes(mux, tenantHandler)
+
 	llm := llmclient.NewHTTPLLMClient(os.Getenv("LLM_GATEWAY_URL"), nil)
 	var publisher *conversation.Publisher
 	if pubsubClient != nil {
