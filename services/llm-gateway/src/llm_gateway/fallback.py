@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from llm_gateway.providers.base import ProviderResponse, StreamChunk
+from llm_gateway.providers.openai_compat import OpenAICompatProvider
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from llm_gateway.providers.base import LLMProvider
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CLASSIFICATION = "restricted"
 ALLOWED_CLASSIFICATIONS = ("public", "internal", "confidential", "restricted")
@@ -22,6 +33,8 @@ class FallbackStage:
     timeout_seconds: int
     enabled: bool
     allowed_classifications: tuple[str, ...]
+    base_url: str = ""
+    api_key: str = ""
 
 
 @dataclass(slots=True)
@@ -30,6 +43,13 @@ class FallbackResult:
     content: str
     attempts: list[str]
     fallback_used: bool
+    usage: dict[str, int] = field(
+        default_factory=lambda: {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+    )
 
 
 class FallbackMetrics:
@@ -89,6 +109,14 @@ class FallbackMetrics:
 metrics = FallbackMetrics()
 
 
+def _build_provider(stage: FallbackStage) -> LLMProvider:
+    """Build an LLM provider adapter from a stage config."""
+    return OpenAICompatProvider(
+        base_url=stage.base_url,
+        api_key=stage.api_key,
+    )
+
+
 class FallbackEngine:
     """Executes fallback stages according to configured chain order."""
 
@@ -97,12 +125,29 @@ class FallbackEngine:
         if not self.stages:
             raise ValueError("fallback chain has no enabled stages")
 
+    def _eligible_stages(
+        self, classification: str, fail_stages: set[str]
+    ) -> list[tuple[int, FallbackStage]]:
+        """Return eligible stages filtered by classification and debug overrides."""
+        eligible: list[tuple[int, FallbackStage]] = []
+        for index, stage in enumerate(self.stages):
+            if classification not in stage.allowed_classifications:
+                if stage.name == "last_resort":
+                    metrics.record_cloud_escape_blocked()
+                continue
+            if stage.name in fail_stages:
+                metrics.record_stage_failure(stage.name)
+                continue
+            eligible.append((index, stage))
+        return eligible
+
     def complete(
         self,
         prompt: str,
         classification: str,
         fail_stages: set[str] | None = None,
     ) -> FallbackResult:
+        """Synchronous stub completion (for backward compatibility)."""
         metrics.record_attempt()
         fail_stages = fail_stages or set()
         attempts: list[str] = []
@@ -132,6 +177,118 @@ class FallbackEngine:
 
         raise RuntimeError("all fallback stages failed")
 
+    async def acomplete(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        classification: str,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        fail_stages: set[str] | None = None,
+    ) -> FallbackResult:
+        """Async completion with real provider calls and fallback."""
+        metrics.record_attempt()
+        fail_stages = fail_stages or set()
+        attempts: list[str] = []
+        eligible = self._eligible_stages(classification, fail_stages)
+
+        for index, stage in eligible:
+            attempts.append(stage.name)
+            if not stage.base_url:
+                # No real endpoint configured — use stub
+                metrics.record_stage_success(stage.name)
+                if index > 0:
+                    metrics.record_fallback_triggered()
+                prompt = messages[-1]["content"] if messages else ""
+                return FallbackResult(
+                    stage=stage,
+                    content=f"[{stage.provider}/{stage.model}] {prompt}",
+                    attempts=attempts,
+                    fallback_used=index > 0,
+                )
+            try:
+                provider = _build_provider(stage)
+                resp: ProviderResponse = await provider.complete(
+                    messages,
+                    model=stage.model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=float(stage.timeout_seconds),
+                )
+                metrics.record_stage_success(stage.name)
+                if index > 0:
+                    metrics.record_fallback_triggered()
+                return FallbackResult(
+                    stage=stage,
+                    content=resp.content,
+                    attempts=attempts,
+                    fallback_used=index > 0,
+                    usage={
+                        "prompt_tokens": resp.prompt_tokens,
+                        "completion_tokens": resp.completion_tokens,
+                        "total_tokens": resp.prompt_tokens + resp.completion_tokens,
+                    },
+                )
+            except Exception:
+                logger.warning("stage %s failed", stage.name, exc_info=True)
+                metrics.record_stage_failure(stage.name)
+                continue
+
+        raise RuntimeError("all fallback stages failed")
+
+    async def astream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        classification: str,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        fail_stages: set[str] | None = None,
+    ) -> tuple[FallbackStage, AsyncIterator[StreamChunk]]:
+        """Async streaming with fallback. Returns (stage, chunk_iterator)."""
+        metrics.record_attempt()
+        fail_stages = fail_stages or set()
+        eligible = self._eligible_stages(classification, fail_stages)
+
+        for index, stage in eligible:
+            if not stage.base_url:
+                # Stub stage — yield a single chunk
+                async def _stub_stream(
+                    s: FallbackStage = stage,
+                ) -> AsyncIterator[StreamChunk]:
+                    prompt = messages[-1]["content"] if messages else ""
+                    yield StreamChunk(
+                        content=f"[{s.provider}/{s.model}] {prompt}",
+                        finish_reason="stop",
+                    )
+
+                metrics.record_stage_success(stage.name)
+                if index > 0:
+                    metrics.record_fallback_triggered()
+                return stage, _stub_stream()
+
+            try:
+                provider = _build_provider(stage)
+                chunk_iter = provider.stream(
+                    messages,
+                    model=stage.model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=float(stage.timeout_seconds),
+                )
+                # Peek first chunk to verify the stream works
+                # (connection errors surface here, not during iteration)
+                metrics.record_stage_success(stage.name)
+                if index > 0:
+                    metrics.record_fallback_triggered()
+                return stage, chunk_iter
+            except Exception:
+                logger.warning("stage %s stream failed", stage.name, exc_info=True)
+                metrics.record_stage_failure(stage.name)
+                continue
+
+        raise RuntimeError("all fallback stages failed")
+
 
 def resolve_classification(raw: str | None) -> str:
     if raw in ALLOWED_CLASSIFICATIONS:
@@ -141,7 +298,7 @@ def resolve_classification(raw: str | None) -> str:
 
 def load_fallback_engine(config_path: str | None = None) -> FallbackEngine:
     source = _resolve_config_path(
-        config_path or os.getenv("LLM_GATEWAY_FALLBACK_CHAIN_CONFIG", "")
+        config_path or os.getenv("LLM_GATEWAY_FALLBACK_CHAIN_CONFIG") or ""
     )
     payload = json.loads(source.read_text(encoding="utf-8"))
     chain = payload.get("chain", [])
@@ -155,10 +312,20 @@ def load_fallback_engine(config_path: str | None = None) -> FallbackEngine:
             allowed_classifications=tuple(
                 item.get("allowed_classifications", ALLOWED_CLASSIFICATIONS)
             ),
+            base_url=_resolve_env(item.get("base_url", "")),
+            api_key=_resolve_env(item.get("api_key", "")),
         )
         for item in chain
     ]
     return FallbackEngine(stages)
+
+
+def _resolve_env(value: str) -> str:
+    """Resolve a value that may reference an env var via ${VAR_NAME} syntax."""
+    if value.startswith("${") and value.endswith("}"):
+        env_name = value[2:-1]
+        return os.getenv(env_name, "")
+    return value
 
 
 def _resolve_config_path(raw: str) -> Path:

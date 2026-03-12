@@ -6,7 +6,9 @@
       "model": "qwen3.5-32b",
       "timeout_seconds": 30,
       "enabled": true,
-      "allowed_classifications": ["public", "internal", "confidential", "restricted"]
+      "allowed_classifications": ["public", "internal", "confidential", "restricted"],
+      "base_url": "${VLLM_NODE_A_URL}",
+      "api_key": "${VLLM_NODE_A_API_KEY}"
     },
     {
       "name": "secondary",
@@ -14,7 +16,9 @@
       "model": "qwen3.5-32b",
       "timeout_seconds": 30,
       "enabled": true,
-      "allowed_classifications": ["public", "internal", "confidential", "restricted"]
+      "allowed_classifications": ["public", "internal", "confidential", "restricted"],
+      "base_url": "${VLLM_NODE_B_URL}",
+      "api_key": "${VLLM_NODE_B_API_KEY}"
     },
     {
       "name": "lightweight",
@@ -22,7 +26,9 @@
       "model": "qwen3.5-7b",
       "timeout_seconds": 15,
       "enabled": true,
-      "allowed_classifications": ["public", "internal", "confidential", "restricted"]
+      "allowed_classifications": ["public", "internal", "confidential", "restricted"],
+      "base_url": "${VLLM_NODE_A_URL}",
+      "api_key": "${VLLM_NODE_A_API_KEY}"
     },
     {
       "name": "last_resort",
@@ -30,7 +36,9 @@
       "model": "qwen/qwen-2.5-72b-instruct",
       "timeout_seconds": 60,
       "enabled": true,
-      "allowed_classifications": ["public", "internal", "confidential"]
+      "allowed_classifications": ["public", "internal", "confidential"],
+      "base_url": "${OPENROUTER_BASE_URL}",
+      "api_key": "${OPENROUTER_API_KEY}"
     }
   ]
 }
