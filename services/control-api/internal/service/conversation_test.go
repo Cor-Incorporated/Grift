@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/llmclient"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/store"
 	"github.com/google/uuid"
@@ -97,7 +98,7 @@ func TestListTurns(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewConversationService(tt.store, nil, nil)
+			svc := NewConversationService(tt.store, nil, nil, nil)
 			turns, total, err := svc.ListTurns(context.Background(), tenantID, caseID, 20, 0)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ListTurns() error = %v, wantErr %v", err, tt.wantErr)
@@ -175,7 +176,7 @@ func TestSendMessage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewConversationService(tt.store, nil, tt.llm)
+			svc := NewConversationService(tt.store, nil, nil, tt.llm)
 			result, err := svc.SendMessage(context.Background(), SendMessageInput{
 				TenantID: tenantID,
 				CaseID:   caseID,
@@ -246,5 +247,92 @@ func TestExtractMissingItemsPrefersLatestMetadata(t *testing.T) {
 	}
 	if items[0] != "deadline" || items[1] != "scope" {
 		t.Fatalf("items = %v, want [deadline scope]", items)
+	}
+}
+
+func TestAutoTransitionDraftToInterviewing(t *testing.T) {
+	tenantID := uuid.New()
+	caseID := uuid.New()
+
+	tests := []struct {
+		name               string
+		convStore          *mockConversationStore
+		caseStore          *mockCaseStore
+		wantTransitionFrom domain.CaseStatus
+		wantTransitionTo   domain.CaseStatus
+		wantTransitioned   bool
+	}{
+		{
+			name: "first message triggers draft to interviewing",
+			convStore: &mockConversationStore{
+				listTurnsFunc: func(_ context.Context, _, _ uuid.UUID, _, _ int) ([]store.ConversationTurn, int, error) {
+					return nil, 0, nil // no existing turns
+				},
+			},
+			caseStore: &mockCaseStore{
+				transitionStatusFn: func(_ context.Context, _, _ uuid.UUID, from, to domain.CaseStatus) (bool, error) {
+					if from != domain.CaseStatusDraft || to != domain.CaseStatusInterviewing {
+						return false, fmt.Errorf("unexpected transition: %s -> %s", from, to)
+					}
+					return true, nil
+				},
+			},
+			wantTransitioned: true,
+		},
+		{
+			name: "second message does not trigger transition",
+			convStore: &mockConversationStore{
+				listTurnsFunc: func(_ context.Context, _, _ uuid.UUID, _, _ int) ([]store.ConversationTurn, int, error) {
+					return []store.ConversationTurn{{ID: uuid.New(), Role: "user"}}, 1, nil
+				},
+			},
+			caseStore: &mockCaseStore{
+				transitionStatusFn: func(_ context.Context, _, _ uuid.UUID, _, _ domain.CaseStatus) (bool, error) {
+					return false, fmt.Errorf("TransitionStatus should not be called when turns exist")
+				},
+			},
+			wantTransitioned: false,
+		},
+		{
+			name: "non-draft case is not transitioned",
+			convStore: &mockConversationStore{
+				listTurnsFunc: func(_ context.Context, _, _ uuid.UUID, _, _ int) ([]store.ConversationTurn, int, error) {
+					return nil, 0, nil
+				},
+			},
+			caseStore: &mockCaseStore{
+				transitionStatusFn: func(_ context.Context, _, _ uuid.UUID, from, to domain.CaseStatus) (bool, error) {
+					// WHERE clause won't match, so 0 rows affected
+					return false, nil
+				},
+			},
+			wantTransitioned: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewConversationService(tt.convStore, tt.caseStore, nil, &mockLLMClient{})
+			_, err := svc.SendMessage(context.Background(), SendMessageInput{
+				TenantID: tenantID,
+				CaseID:   caseID,
+				Content:  "hello",
+			})
+			if err != nil {
+				t.Fatalf("SendMessage() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestAutoTransitionNilCaseStore(t *testing.T) {
+	svc := NewConversationService(&mockConversationStore{}, nil, nil, &mockLLMClient{})
+	_, err := svc.SendMessage(context.Background(), SendMessageInput{
+		TenantID: uuid.New(),
+		CaseID:   uuid.New(),
+		Content:  "hello",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage() with nil caseStore should not error: %v", err)
 	}
 }

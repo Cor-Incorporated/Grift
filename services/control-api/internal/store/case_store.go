@@ -25,6 +25,9 @@ type CaseStore interface {
 	// Delete removes a case by ID scoped to a tenant.
 	// Returns sql.ErrNoRows if the case does not exist.
 	Delete(ctx context.Context, tenantID, caseID uuid.UUID) error
+	// TransitionStatus atomically transitions a case from one status to another.
+	// Returns true if the row was updated (i.e. the current status matched 'from').
+	TransitionStatus(ctx context.Context, tenantID, caseID uuid.UUID, from, to domain.CaseStatus) (bool, error)
 }
 
 // UpdateCaseFields holds the optional fields that may be patched on a case.
@@ -267,4 +270,23 @@ func (s *SQLCaseStore) Delete(ctx context.Context, tenantID, caseID uuid.UUID) e
 	}
 
 	return nil
+}
+
+// TransitionStatus atomically updates a case's status from 'from' to 'to'.
+// The conditional WHERE clause makes this idempotent and race-safe.
+func (s *SQLCaseStore) TransitionStatus(ctx context.Context, tenantID, caseID uuid.UUID, from, to domain.CaseStatus) (bool, error) {
+	exec := s.executor(ctx)
+	result, err := exec.ExecContext(ctx,
+		`UPDATE cases SET status = $3, updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2 AND status = $4`,
+		tenantID, caseID, string(to), string(from),
+	)
+	if err != nil {
+		return false, fmt.Errorf("transition case status: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("transition case status rows affected: %w", err)
+	}
+	return n > 0, nil
 }

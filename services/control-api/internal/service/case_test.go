@@ -14,11 +14,12 @@ import (
 
 // mockCaseStore implements store.CaseStore for service tests.
 type mockCaseStore struct {
-	createFn func(ctx context.Context, c *domain.Case) (*domain.Case, error)
-	listFn   func(ctx context.Context, tenantID uuid.UUID, statusFilter, typeFilter string, limit, offset int) ([]domain.Case, int, error)
-	getFn    func(ctx context.Context, tenantID, caseID uuid.UUID) (*domain.Case, error)
-	updateFn func(ctx context.Context, tenantID, caseID uuid.UUID, fields store.UpdateCaseFields) (*domain.Case, error)
-	deleteFn func(ctx context.Context, tenantID, caseID uuid.UUID) error
+	createFn           func(ctx context.Context, c *domain.Case) (*domain.Case, error)
+	listFn             func(ctx context.Context, tenantID uuid.UUID, statusFilter, typeFilter string, limit, offset int) ([]domain.Case, int, error)
+	getFn              func(ctx context.Context, tenantID, caseID uuid.UUID) (*domain.Case, error)
+	updateFn           func(ctx context.Context, tenantID, caseID uuid.UUID, fields store.UpdateCaseFields) (*domain.Case, error)
+	deleteFn           func(ctx context.Context, tenantID, caseID uuid.UUID) error
+	transitionStatusFn func(ctx context.Context, tenantID, caseID uuid.UUID, from, to domain.CaseStatus) (bool, error)
 }
 
 var _ store.CaseStore = (*mockCaseStore)(nil)
@@ -67,6 +68,13 @@ func (m *mockCaseStore) Delete(ctx context.Context, tenantID, caseID uuid.UUID) 
 		return m.deleteFn(ctx, tenantID, caseID)
 	}
 	return nil
+}
+
+func (m *mockCaseStore) TransitionStatus(ctx context.Context, tenantID, caseID uuid.UUID, from, to domain.CaseStatus) (bool, error) {
+	if m.transitionStatusFn != nil {
+		return m.transitionStatusFn(ctx, tenantID, caseID, from, to)
+	}
+	return false, nil
 }
 
 func TestCaseService_Create(t *testing.T) {

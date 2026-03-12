@@ -74,6 +74,10 @@ func (m *mockCaseStore) Delete(_ context.Context, _ uuid.UUID, _ uuid.UUID) erro
 	return m.deleteErr
 }
 
+func (m *mockCaseStore) TransitionStatus(_ context.Context, _, _ uuid.UUID, _, _ domain.CaseStatus) (bool, error) {
+	return false, nil
+}
+
 func newTestCaseHandler(s store.CaseStore) *CaseHandler {
 	svc := service.NewCaseService(s)
 	return NewCaseHandler(svc)

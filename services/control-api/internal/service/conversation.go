@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	conv "github.com/Cor-Incorporated/Grift/services/control-api/internal/conversation"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/llmclient"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/prompt"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/store"
@@ -38,14 +39,16 @@ type SendMessageResult struct {
 // ConversationService orchestrates conversation business logic.
 type ConversationService struct {
 	store     store.ConversationStore
+	caseStore store.CaseStore
 	publisher *conv.Publisher
 	llmClient LLMClient
 }
 
 // NewConversationService constructs a ConversationService.
-func NewConversationService(s store.ConversationStore, publisher *conv.Publisher, llmClient LLMClient) *ConversationService {
+func NewConversationService(s store.ConversationStore, caseStore store.CaseStore, publisher *conv.Publisher, llmClient LLMClient) *ConversationService {
 	return &ConversationService{
 		store:     s,
+		caseStore: caseStore,
 		publisher: publisher,
 		llmClient: llmClient,
 	}
@@ -56,6 +59,29 @@ func (s *ConversationService) ListTurns(ctx context.Context, tenantID, caseID uu
 	return s.store.ListTurns(ctx, tenantID, caseID, limit, offset)
 }
 
+// tryTransitionToInterviewing transitions a draft case to interviewing status
+// when the first conversation message is sent. It is idempotent: if the case
+// already has turns or is not in draft status, the call is a no-op.
+func (s *ConversationService) tryTransitionToInterviewing(ctx context.Context, tenantID, caseID uuid.UUID) error {
+	if s.caseStore == nil {
+		return nil
+	}
+
+	_, count, err := s.store.ListTurns(ctx, tenantID, caseID, 1, 0)
+	if err != nil {
+		return fmt.Errorf("check turn count: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	_, err = s.caseStore.TransitionStatus(ctx, tenantID, caseID, domain.CaseStatusDraft, domain.CaseStatusInterviewing)
+	if err != nil {
+		return fmt.Errorf("transition to interviewing: %w", err)
+	}
+	return nil
+}
+
 // SendMessage orchestrates the full message flow: validate case, insert user
 // turn, build LLM messages, call LLM, insert assistant turn, publish event.
 func (s *ConversationService) SendMessage(ctx context.Context, input SendMessageInput) (*SendMessageResult, error) {
@@ -64,6 +90,10 @@ func (s *ConversationService) SendMessage(ctx context.Context, input SendMessage
 			return nil, fmt.Errorf("case not found: %w", err)
 		}
 		return nil, fmt.Errorf("failed to resolve case: %w", err)
+	}
+
+	if err := s.tryTransitionToInterviewing(ctx, input.TenantID, input.CaseID); err != nil {
+		return nil, fmt.Errorf("failed to transition case status: %w", err)
 	}
 
 	_, err := s.store.InsertTurn(ctx, input.TenantID, input.CaseID, "user", input.Content, map[string]any{

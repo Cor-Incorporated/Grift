@@ -87,7 +87,7 @@ func main() {
 			os.Getenv("PUBSUB_TOPIC"),
 		)
 	}
-	conversationService := service.NewConversationService(conversationStore, publisher, llm)
+	conversationService := service.NewConversationService(conversationStore, caseStore, publisher, llm)
 	conversationHandler := handler.NewConversationHandler(conversationService)
 	handler.RegisterConversationRoutes(mux, conversationHandler)
 
