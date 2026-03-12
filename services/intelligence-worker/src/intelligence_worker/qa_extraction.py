@@ -1,4 +1,4 @@
-"""Asynchronous QA pair extraction pipeline."""
+"""QA pair extraction pipeline."""
 
 from __future__ import annotations
 
@@ -31,13 +31,13 @@ class QAPair:
 
 
 class LLMClient(Protocol):
-    async def extract_structured(
+    def extract_structured(
         self, *, prompt: str, response_schema: dict[str, Any]
     ) -> str: ...
 
 
 class QAPairRepository(Protocol):
-    async def save_qa_pairs(
+    def save_qa_pairs(
         self,
         *,
         tenant_id: str,
@@ -48,7 +48,7 @@ class QAPairRepository(Protocol):
 
 
 class DeadLetterPublisher(Protocol):
-    async def publish(self, *, reason: str, payload: dict[str, Any]) -> None: ...
+    def publish(self, *, reason: str, payload: dict[str, Any]) -> None: ...
 
 
 class QAPairModel(BaseModel):
@@ -97,7 +97,7 @@ class QAPairExtractor:
         self._repository = repository
         self._dead_letter = dead_letter_publisher
 
-    async def extract_and_persist(
+    def extract_and_persist(
         self,
         *,
         tenant_id: str,
@@ -108,13 +108,13 @@ class QAPairExtractor:
     ) -> list[QAPair]:
         prompt = self._build_prompt(turns, source_domain)
         try:
-            raw = await self._llm_client.extract_structured(
+            raw = self._llm_client.extract_structured(
                 prompt=prompt,
                 response_schema=QAPairExtractionOutput.model_json_schema(),
             )
             parsed = QAPairExtractionOutput.model_validate_json(raw)
         except Exception as exc:  # noqa: BLE001
-            await self._dead_letter.publish(
+            self._dead_letter.publish(
                 reason="qa_extraction_failed",
                 payload={
                     "tenant_id": tenant_id,
@@ -127,7 +127,7 @@ class QAPairExtractor:
             return []
 
         pairs = [self._to_dataclass(item) for item in parsed.qa_pairs]
-        await self._repository.save_qa_pairs(
+        self._repository.save_qa_pairs(
             tenant_id=tenant_id,
             case_id=case_id,
             session_id=session_id,

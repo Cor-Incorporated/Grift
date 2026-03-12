@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,7 +18,7 @@ class _FakeLLM:
     response_text: str
     should_fail: bool = False
 
-    async def extract_structured(
+    def extract_structured(
         self, *, prompt: str, response_schema: dict[str, Any]
     ) -> str:
         assert "qa_pairs" in response_schema.get("properties", {})
@@ -33,7 +32,7 @@ class _FakeLLM:
 class _FakeRepo:
     saved_pairs: list[QAPair] | None = None
 
-    async def save_qa_pairs(
+    def save_qa_pairs(
         self,
         *,
         tenant_id: str,
@@ -49,7 +48,7 @@ class _FakeRepo:
 class _FakeDLQ:
     calls: list[dict[str, Any]]
 
-    async def publish(self, *, reason: str, payload: dict[str, Any]) -> None:
+    def publish(self, *, reason: str, payload: dict[str, Any]) -> None:
         self.calls.append({"reason": reason, "payload": payload})
 
 
@@ -73,14 +72,12 @@ def test_extract_and_persist_success() -> None:
         llm_client=llm, repository=repo, dead_letter_publisher=dlq
     )
 
-    pairs = asyncio.run(
-        extractor.extract_and_persist(
-            tenant_id="t1",
-            case_id="c1",
-            session_id="s1",
-            source_domain="estimation",
-            turns=_sample_turns(),
-        )
+    pairs = extractor.extract_and_persist(
+        tenant_id="t1",
+        case_id="c1",
+        session_id="s1",
+        source_domain="estimation",
+        turns=_sample_turns(),
     )
 
     assert len(pairs) == 1
@@ -97,14 +94,12 @@ def test_extract_and_persist_failure_goes_to_dlq() -> None:
         llm_client=llm, repository=repo, dead_letter_publisher=dlq
     )
 
-    pairs = asyncio.run(
-        extractor.extract_and_persist(
-            tenant_id="t1",
-            case_id="c1",
-            session_id="s1",
-            source_domain="estimation",
-            turns=_sample_turns(),
-        )
+    pairs = extractor.extract_and_persist(
+        tenant_id="t1",
+        case_id="c1",
+        session_id="s1",
+        source_domain="estimation",
+        turns=_sample_turns(),
     )
 
     assert pairs == []

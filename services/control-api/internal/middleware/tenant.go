@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 )
@@ -21,18 +22,16 @@ var uuidRegex = regexp.MustCompile(
 type TenantStore interface {
 	// Exists reports whether a tenant with the given ID exists.
 	Exists(ctx context.Context, tenantID string) (bool, error)
-	// SetRLS configures the app.tenant_id session variable on a dedicated
-	// connection for row-level security filtering. The returned *sql.Conn
-	// must be used for all subsequent queries in the request and closed when done.
-	SetRLS(ctx context.Context, tenantID string) (*sql.Conn, error)
+	// SetRLS configures a request-scoped transaction with transaction-local RLS.
+	SetRLS(ctx context.Context, tenantID string) (*sql.Tx, error)
 }
 
-// connKey is the context key for the per-request DB connection with RLS set.
-const connKey contextKey = "db_conn"
+// txKey is the context key for the per-request DB transaction with RLS set.
+const txKey contextKey = "db_tx"
 
-// ConnFromContext returns the per-request *sql.Conn that has RLS configured.
-func ConnFromContext(ctx context.Context) *sql.Conn {
-	v, _ := ctx.Value(connKey).(*sql.Conn)
+// TxFromContext returns the per-request *sql.Tx that has RLS configured.
+func TxFromContext(ctx context.Context) *sql.Tx {
+	v, _ := ctx.Value(txKey).(*sql.Tx)
 	return v
 }
 
@@ -53,22 +52,21 @@ func (s *SQLTenantStore) Exists(ctx context.Context, tenantID string) (bool, err
 	return exists, nil
 }
 
-// SetRLS acquires a dedicated connection from the pool, sets app.tenant_id
-// using parameterized set_config (no SQL injection risk), and returns the
-// connection for use in the request scope. Caller must close the connection.
-func (s *SQLTenantStore) SetRLS(ctx context.Context, tenantID string) (*sql.Conn, error) {
-	conn, err := s.DB.Conn(ctx)
+// SetRLS begins a request-scoped transaction and applies a transaction-local
+// tenant setting. Parameterized set_config(..., true) provides SET LOCAL semantics.
+func (s *SQLTenantStore) SetRLS(ctx context.Context, tenantID string) (*sql.Tx, error) {
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("acquiring connection: %w", err)
+		return nil, fmt.Errorf("beginning request transaction: %w", err)
 	}
-	_, err = conn.ExecContext(ctx,
-		"SELECT set_config('app.tenant_id', $1, false)", tenantID,
-	)
+
+	_, err = tx.ExecContext(ctx, "SELECT set_config('app.tenant_id', $1, true)", tenantID)
 	if err != nil {
-		conn.Close()
+		_ = tx.Rollback()
 		return nil, fmt.Errorf("setting RLS tenant_id: %w", err)
 	}
-	return conn, nil
+
+	return tx, nil
 }
 
 // TenantIDFromContext returns the tenant ID stored in the request context.
@@ -110,20 +108,19 @@ func TenantWithStore(store TenantStore) Middleware {
 					return
 				}
 
-				conn, err := store.SetRLS(r.Context(), tenantID)
+				tx, err := store.SetRLS(r.Context(), tenantID)
 				if err != nil {
 					http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 					return
 				}
-				if conn != nil {
-					defer conn.Close()
-				}
 
 				ctx := context.WithValue(r.Context(), tenantIDKey, tenantID)
-				if conn != nil {
-					ctx = context.WithValue(ctx, connKey, conn)
+				if tx != nil {
+					ctx = context.WithValue(ctx, txKey, tx)
 				}
-				next.ServeHTTP(w, r.WithContext(ctx))
+				writer := &statusWriter{ResponseWriter: w}
+				next.ServeHTTP(writer, r.WithContext(ctx))
+				finalizeRequestTx(tx, writer.Status())
 				return
 			}
 
@@ -138,4 +135,51 @@ func TenantWithStore(store TenantStore) Middleware {
 // is missing or invalid. This is the no-DB variant for backward compatibility.
 func Tenant(next http.Handler) http.Handler {
 	return TenantWithStore(nil)(next)
+}
+
+func finalizeRequestTx(tx *sql.Tx, status int) {
+	if tx == nil {
+		return
+	}
+	if status >= http.StatusInternalServerError {
+		_ = tx.Rollback()
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("tenant middleware: commit failed: %v", err)
+		_ = tx.Rollback()
+	}
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *statusWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		if w.status == 0 {
+			w.status = http.StatusOK
+		}
+		flusher.Flush()
+	}
+}
+
+func (w *statusWriter) Status() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
 }
