@@ -253,7 +253,18 @@ CREATE TABLE dead_letter_events (
 
 CREATE INDEX idx_dead_letter_unresolved ON dead_letter_events(event_type, created_at) WHERE resolved_at IS NULL;
 
--- dead_letter_events は RLS 対象外（job_worker がクロステナントで処理する）
+-- CI ガードレール: tenant_id を持つテーブルは RLS 必須
+ALTER TABLE dead_letter_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dead_letter_events FORCE ROW LEVEL SECURITY;
+
+-- job_worker はクロステナントで処理するため全行アクセスを許可
+CREATE POLICY dead_letter_job_worker ON dead_letter_events
+  FOR ALL TO job_worker USING (true) WITH CHECK (true);
+
+-- app_user は自テナントの参照のみ
+CREATE POLICY dead_letter_app_user ON dead_letter_events
+  FOR SELECT TO app_user USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
+
 GRANT SELECT, INSERT, UPDATE ON dead_letter_events TO job_worker;
 GRANT SELECT ON dead_letter_events TO app_user;
 

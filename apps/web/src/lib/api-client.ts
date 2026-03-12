@@ -81,6 +81,86 @@ export function getApiErrorMessage(
   return fallback
 }
 
+// ─── Conversation API helpers ───────────────────────────────
+
+import type { ConversationTurn, NDJSONChunk } from '@/types/conversation'
+
+export async function listConversationTurns(
+  caseId: string,
+): Promise<ConversationTurn[]> {
+  const res = await fetch(
+    `${API_BASE_URL}/v1/cases/${encodeURIComponent(caseId)}/conversations`,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Tenant-ID': DEFAULT_TENANT_ID,
+      },
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}`)
+  }
+
+  const json = (await res.json()) as { data: ConversationTurn[]; total: number }
+  return json.data
+}
+
+export async function* streamMessage(
+  caseId: string,
+  content: string,
+  signal?: AbortSignal,
+): AsyncGenerator<NDJSONChunk> {
+  const res = await fetch(
+    `${API_BASE_URL}/v1/cases/${encodeURIComponent(caseId)}/conversations/stream`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Tenant-ID': DEFAULT_TENANT_ID,
+      },
+      body: JSON.stringify({ content }),
+      signal,
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}`)
+  }
+
+  const reader = res.body?.getReader()
+  if (!reader) {
+    throw new Error('No response body')
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed === '') continue
+        yield JSON.parse(trimmed) as NDJSONChunk
+      }
+    }
+
+    if (buffer.trim() !== '') {
+      yield JSON.parse(buffer.trim()) as NDJSONChunk
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 export function formatDateTime(value?: string) {
   if (!value) {
     return 'Not available'
