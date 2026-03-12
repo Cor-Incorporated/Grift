@@ -211,8 +211,39 @@ def build_prompt_feedback(missing_items: tuple[str, ...]) -> str:
 class CompletenessTrackingRepository:
     """Persist completeness feedback loop state."""
 
+    _columns_cache: dict[str, set[str]] | None = None
+
     def __init__(self, conn_manager: ConnectionManager) -> None:
         self._conn_manager = conn_manager
+
+    def _get_columns(self, tenant_id: str) -> set[str] | None:
+        """Return cached column names for completeness_tracking table."""
+        if CompletenessTrackingRepository._columns_cache is not None:
+            return CompletenessTrackingRepository._columns_cache.get(
+                "completeness_tracking"
+            )
+
+        with (
+            self._conn_manager.get_connection(tenant_id) as conn,
+            conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute(
+                """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'completeness_tracking'
+                    """,
+            )
+            columns = {row[0] for row in cur.fetchall()}
+            if not columns:
+                CompletenessTrackingRepository._columns_cache = {}
+                return None
+            CompletenessTrackingRepository._columns_cache = {
+                "completeness_tracking": columns,
+            }
+            return columns
 
     def save_snapshot(
         self,
@@ -222,58 +253,48 @@ class CompletenessTrackingRepository:
         snapshot: CompletenessTrackingSnapshot,
     ) -> None:
         try:
+            columns = self._get_columns(tenant_id)
+            if not columns:
+                logger.warning("completeness_tracking_table_missing_skip_persist")
+                return
+
+            values = _resolve_tracking_values(
+                columns=columns,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                snapshot=snapshot,
+            )
+            column_list = ", ".join(values.keys())
+            placeholders = ", ".join(["%s"] * len(values))
+
+            # Resolve the actual column names used for the
+            # unique constraint (tenant_id, session_id, source_domain).
+            conflict_col_session = (
+                "session_id" if "session_id" in columns else "case_id"
+            )
+            conflict_col_domain = (
+                "source_domain" if "source_domain" in columns else "domain"
+            )
+            conflict_cols = f"tenant_id, {conflict_col_session}, {conflict_col_domain}"
+
+            # Build SET clause for upsert (exclude conflict keys).
+            conflict_key_set = {
+                "tenant_id",
+                conflict_col_session,
+                conflict_col_domain,
+            }
+            update_cols = [c for c in values if c not in conflict_key_set]
+            update_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+            if update_clause:
+                update_clause += ", updated_at = now()"
+            else:
+                update_clause = "updated_at = now()"
+
             with (
                 self._conn_manager.get_connection(tenant_id) as conn,
                 conn,
                 conn.cursor() as cur,
             ):
-                cur.execute(
-                    """
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_schema = current_schema()
-                          AND table_name = 'completeness_tracking'
-                        """,
-                )
-                columns = {row[0] for row in cur.fetchall()}
-                if not columns:
-                    logger.warning("completeness_tracking_table_missing_skip_persist")
-                    return
-
-                values = _resolve_tracking_values(
-                    columns=columns,
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    snapshot=snapshot,
-                )
-                column_list = ", ".join(values.keys())
-                placeholders = ", ".join(["%s"] * len(values))
-
-                # Resolve the actual column names used for the
-                # unique constraint (tenant_id, session_id, source_domain).
-                conflict_col_session = (
-                    "session_id" if "session_id" in columns else "case_id"
-                )
-                conflict_col_domain = (
-                    "source_domain" if "source_domain" in columns else "domain"
-                )
-                conflict_cols = (
-                    f"tenant_id, {conflict_col_session}, {conflict_col_domain}"
-                )
-
-                # Build SET clause for upsert (exclude conflict keys).
-                conflict_key_set = {
-                    "tenant_id",
-                    conflict_col_session,
-                    conflict_col_domain,
-                }
-                update_cols = [c for c in values if c not in conflict_key_set]
-                update_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
-                if update_clause:
-                    update_clause += ", updated_at = now()"
-                else:
-                    update_clause = "updated_at = now()"
-
                 cur.execute(
                     (
                         "INSERT INTO completeness_tracking "

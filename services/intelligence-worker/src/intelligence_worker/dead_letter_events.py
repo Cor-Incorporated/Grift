@@ -154,9 +154,14 @@ class DeadLetterEventStore:
                 backoff_filter = (
                     "AND retry_count < max_retries "
                     "AND (last_retried_at IS NULL "
-                    "     OR last_retried_at + "
-                    "        (interval '1 minute' * power(2, retry_count)) "
-                    "        < %s)"
+                    "     OR last_retried_at + ("
+                    "        CASE retry_count"
+                    "            WHEN 0 THEN interval '1 minute'"
+                    "            WHEN 1 THEN interval '5 minutes'"
+                    "            WHEN 2 THEN interval '30 minutes'"
+                    "            ELSE interval '30 minutes'"
+                    "        END"
+                    "     ) < %s)"
                 )
                 if tenant_id is not None:
                     cur.execute(

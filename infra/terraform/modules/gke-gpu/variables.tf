@@ -65,16 +65,16 @@ variable "master_ipv4_cidr_block" {
   }
 }
 
-variable "cluster_secondary_range_cidr" {
-  description = "Secondary CIDR range for GKE pods"
+variable "pod_secondary_range_name" {
+  description = "Name of the existing secondary IP range for GKE pods on the private subnet"
   type        = string
-  default     = "10.20.0.0/16"
+  default     = ""
 }
 
-variable "services_secondary_range_cidr" {
-  description = "Secondary CIDR range for GKE services"
+variable "services_secondary_range_name" {
+  description = "Name of the existing secondary IP range for GKE services on the private subnet"
   type        = string
-  default     = "10.21.0.0/20"
+  default     = ""
 }
 
 # -----------------------------------------------------
@@ -194,7 +194,7 @@ variable "weekend_shutdown_cron" {
 variable "vllm_k8s_namespace" {
   description = "Kubernetes namespace for vLLM workloads"
   type        = string
-  default     = "llm"
+  default     = "llm-serving"
 }
 
 variable "vllm_k8s_service_account" {

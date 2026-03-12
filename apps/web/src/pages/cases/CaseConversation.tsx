@@ -59,6 +59,10 @@ export function CaseConversation() {
       if (assistantTurn) {
         setTurns((prev) => [...prev, assistantTurn])
       }
+
+      // Re-fetch to get server-authoritative UUIDs
+      const freshTurns = await listConversationTurns(caseId)
+      setTurns(freshTurns)
     },
     [caseId, sendStreamMessage],
   )

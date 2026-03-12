@@ -13,31 +13,9 @@
 # =============================================================
 
 # -----------------------------------------------------
-# Secondary IP ranges on private subnet (for GKE pods/services)
+# Use existing private subnet (from networking module)
+# Secondary IP ranges must already exist on this subnet.
 # -----------------------------------------------------
-resource "google_compute_subnetwork" "gke_secondary" {
-  project = var.project_id
-  name    = "bd-${var.environment}-gke-secondary"
-  region  = var.region
-  network = var.network_id
-
-  # Use the same primary CIDR as the private subnet reference;
-  # we only need this resource for the secondary ranges.
-  # Re-use the existing private subnet instead of creating a new one.
-  ip_cidr_range = "10.10.10.0/24"
-
-  secondary_ip_range {
-    range_name    = local.pod_range_name
-    ip_cidr_range = var.cluster_secondary_range_cidr
-  }
-
-  secondary_ip_range {
-    range_name    = local.service_range_name
-    ip_cidr_range = var.services_secondary_range_cidr
-  }
-
-  private_ip_google_access = true
-}
 
 # -----------------------------------------------------
 # GKE Node Pool Service Account (least-privilege)
@@ -87,7 +65,7 @@ resource "google_container_cluster" "gpu" {
   initial_node_count       = 1
 
   network    = var.network_id
-  subnetwork = google_compute_subnetwork.gke_secondary.id
+  subnetwork = var.private_subnet_id
 
   ip_allocation_policy {
     cluster_secondary_range_name  = local.pod_range_name
@@ -293,16 +271,26 @@ resource "google_service_account" "gpu_scheduler" {
   description  = "Service account for Cloud Function that resizes GPU node pool"
 }
 
-# Permission to read cluster state and update node pools
-# Uses container.developer (narrower than clusterAdmin) which grants
-# container.clusters.get and container.nodePools.update.
-# TODO: Replace with a custom role scoped to only container.clusters.get
-# and container.nodePools.update for true least-privilege in production.
-resource "google_project_iam_member" "gpu_scheduler_container_developer" {
+# Custom role scoped to only the permissions needed for GPU node pool resize
+resource "google_project_iam_custom_role" "gpu_scheduler_role" {
+  count = var.enable_night_shutdown ? 1 : 0
+
+  project     = var.project_id
+  role_id     = replace("bd_${var.environment}_gpu_scheduler", "-", "_")
+  title       = "BenevolentDirector GPU Scheduler (${var.environment})"
+  description = "Least-privilege role for reading cluster state and resizing GPU node pools"
+  permissions = [
+    "container.clusters.get",
+    "container.nodePools.update",
+  ]
+}
+
+# Bind the scheduler SA to the custom role instead of roles/container.developer
+resource "google_project_iam_member" "gpu_scheduler_container" {
   count = var.enable_night_shutdown ? 1 : 0
 
   project = var.project_id
-  role    = "roles/container.developer"
+  role    = google_project_iam_custom_role.gpu_scheduler_role[0].id
   member  = "serviceAccount:${google_service_account.gpu_scheduler[0].email}"
 }
 

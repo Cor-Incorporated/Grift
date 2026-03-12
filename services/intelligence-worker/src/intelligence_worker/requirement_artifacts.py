@@ -235,7 +235,8 @@ class RequirementArtifactRepository:
                             %s, %s,
                             (SELECT COALESCE(MAX(version), 0) + 1
                              FROM requirement_artifacts
-                             WHERE tenant_id = %s AND case_id = %s),
+                             WHERE tenant_id = %s AND case_id = %s
+                             FOR UPDATE),
                             %s, %s::uuid[], 'draft', %s
                         )
                         RETURNING version

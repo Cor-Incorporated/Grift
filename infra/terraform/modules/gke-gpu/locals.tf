@@ -11,7 +11,7 @@ locals {
 
   labels = merge(local.default_labels, var.labels)
 
-  # Secondary ranges for pods and services
-  pod_range_name     = "bd-${var.environment}-gke-pods"
-  service_range_name = "bd-${var.environment}-gke-services"
+  # Secondary range names (must match ranges on the existing private subnet)
+  pod_range_name     = var.pod_secondary_range_name != "" ? var.pod_secondary_range_name : "bd-${var.environment}-gke-pods"
+  service_range_name = var.services_secondary_range_name != "" ? var.services_secondary_range_name : "bd-${var.environment}-gke-services"
 }

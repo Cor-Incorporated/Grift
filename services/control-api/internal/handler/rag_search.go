@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/llmclient"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/store"
 )
 
@@ -30,9 +32,13 @@ func NewRAGSearchHandler(store store.ChunkEmbeddingStore, embedder ragQueryEmbed
 	return &RAGSearchHandler{store: store, embedder: embedder}
 }
 
-// RegisterRAGSearchRoutes registers case search routes.
+// RegisterRAGSearchRoutes registers case search routes with rate limiting.
 func RegisterRAGSearchRoutes(mux *http.ServeMux, h *RAGSearchHandler) {
-	mux.HandleFunc("GET /v1/cases/{caseId}/search", h.Search)
+	rateLimited := middleware.RateLimit(middleware.RateLimitConfig{
+		RequestsPerWindow: 30,
+		Window:            time.Minute,
+	})
+	mux.Handle("GET /v1/cases/{caseId}/search", rateLimited(http.HandlerFunc(h.Search)))
 }
 
 // Search handles GET /v1/cases/{caseId}/search.
