@@ -9,6 +9,7 @@ import {
   getApiErrorMessage,
   type CaseDetailRecord,
 } from '@/lib/api-client'
+import { ChatPanel } from '@/components/chat/ChatPanel'
 
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>()
@@ -178,48 +179,7 @@ export function CaseDetail() {
         </article>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-950">
-            Conversations
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Review the intake thread that shaped this case.
-          </p>
-        </div>
-
-        {conversations.length === 0 ? (
-          <div className="px-6 py-12">
-            <h3 className="text-lg font-semibold text-slate-950">
-              No conversations yet
-            </h3>
-            <p className="mt-2 max-w-xl text-pretty text-sm text-slate-600">
-              Once intake messages are recorded, they will appear here in
-              chronological order.
-            </p>
-          </div>
-        ) : (
-          <ol className="divide-y divide-slate-200">
-            {conversations.map((conversation) => (
-              <li key={conversation.id} className="px-6 py-5">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <p className="text-sm font-medium capitalize text-slate-950">
-                      {conversation.role}
-                    </p>
-                    <p className="mt-2 whitespace-pre-wrap text-pretty text-sm text-slate-700">
-                      {conversation.content}
-                    </p>
-                  </div>
-                  <p className="text-xs text-slate-500 tabular-nums">
-                    {formatDateTime(conversation.created_at)}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <ChatPanel caseId={caseId!} initialMessages={conversations} />
     </main>
   )
 }

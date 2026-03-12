@@ -168,6 +168,45 @@ export interface paths {
       }
     }
   }
+  '/v1/cases/{caseId}/conversations': {
+    get: {
+      parameters: {
+        header: { 'X-Tenant-ID': string }
+        path: { caseId: string }
+        query?: { limit?: number; offset?: number }
+      }
+      responses: {
+        200: {
+          content: {
+            'application/json': {
+              data?: components['schemas']['ConversationTurn'][]
+              total?: number
+            }
+          }
+        }
+      }
+    }
+    post: {
+      parameters: {
+        header: { 'X-Tenant-ID': string }
+        path: { caseId: string }
+      }
+      requestBody: {
+        content: {
+          'application/json': { content: string }
+        }
+      }
+      responses: {
+        200: {
+          content: {
+            'application/json': {
+              data?: components['schemas']['ConversationTurn']
+            }
+          }
+        }
+      }
+    }
+  }
   '/v1/cases/{caseId}': {
     get: {
       parameters: {
