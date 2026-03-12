@@ -188,7 +188,7 @@ class FallbackEngine:
         attempts: list[str] = []
         eligible = self._eligible_stages(classification, fail_stages)
 
-        for position, (index, stage) in enumerate(eligible):
+        for position, (_index, stage) in enumerate(eligible):
             attempts.append(stage.name)
             if not stage.base_url:
                 # No real endpoint configured — use stub

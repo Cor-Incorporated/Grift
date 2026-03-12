@@ -88,13 +88,15 @@ class OpenAICompatProvider:
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream(
+        async with (
+            httpx.AsyncClient(timeout=timeout) as client,
+            client.stream(
                 "POST",
                 f"{self._base_url}/v1/chat/completions",
                 json=payload,
                 headers=self._headers(),
-            ) as resp:
+            ) as resp,
+        ):
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
@@ -105,7 +107,10 @@ class OpenAICompatProvider:
                     try:
                         chunk = json.loads(data_str)
                     except json.JSONDecodeError:
-                        logger.warning("skipping malformed SSE chunk: %s", data_str[:80])
+                        logger.warning(
+                            "skipping malformed SSE chunk: %s",
+                            data_str[:80],
+                        )
                         continue
                     delta = chunk.get("choices", [{}])[0].get("delta", {})
                     content = delta.get("content", "")
