@@ -106,13 +106,13 @@ func TestAuthWithVerifier_ValidToken(t *testing.T) {
 	}
 }
 
-func TestAuthWithVerifier_HealthzSkipsAuth(t *testing.T) {
+func TestAuthWithVerifier_HealthSkipsAuth(t *testing.T) {
 	verifier := &fakeTokenVerifier{err: fmt.Errorf("should not be called")}
 	handler := AuthWithVerifier(verifier)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
