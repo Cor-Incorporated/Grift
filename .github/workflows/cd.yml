@@ -35,9 +35,11 @@ jobs:
         with:
           node-version: '20.19.0'
           cache: npm
+          cache-dependency-path: v1/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+        working-directory: v1
 
       - name: Validate Clerk keys
         run: |
@@ -56,16 +58,17 @@ jobs:
 
       - name: Build
         run: npm run build
+        working-directory: v1
 
       - name: Upload Next.js artifact
         uses: actions/upload-artifact@v4
         with:
           name: next-build
           path: |
-            .next
-            public
-            package.json
-            package-lock.json
+            v1/.next
+            v1/public
+            v1/package.json
+            v1/package-lock.json
 
   deploy-vercel:
     needs: build-artifact
@@ -82,9 +85,11 @@ jobs:
         with:
           node-version: '20.19.0'
           cache: npm
+          cache-dependency-path: v1/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+        working-directory: v1
 
       - name: Install Vercel CLI
         run: npm i -g vercel@latest
