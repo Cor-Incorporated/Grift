@@ -105,6 +105,8 @@ class QAPairExtractor:
         session_id: str,
         source_domain: str,
         turns: list[ConversationTurn],
+        dead_letter_context: dict[str, Any] | None = None,
+        re_raise_errors: bool = False,
     ) -> list[QAPair]:
         prompt = self._build_prompt(turns, source_domain)
         try:
@@ -117,6 +119,7 @@ class QAPairExtractor:
             self._dead_letter.publish(
                 reason="qa_extraction_failed",
                 payload={
+                    **(dead_letter_context or {}),
                     "tenant_id": tenant_id,
                     "case_id": case_id,
                     "session_id": session_id,
@@ -124,6 +127,8 @@ class QAPairExtractor:
                     "error": str(exc),
                 },
             )
+            if re_raise_errors:
+                raise
             return []
 
         pairs = [self._to_dataclass(item) for item in parsed.qa_pairs]

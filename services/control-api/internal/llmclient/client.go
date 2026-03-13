@@ -15,6 +15,7 @@ import (
 const (
 	defaultBaseURL        = "http://localhost:8081"
 	defaultModel          = "stub"
+	defaultEmbeddingModel = "text-embedding-3-small"
 	defaultTemperature    = 0.7
 	defaultHTTPTimeout    = 30 * time.Second
 	maxNDJSONScannerBytes = 1024 * 1024
@@ -53,6 +54,18 @@ type CompletionResponse struct {
 	FallbackUsed       bool
 	DataClassification string
 	Chunks             []Chunk
+}
+
+// EmbeddingOptions controls request parameters for an embeddings request.
+type EmbeddingOptions struct {
+	Model              string
+	ExpectedDimensions int
+}
+
+// EmbeddingResponse is the normalized llm-gateway embedding response.
+type EmbeddingResponse struct {
+	Model     string
+	Embedding []float64
 }
 
 // Client is the control-api abstraction for llm-gateway.
@@ -128,6 +141,62 @@ func (c *HTTPLLMClient) Complete(ctx context.Context, messages []Message, opts C
 	return c.parseBuffered(resp)
 }
 
+// Embed calls POST /v1/embeddings and normalizes the first embedding vector.
+func (c *HTTPLLMClient) Embed(ctx context.Context, input string, opts EmbeddingOptions) (*EmbeddingResponse, error) {
+	body, err := json.Marshal(embeddingRequest{
+		Model:          firstNonEmpty(opts.Model, defaultEmbeddingModel),
+		Input:          []string{input},
+		EncodingFormat: "float",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal embedding request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		c.baseURL+"/v1/embeddings",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build embedding request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call llm-gateway embeddings: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, fmt.Errorf("llm-gateway embeddings status %d", resp.StatusCode)
+	}
+
+	var payload embeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode embedding response: %w", err)
+	}
+	if len(payload.Data) == 0 {
+		return nil, fmt.Errorf("invalid embedding response: missing data")
+	}
+	if len(payload.Data[0].Embedding) == 0 {
+		return nil, fmt.Errorf("invalid embedding response: missing embedding")
+	}
+	if opts.ExpectedDimensions > 0 && len(payload.Data[0].Embedding) != opts.ExpectedDimensions {
+		return nil, fmt.Errorf(
+			"embedding dimension mismatch: expected=%d got=%d",
+			opts.ExpectedDimensions,
+			len(payload.Data[0].Embedding),
+		)
+	}
+
+	return &EmbeddingResponse{
+		Model:     payload.Model,
+		Embedding: payload.Data[0].Embedding,
+	}, nil
+}
+
 func (c *HTTPLLMClient) parseBuffered(resp *http.Response) (*CompletionResponse, error) {
 	var payload chatCompletionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
@@ -198,6 +267,20 @@ type chatCompletionResponse struct {
 	Choices []struct {
 		Message Message `json:"message"`
 	} `json:"choices"`
+}
+
+type embeddingRequest struct {
+	Model          string   `json:"model"`
+	Input          []string `json:"input"`
+	EncodingFormat string   `json:"encoding_format"`
+}
+
+type embeddingResponse struct {
+	Model string `json:"model"`
+	Data  []struct {
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
 }
 
 func firstNonEmpty(values ...string) string {

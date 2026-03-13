@@ -596,6 +596,46 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /v1/cases/{caseId}/search:
+    get:
+      operationId: searchCaseContext
+      tags: [cases]
+      summary: ケース資料の RAG 検索
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: top_k
+          in: query
+          schema:
+            type: integer
+            default: 5
+            maximum: 20
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RAGSearchResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   # ─── Repositories (Repository Intelligence Context) ───
   /v1/repositories:
     get:
@@ -2062,6 +2102,29 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    RAGSearchResult:
+      type: object
+      required: [chunk_id, source_document_id, file_name, chunk_index, content, similarity_score]
+      properties:
+        chunk_id:
+          type: string
+          format: uuid
+        source_document_id:
+          type: string
+          format: uuid
+        file_name:
+          type: string
+        chunk_index:
+          type: integer
+        content:
+          type: string
+        similarity_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        metadata_json:
+          type: object
 
     # ─── Repository ───
     RepositorySnapshot:

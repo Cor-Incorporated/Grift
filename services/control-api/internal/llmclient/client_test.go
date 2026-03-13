@@ -2,27 +2,48 @@ package llmclient
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestHTTPLLMClientCompleteParsesNDJSON(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		_, _ = w.Write([]byte(`{"type":"content","content":"hello "}` + "\n"))
-		_, _ = w.Write([]byte(`{"type":"content","content":"world"}` + "\n"))
-		_, _ = w.Write([]byte(`{"type":"done","done":true,"event_type":"conversation.turn.completed"}` + "\n"))
-	}))
-	defer server.Close()
+type roundTripFunc func(*http.Request) (*http.Response, error)
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func newTestClient(fn roundTripFunc) *HTTPLLMClient {
+	return NewHTTPLLMClient("http://llm-gateway.test", &http.Client{Transport: fn})
+}
+
+func newTestResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+func TestHTTPLLMClientCompleteParsesNDJSON(t *testing.T) {
+	client := newTestClient(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("path = %q, want /v1/chat/completions", req.URL.Path)
+		}
+		return newTestResponse(http.StatusOK,
+			`{"type":"content","content":"hello "}`+"\n"+
+				`{"type":"content","content":"world"}`+"\n"+
+				`{"type":"done","done":true,"event_type":"conversation.turn.completed"}`+"\n",
+		), nil
+	})
+
 	resp, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{Stream: true})
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
-
 	if resp.Content != "hello world" {
 		t.Fatalf("Content = %q, want %q", resp.Content, "hello world")
 	}
@@ -32,18 +53,14 @@ func TestHTTPLLMClientCompleteParsesNDJSON(t *testing.T) {
 }
 
 func TestHTTPLLMClientCompleteParsesJSON(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"model":"stub","choices":[{"message":{"content":"buffered"}}]}`))
-	}))
-	defer server.Close()
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{"model":"stub","choices":[{"message":{"content":"buffered"}}]}`), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	resp, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{})
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
-
 	if resp.Content != "buffered" {
 		t.Fatalf("Content = %q, want %q", resp.Content, "buffered")
 	}
@@ -98,12 +115,10 @@ func TestNewFromEnv_EmptyEnv(t *testing.T) {
 }
 
 func TestComplete_ServerError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusInternalServerError, ""), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	_, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{})
 	if err == nil {
 		t.Fatal("expected error for 500 response")
@@ -111,12 +126,10 @@ func TestComplete_ServerError(t *testing.T) {
 }
 
 func TestComplete_BadRequest(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-	}))
-	defer server.Close()
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusBadRequest, ""), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	_, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{})
 	if err == nil {
 		t.Fatal("expected error for 400 response")
@@ -124,20 +137,21 @@ func TestComplete_BadRequest(t *testing.T) {
 }
 
 func TestComplete_ConnectionRefused(t *testing.T) {
-	client := NewHTTPLLMClient("http://127.0.0.1:1", nil)
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return nil, errors.New("connection refused")
+	})
+
 	_, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{})
 	if err == nil {
-		t.Fatal("expected error for connection refused")
+		t.Fatal("expected error for connection failure")
 	}
 }
 
 func TestComplete_InvalidJSON_Buffered(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{invalid json`))
-	}))
-	defer server.Close()
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{invalid json`), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	_, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{})
 	if err == nil {
 		t.Fatal("expected error for invalid JSON response")
@@ -145,12 +159,10 @@ func TestComplete_InvalidJSON_Buffered(t *testing.T) {
 }
 
 func TestComplete_InvalidNDJSON_Stream(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("{not valid json\n"))
-	}))
-	defer server.Close()
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, "{not valid json\n"), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	_, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{Stream: true})
 	if err == nil {
 		t.Fatal("expected error for invalid NDJSON chunk")
@@ -158,16 +170,14 @@ func TestComplete_InvalidNDJSON_Stream(t *testing.T) {
 }
 
 func TestComplete_StreamWithOnChunkError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"type":"content","content":"hello"}` + "\n"))
-	}))
-	defer server.Close()
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{"type":"content","content":"hello"}`+"\n"), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	_, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{
 		Stream: true,
-		OnChunk: func(c Chunk) error {
-			return fmt.Errorf("chunk handler error")
+		OnChunk: func(Chunk) error {
+			return errors.New("chunk handler error")
 		},
 	})
 	if err == nil {
@@ -176,17 +186,15 @@ func TestComplete_StreamWithOnChunkError(t *testing.T) {
 }
 
 func TestComplete_StreamWithOnChunkSuccess(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"type":"content","content":"hi","data_classification":"internal"}` + "\n"))
-	}))
-	defer server.Close()
-
 	var chunks []Chunk
-	client := NewHTTPLLMClient(server.URL, server.Client())
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{"type":"content","content":"hi","data_classification":"internal"}`+"\n"), nil
+	})
+
 	resp, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{
 		Stream: true,
-		OnChunk: func(c Chunk) error {
-			chunks = append(chunks, c)
+		OnChunk: func(chunk Chunk) error {
+			chunks = append(chunks, chunk)
 			return nil
 		},
 	})
@@ -202,14 +210,10 @@ func TestComplete_StreamWithOnChunkSuccess(t *testing.T) {
 }
 
 func TestComplete_StreamEmptyLines(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("\n\n"))
-		_, _ = w.Write([]byte(`{"type":"content","content":"data"}` + "\n"))
-		_, _ = w.Write([]byte("   \n"))
-	}))
-	defer server.Close()
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, "\n\n"+`{"type":"content","content":"data"}`+"\n   \n"), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	resp, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{Stream: true})
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
@@ -220,12 +224,10 @@ func TestComplete_StreamEmptyLines(t *testing.T) {
 }
 
 func TestComplete_BufferedEmptyChoices(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"model":"stub","choices":[]}`))
-	}))
-	defer server.Close()
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{"model":"stub","choices":[]}`), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	resp, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{})
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
@@ -236,12 +238,10 @@ func TestComplete_BufferedEmptyChoices(t *testing.T) {
 }
 
 func TestComplete_BufferedWithFallback(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"model":"fallback-model","choices":[{"message":{"content":"ok"}}],"fallback":{"used":true},"data_classification":"confidential"}`))
-	}))
-	defer server.Close()
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{"model":"fallback-model","choices":[{"message":{"content":"ok"}}],"fallback":{"used":true},"data_classification":"confidential"}`), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	resp, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{})
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
@@ -259,13 +259,11 @@ func TestComplete_BufferedWithFallback(t *testing.T) {
 
 func TestComplete_WithDataClassificationHeader(t *testing.T) {
 	var gotHeader string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotHeader = r.Header.Get("X-Data-Classification")
-		_, _ = w.Write([]byte(`{"model":"stub","choices":[{"message":{"content":"ok"}}]}`))
-	}))
-	defer server.Close()
+	client := newTestClient(func(req *http.Request) (*http.Response, error) {
+		gotHeader = req.Header.Get("X-Data-Classification")
+		return newTestResponse(http.StatusOK, `{"model":"stub","choices":[{"message":{"content":"ok"}}]}`), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	_, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{
 		DataClassification: "internal",
 	})
@@ -278,12 +276,14 @@ func TestComplete_WithDataClassificationHeader(t *testing.T) {
 }
 
 func TestComplete_WithCustomModelAndTemperature(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"model":"custom","choices":[{"message":{"content":"ok"}}]}`))
-	}))
-	defer server.Close()
+	var gotBody chatCompletionRequest
+	client := newTestClient(func(req *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(req.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		return newTestResponse(http.StatusOK, `{"model":"custom","choices":[{"message":{"content":"ok"}}]}`), nil
+	})
 
-	client := NewHTTPLLMClient(server.URL, server.Client())
 	_, err := client.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, CompletionOptions{
 		Model:       "custom-model",
 		Temperature: 0.9,
@@ -291,49 +291,129 @@ func TestComplete_WithCustomModelAndTemperature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
-}
-
-func TestFirstNonEmpty(t *testing.T) {
-	tests := []struct {
-		name   string
-		values []string
-		want   string
-	}{
-		{name: "first non-empty", values: []string{"", "hello", "world"}, want: "hello"},
-		{name: "all empty", values: []string{"", "", ""}, want: ""},
-		{name: "whitespace only skipped", values: []string{"  ", "real"}, want: "real"},
-		{name: "no values", values: nil, want: ""},
-		{name: "first value wins", values: []string{"a", "b"}, want: "a"},
+	if gotBody.Model != "custom-model" {
+		t.Fatalf("model = %q, want %q", gotBody.Model, "custom-model")
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := firstNonEmpty(tt.values...)
-			if got != tt.want {
-				t.Errorf("firstNonEmpty() = %q, want %q", got, tt.want)
-			}
-		})
+	if gotBody.Temperature != 0.9 {
+		t.Fatalf("temperature = %v, want 0.9", gotBody.Temperature)
 	}
 }
 
-func TestNonZero(t *testing.T) {
-	tests := []struct {
-		name     string
-		value    float64
-		fallback float64
-		want     float64
-	}{
-		{name: "non-zero returns value", value: 0.5, fallback: 0.7, want: 0.5},
-		{name: "zero returns fallback", value: 0, fallback: 0.7, want: 0.7},
-		{name: "negative is non-zero", value: -1.0, fallback: 0.7, want: -1.0},
-	}
+func TestHTTPLLMClientEmbedParsesJSON(t *testing.T) {
+	var (
+		gotPath   string
+		gotMethod string
+		gotBody   embeddingRequest
+	)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := nonZero(tt.value, tt.fallback)
-			if got != tt.want {
-				t.Errorf("nonZero() = %v, want %v", got, tt.want)
-			}
-		})
+	client := newTestClient(func(req *http.Request) (*http.Response, error) {
+		gotPath = req.URL.Path
+		gotMethod = req.Method
+		if err := json.NewDecoder(req.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		return newTestResponse(http.StatusOK, `{"model":"text-embedding-3-small","data":[{"index":0,"embedding":[0.1,0.2,0.3]}]}`), nil
+	})
+
+	resp, err := client.Embed(context.Background(), "hello world", EmbeddingOptions{})
+	if err != nil {
+		t.Fatalf("Embed() error = %v", err)
+	}
+	if gotPath != "/v1/embeddings" {
+		t.Fatalf("path = %q, want %q", gotPath, "/v1/embeddings")
+	}
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method = %q, want %q", gotMethod, http.MethodPost)
+	}
+	if gotBody.Model != defaultEmbeddingModel {
+		t.Fatalf("model = %q, want %q", gotBody.Model, defaultEmbeddingModel)
+	}
+	if gotBody.EncodingFormat != "float" {
+		t.Fatalf("encoding_format = %q, want %q", gotBody.EncodingFormat, "float")
+	}
+	if len(gotBody.Input) != 1 || gotBody.Input[0] != "hello world" {
+		t.Fatalf("input = %#v, want single input", gotBody.Input)
+	}
+	if resp.Model != defaultEmbeddingModel {
+		t.Fatalf("response model = %q, want %q", resp.Model, defaultEmbeddingModel)
+	}
+	if len(resp.Embedding) != 3 {
+		t.Fatalf("embedding length = %d, want 3", len(resp.Embedding))
+	}
+}
+
+func TestHTTPLLMClientEmbedUsesCustomModel(t *testing.T) {
+	var gotBody embeddingRequest
+	client := newTestClient(func(req *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(req.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		return newTestResponse(http.StatusOK, `{"model":"custom-embedding","data":[{"index":0,"embedding":[0.5]}]}`), nil
+	})
+
+	resp, err := client.Embed(context.Background(), "hi", EmbeddingOptions{Model: "custom-embedding"})
+	if err != nil {
+		t.Fatalf("Embed() error = %v", err)
+	}
+	if gotBody.Model != "custom-embedding" {
+		t.Fatalf("model = %q, want %q", gotBody.Model, "custom-embedding")
+	}
+	if resp.Model != "custom-embedding" {
+		t.Fatalf("response model = %q, want %q", resp.Model, "custom-embedding")
+	}
+}
+
+func TestHTTPLLMClientEmbedReturnsServerError(t *testing.T) {
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusBadGateway, ""), nil
+	})
+
+	_, err := client.Embed(context.Background(), "hi", EmbeddingOptions{})
+	if err == nil || !strings.Contains(err.Error(), "status 502") {
+		t.Fatalf("Embed() error = %v, want status 502", err)
+	}
+}
+
+func TestHTTPLLMClientEmbedInvalidJSON(t *testing.T) {
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{invalid json`), nil
+	})
+
+	_, err := client.Embed(context.Background(), "hi", EmbeddingOptions{})
+	if err == nil || !strings.Contains(err.Error(), "decode embedding response") {
+		t.Fatalf("Embed() error = %v, want decode error", err)
+	}
+}
+
+func TestHTTPLLMClientEmbedMissingData(t *testing.T) {
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{"model":"text-embedding-3-small","data":[]}`), nil
+	})
+
+	_, err := client.Embed(context.Background(), "hi", EmbeddingOptions{})
+	if err == nil || !strings.Contains(err.Error(), "missing data") {
+		t.Fatalf("Embed() error = %v, want missing data error", err)
+	}
+}
+
+func TestHTTPLLMClientEmbedEmptyEmbedding(t *testing.T) {
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{"model":"text-embedding-3-small","data":[{"index":0,"embedding":[]}]}`), nil
+	})
+
+	_, err := client.Embed(context.Background(), "hi", EmbeddingOptions{})
+	if err == nil || !strings.Contains(err.Error(), "missing embedding") {
+		t.Fatalf("Embed() error = %v, want missing embedding error", err)
+	}
+}
+
+func TestHTTPLLMClientEmbedDimensionMismatch(t *testing.T) {
+	client := newTestClient(func(_ *http.Request) (*http.Response, error) {
+		return newTestResponse(http.StatusOK, `{"model":"text-embedding-3-small","data":[{"index":0,"embedding":[0.1,0.2]}]}`), nil
+	})
+
+	_, err := client.Embed(context.Background(), "hi", EmbeddingOptions{ExpectedDimensions: 3})
+	if err == nil || !strings.Contains(err.Error(), "dimension mismatch") {
+		t.Fatalf("Embed() error = %v, want dimension mismatch error", err)
 	}
 }

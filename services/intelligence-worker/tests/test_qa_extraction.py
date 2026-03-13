@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
+
 from intelligence_worker.qa_extraction import (
     ConversationTurn,
     QAPair,
@@ -100,12 +102,63 @@ def test_extract_and_persist_failure_goes_to_dlq() -> None:
         session_id="s1",
         source_domain="estimation",
         turns=_sample_turns(),
+        dead_letter_context={
+            "event_id": "evt-1",
+            "event_type": "conversation.turn.completed",
+        },
     )
 
     assert pairs == []
     assert repo.saved_pairs is None
     assert len(dlq.calls) == 1
     assert dlq.calls[0]["reason"] == "qa_extraction_failed"
+    assert dlq.calls[0]["payload"]["event_id"] == "evt-1"
+
+
+def test_extract_and_persist_can_reraise_failures_for_retry_loop() -> None:
+    llm = _FakeLLM(response_text="{}", should_fail=True)
+    repo = _FakeRepo()
+    dlq = _FakeDLQ(calls=[])
+    extractor = QAPairExtractor(
+        llm_client=llm, repository=repo, dead_letter_publisher=dlq
+    )
+
+    with pytest.raises(RuntimeError, match="llm unavailable"):
+        extractor.extract_and_persist(
+            tenant_id="t1",
+            case_id="c1",
+            session_id="s1",
+            source_domain="estimation",
+            turns=_sample_turns(),
+            re_raise_errors=True,
+        )
+
+    assert len(dlq.calls) == 1
+
+
+def test_extract_and_persist_failure_can_reraise_for_retry_loop() -> None:
+    llm = _FakeLLM(response_text="{}", should_fail=True)
+    repo = _FakeRepo()
+    dlq = _FakeDLQ(calls=[])
+    extractor = QAPairExtractor(
+        llm_client=llm,
+        repository=repo,
+        dead_letter_publisher=dlq,
+    )
+
+    with pytest.raises(RuntimeError, match="llm unavailable"):
+        extractor.extract_and_persist(
+            tenant_id="t1",
+            case_id="c1",
+            session_id="s1",
+            source_domain="estimation",
+            turns=_sample_turns(),
+            dead_letter_context={"event_id": "evt-1"},
+            re_raise_errors=True,
+        )
+
+    assert repo.saved_pairs is None
+    assert len(dlq.calls) == 1
 
 
 def test_parse_structured_output() -> None:

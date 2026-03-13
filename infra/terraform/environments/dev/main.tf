@@ -161,3 +161,38 @@ module "scheduler" {
   target_uri            = "https://bd-dev-crawler-${var.region}.a.run.app"
   service_account_email = module.iam.control_api_service_account_email
 }
+
+# -----------------------------------------------------
+# GKE GPU (vLLM Qwen3.5 Inference — Issue #88, #90)
+# -----------------------------------------------------
+module "gke_gpu" {
+  source = "../../modules/gke-gpu"
+
+  project_id  = var.project_id
+  region      = var.region
+  environment = "dev"
+
+  network_id        = module.networking.network_id
+  private_subnet_id = module.networking.private_subnet_id
+
+  # Dev: L4 GPU with Spot instances, minimal scaling
+  gpu_machine_type      = "g2-standard-8"
+  gpu_accelerator_type  = "nvidia-l4"
+  gpu_accelerator_count = 1
+  max_node_count        = 1
+  min_node_count        = 0
+  enable_spot           = true
+  disk_size_gb          = 100
+
+  # Dev: VPC-internal only (GHA runners and Cloud Build operate within VPC)
+  master_authorized_cidr_blocks = [
+    { cidr_block = "10.0.0.0/8", display_name = "internal-vpc" },
+  ]
+
+  # Night/weekend shutdown for cost optimization (Issue #90)
+  enable_night_shutdown = true
+  scheduler_timezone    = "Asia/Tokyo"
+
+  # Model cache bucket (from storage module, optional)
+  model_cache_bucket = ""
+}

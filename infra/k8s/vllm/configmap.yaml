@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-config
+  namespace: llm-serving
+  labels:
+    app.kubernetes.io/name: vllm-qwen35-9b
+    app.kubernetes.io/component: llm-serving
+    app.kubernetes.io/part-of: grift-v2
+data:
+  # Model serving configuration
+  MODEL_NAME: "Qwen/Qwen3.5-9B"
+  DTYPE: "auto"
+  MAX_MODEL_LEN: "8192"
+  GPU_MEMORY_UTILIZATION: "0.9"
+  # vLLM server settings
+  SERVED_MODEL_NAME: "qwen35-9b"
+  MAX_NUM_SEQS: "64"
+  # Attention backend optimized for L4
+  VLLM_ATTENTION_BACKEND: "FLASHINFER"
+  # Disable usage stats reporting
+  VLLM_NO_USAGE_STATS: "1"
+  # Model cache directory
+  HF_HOME: "/models"

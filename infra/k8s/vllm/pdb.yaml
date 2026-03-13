@@ -1,0 +1,16 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vllm-qwen35-9b
+  namespace: llm-serving
+  labels:
+    app.kubernetes.io/name: vllm-qwen35-9b
+    app.kubernetes.io/component: llm-serving
+    app.kubernetes.io/part-of: grift-v2
+spec:
+  # PoC phase: allow full disruption for node upgrades.
+  # Production: raise to minAvailable: 1 when replicas >= 2.
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-qwen35-9b

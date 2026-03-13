@@ -91,6 +91,10 @@ func main() {
 	conversationHandler := handler.NewConversationHandler(conversationService)
 	handler.RegisterConversationRoutes(mux, conversationHandler)
 
+	ragSearchStore := store.NewSQLChunkEmbeddingStore(db)
+	ragSearchHandler := handler.NewRAGSearchHandler(ragSearchStore, llm)
+	handler.RegisterRAGSearchRoutes(mux, ragSearchHandler)
+
 	// Requirement artifact route (P3: RequirementArtifact GET endpoint)
 	reqArtifactStore := store.NewSQLRequirementArtifactStore(db)
 	reqArtifactHandler := handler.NewRequirementArtifactHandler(reqArtifactStore)

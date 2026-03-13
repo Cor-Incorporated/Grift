@@ -24,6 +24,11 @@ class Config:
     pubsub_subscription: str
     database_url: str
     llm_gateway_url: str
+    control_api_url: str
+    control_api_token: str | None
+    structured_output_model: str
+    intent_classifier_model: str
+    dead_letter_max_retries: int
     extractor_plugins: tuple[str, ...]
     db_pool_min: int = 1
     db_pool_max: int = 5
@@ -47,6 +52,17 @@ def load_config() -> Config:
         "PUBSUB_SUBSCRIPTION", "conversation-turn-completed-sub"
     )
     llm_gateway_url = os.environ.get("LLM_GATEWAY_URL", "http://localhost:8081")
+    control_api_url = os.environ.get("CONTROL_API_URL", "http://localhost:8080")
+    control_api_token = os.environ.get("CONTROL_API_TOKEN")
+    structured_output_model = os.environ.get(
+        "STRUCTURED_OUTPUT_MODEL",
+        "qwen3.5-7b",
+    )
+    intent_classifier_model = os.environ.get(
+        "INTENT_CLASSIFIER_MODEL",
+        "qwen3.5-9b",
+    )
+    dead_letter_max_retries = int(os.environ.get("DEAD_LETTER_MAX_RETRIES", "3"))
     db_pool_min = int(os.environ.get("DB_POOL_MIN", "1"))
     db_pool_max = int(os.environ.get("DB_POOL_MAX", "5"))
     extractor_plugins = tuple(
@@ -69,6 +85,11 @@ def load_config() -> Config:
         pubsub_subscription=pubsub_subscription,
         database_url=env_vars["DATABASE_URL"],  # type: ignore[arg-type]
         llm_gateway_url=llm_gateway_url,
+        control_api_url=control_api_url,
+        control_api_token=control_api_token,
+        structured_output_model=structured_output_model,
+        intent_classifier_model=intent_classifier_model,
+        dead_letter_max_retries=dead_letter_max_retries,
         extractor_plugins=extractor_plugins,
         db_pool_min=db_pool_min,
         db_pool_max=db_pool_max,
