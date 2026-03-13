@@ -1,6 +1,9 @@
 import { type DragEvent, type FormEvent, useRef, useState } from 'react'
 import { cn } from '@/lib/cn'
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
+const ACCEPTED_TYPES = 'application/pdf,.zip,.txt'
+
 interface SourceDocumentUploadAreaProps {
   isUploading: boolean
   error?: string | null | undefined
@@ -16,9 +19,6 @@ export function SourceDocumentUploadArea({
   onUploadFile,
   onUploadUrl,
 }: SourceDocumentUploadAreaProps) {
-  const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
-  const ACCEPTED_TYPES = 'application/pdf,.zip,.txt'
-
   const inputRef = useRef<HTMLInputElement>(null)
   const [sourceUrl, setSourceUrl] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -53,6 +53,9 @@ export function SourceDocumentUploadArea({
 
   function handleDragLeave(event: DragEvent<HTMLDivElement>) {
     event.preventDefault()
+    if (event.currentTarget.contains(event.relatedTarget as Node)) {
+      return
+    }
     setIsDragging(false)
   }
 

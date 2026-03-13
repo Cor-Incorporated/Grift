@@ -23,12 +23,15 @@ export function HearingMessageInput({
         {prompts.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-2">
             {prompts.slice(0, 3).map((prompt) => (
-              <span
+              <button
                 key={prompt.id}
-                className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600"
+                type="button"
+                disabled={disabled}
+                onClick={() => void onSend(prompt.label)}
+                className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {prompt.label}
-              </span>
+              </button>
             ))}
           </div>
         ) : null}

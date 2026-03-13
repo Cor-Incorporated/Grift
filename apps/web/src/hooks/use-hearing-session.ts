@@ -92,7 +92,9 @@ export function useHearingSession(caseId?: string): UseHearingSessionReturn {
   const [error, setError] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadNotice, setUploadNotice] = useState<string | null>(null)
-  const refreshTimeoutsRef = useRef<number[]>([])
+  const postTurnTimeoutsRef = useRef<number[]>([])
+  const uploadTimeoutsRef = useRef<number[]>([])
+  const isMountedRef = useRef(true)
 
   const {
     streamingContent,
@@ -102,11 +104,18 @@ export function useHearingSession(caseId?: string): UseHearingSessionReturn {
     cancelStream,
   } = useNDJSONStream()
 
-  const clearRefreshTimers = useCallback(() => {
-    refreshTimeoutsRef.current.forEach((timeoutId) => {
+  const clearPostTurnTimers = useCallback(() => {
+    postTurnTimeoutsRef.current.forEach((timeoutId) => {
       window.clearTimeout(timeoutId)
     })
-    refreshTimeoutsRef.current = []
+    postTurnTimeoutsRef.current = []
+  }, [])
+
+  const clearUploadTimers = useCallback(() => {
+    uploadTimeoutsRef.current.forEach((timeoutId) => {
+      window.clearTimeout(timeoutId)
+    })
+    uploadTimeoutsRef.current = []
   }, [])
 
   const refreshTurns = useCallback(async () => {
@@ -128,6 +137,10 @@ export function useHearingSession(caseId?: string): UseHearingSessionReturn {
     try {
       const nextArtifact = await getRequirementArtifact(caseId)
       setRequirementArtifact(nextArtifact)
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to refresh requirement artifact'
+      setError(message)
     } finally {
       setIsRefreshingArtifact(false)
     }
@@ -181,7 +194,7 @@ export function useHearingSession(caseId?: string): UseHearingSessionReturn {
   }, [caseId])
 
   const schedulePostTurnRefreshes = useCallback(() => {
-    clearRefreshTimers()
+    clearPostTurnTimers()
 
     const qaTimeoutId = window.setTimeout(() => {
       void Promise.allSettled([refreshTurns(), refreshObservations()]).then(
@@ -202,8 +215,8 @@ export function useHearingSession(caseId?: string): UseHearingSessionReturn {
       void refreshArtifact()
     }, ARTIFACT_REFRESH_DELAY_MS)
 
-    refreshTimeoutsRef.current = [qaTimeoutId, artifactTimeoutId]
-  }, [clearRefreshTimers, refreshArtifact, refreshObservations, refreshTurns])
+    postTurnTimeoutsRef.current = [qaTimeoutId, artifactTimeoutId]
+  }, [clearPostTurnTimers, refreshArtifact, refreshObservations, refreshTurns])
 
   useEffect(() => {
     void refreshSession()
@@ -216,11 +229,14 @@ export function useHearingSession(caseId?: string): UseHearingSessionReturn {
   }, [streamError])
 
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
-      clearRefreshTimers()
+      isMountedRef.current = false
+      clearPostTurnTimers()
+      clearUploadTimers()
       cancelStream()
     }
-  }, [cancelStream, clearRefreshTimers])
+  }, [cancelStream, clearPostTurnTimers, clearUploadTimers])
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -238,7 +254,7 @@ export function useHearingSession(caseId?: string): UseHearingSessionReturn {
       setError(null)
 
       const assistantTurn = await sendStreamMessage(caseId, content)
-      if (!assistantTurn) {
+      if (!assistantTurn || !isMountedRef.current) {
         return
       }
 
@@ -272,7 +288,7 @@ export function useHearingSession(caseId?: string): UseHearingSessionReturn {
         const document = await uploadSourceDocument(caseId, { file })
         appendUploadedDocument(document)
         setUploadNotice('Source document queued for processing.')
-        refreshTimeoutsRef.current.push(
+        uploadTimeoutsRef.current.push(
           window.setTimeout(() => {
             void refreshSourceDocs()
           }, SOURCE_DOCUMENT_REFRESH_DELAY_MS),
@@ -300,7 +316,7 @@ export function useHearingSession(caseId?: string): UseHearingSessionReturn {
         const document = await uploadSourceDocument(caseId, { sourceUrl })
         appendUploadedDocument(document)
         setUploadNotice('Source URL queued for processing.')
-        refreshTimeoutsRef.current.push(
+        uploadTimeoutsRef.current.push(
           window.setTimeout(() => {
             void refreshSourceDocs()
           }, SOURCE_DOCUMENT_REFRESH_DELAY_MS),

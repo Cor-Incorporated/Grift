@@ -3,9 +3,10 @@ interface SpecMarkdownViewerProps {
 }
 
 function renderLine(line: string, index: number) {
+  const key = `${index}:${line.slice(0, 40)}`
   if (line.startsWith('### ')) {
     return (
-      <h4 key={index} className="text-balance text-base font-semibold text-slate-900">
+      <h4 key={key} className="text-balance text-base font-semibold text-slate-900">
         {line.slice(4)}
       </h4>
     )
@@ -13,7 +14,7 @@ function renderLine(line: string, index: number) {
 
   if (line.startsWith('## ')) {
     return (
-      <h3 key={index} className="text-balance text-lg font-semibold text-slate-950">
+      <h3 key={key} className="text-balance text-lg font-semibold text-slate-950">
         {line.slice(3)}
       </h3>
     )
@@ -21,15 +22,18 @@ function renderLine(line: string, index: number) {
 
   if (line.startsWith('# ')) {
     return (
-      <h2 key={index} className="text-balance text-xl font-semibold text-slate-950">
+      <h2 key={key} className="text-balance text-xl font-semibold text-slate-950">
         {line.slice(2)}
       </h2>
     )
   }
 
+  // NOTE: List items are rendered as individual <p> elements rather than
+  // proper <ul>/<ol> containers. Grouping consecutive list items into
+  // semantic list elements would require a multi-pass parser.
   if (/^[-*] /.test(line)) {
     return (
-      <p key={index} className="pl-4 text-pretty text-sm text-slate-700">
+      <p key={key} className="pl-4 text-pretty text-sm text-slate-700">
         • {line.slice(2)}
       </p>
     )
@@ -37,18 +41,18 @@ function renderLine(line: string, index: number) {
 
   if (/^\d+\. /.test(line)) {
     return (
-      <p key={index} className="pl-4 text-pretty text-sm text-slate-700">
+      <p key={key} className="pl-4 text-pretty text-sm text-slate-700">
         {line}
       </p>
     )
   }
 
   if (line.trim() === '') {
-    return <div key={index} className="h-1" />
+    return <div key={key} className="h-1" />
   }
 
   return (
-    <p key={index} className="text-pretty text-sm leading-6 text-slate-700">
+    <p key={key} className="text-pretty text-sm leading-6 text-slate-700">
       {line}
     </p>
   )

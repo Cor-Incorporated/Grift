@@ -40,6 +40,11 @@ export function HearingRightPanel({
               </p>
             </div>
           ))}
+          {checklistItems.length > 4 ? (
+            <p className="text-center text-xs text-slate-500">
+              + {checklistItems.length - 4} more items
+            </p>
+          ) : null}
           {checklistItems.length === 0 ? (
             <p className="text-pretty text-sm text-slate-600">
               Completeness scoring will appear after the assistant finishes a turn.
