@@ -137,4 +137,6 @@ def test_turn_completed_handler_persists_partial_completeness_feedback_loop() ->
     assert snapshot.checklist["tech_stack"].status == "collected"
     assert snapshot.checklist["budget"].status == "partial"
     assert snapshot.checklist["scope"].status == "missing"
-    assert sorted(snapshot.suggested_next_topics) == sorted(("budget", "scope", "timeline", "team"))
+    assert sorted(snapshot.suggested_next_topics) == sorted(
+        ("budget", "scope", "timeline", "team")
+    )
