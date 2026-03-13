@@ -240,6 +240,11 @@ class EstimateRepository:
                     query.tenant_id,
                 ),
             )
+            if cur.rowcount == 0:
+                raise LookupError(
+                    f"UPDATE matched no rows for estimate {query.estimate_id} "
+                    f"tenant {query.tenant_id}"
+                )
 
     def _load_market_evidence(
         self,
