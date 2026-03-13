@@ -294,7 +294,7 @@ func TestSQLEstimateStoreUpdateThreeWayProposalNotFound(t *testing.T) {
 
 	store := NewSQLEstimateStore(db)
 	err = store.UpdateThreeWayProposal(context.Background(), tenantID, estimateID, proposal)
-	if !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("err = %v, want sql.ErrNoRows", err)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }

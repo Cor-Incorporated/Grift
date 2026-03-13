@@ -115,6 +115,9 @@ func (p *Publisher) PublishEstimateCompleted(ctx context.Context, input Estimate
 	if input.EstimateID == uuid.Nil {
 		return fmt.Errorf("estimate_id is required")
 	}
+	if input.CaseID == uuid.Nil {
+		return fmt.Errorf("case_id is required")
+	}
 
 	eventID := p.newUUID()
 	event := envelope{
@@ -123,7 +126,7 @@ func (p *Publisher) PublishEstimateCompleted(ctx context.Context, input Estimate
 		TenantID:       input.TenantID.String(),
 		AggregateType:  defaultAggregateType,
 		AggregateID:    input.EstimateID.String(),
-		IdempotencyKey: input.EstimateID.String(),
+		IdempotencyKey: input.EstimateID.String() + ":completed",
 		OccurredAt:     p.now().UTC().Format(time.RFC3339),
 		Producer:       defaultProducerName,
 		SourceDomain:   defaultSourceDomain,

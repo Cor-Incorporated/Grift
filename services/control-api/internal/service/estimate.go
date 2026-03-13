@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/estimateevent"
@@ -89,7 +89,10 @@ func (s *EstimateService) Create(ctx context.Context, input CreateEstimateInput)
 			Mode:       string(mode),
 			Region:     region,
 		}); pubErr != nil {
-			log.Printf("WARN: failed to publish EstimateRequested event estimate_id=%s error=%v", estimateID, pubErr)
+			slog.WarnContext(ctx, "failed to publish EstimateRequested event",
+			"estimate_id", estimateID.String(),
+			"error", pubErr,
+		)
 		}
 	}
 

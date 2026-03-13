@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
@@ -11,6 +12,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
+
+// ErrNotFound is returned when a store operation targets a non-existent row.
+var ErrNotFound = errors.New("not found")
 
 // EstimateStore defines the persistence operations for estimates.
 type EstimateStore interface {
@@ -187,7 +191,7 @@ func (s *SQLEstimateStore) UpdateThreeWayProposal(ctx context.Context, tenantID,
 		return fmt.Errorf("update three_way_proposal rows affected: %w", err)
 	}
 	if n == 0 {
-		return sql.ErrNoRows
+		return ErrNotFound
 	}
 
 	return nil
