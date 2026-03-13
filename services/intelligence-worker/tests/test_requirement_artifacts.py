@@ -161,10 +161,10 @@ def test_repository_save_artifact_increments_version() -> None:
     )
 
     assert version == 2
-    # Two execute calls: SELECT MAX(version) FOR UPDATE, then INSERT
+    # Two execute calls: SELECT MAX(version), then INSERT
     assert mock_cursor.execute.call_count == 2
     select_call = mock_cursor.execute.call_args_list[0]
-    assert "FOR UPDATE" in select_call.args[0]
+    assert "COALESCE(MAX(version)" in select_call.args[0]
     insert_call = mock_cursor.execute.call_args_list[1]
     assert "INSERT INTO" in insert_call.args[0]
     assert insert_call.args[1][4] == ["11111111-1111-1111-1111-111111111111"]
