@@ -18,7 +18,10 @@ from psycopg2 import errors as psycopg_errors
 from intelligence_worker.classification import (
     ControlAPICaseTypeClient,
     GatewayIntentClassifier,
+    GatewayMissingInfoExtractor,
     IntentClassifier,
+    MissingInfoExtractor,
+    MissingInfoResult,
 )
 from intelligence_worker.completeness_tracker import (
     CompletenessTrackingRepository,
@@ -250,6 +253,7 @@ class TurnCompletedHandler:
         extractor: QAPairExtractor,
         intent_classifier: IntentClassifier | None = None,
         case_type_client: CaseTypeSyncClient | None = None,
+        missing_info_extractor: MissingInfoExtractor | None = None,
         completeness_repository: CompletenessTrackingRepository | None = None,
         artifact_repository: RequirementArtifactRepository | None = None,
         artifact_generator: RequirementArtifactGenerator | None = None,
@@ -259,6 +263,7 @@ class TurnCompletedHandler:
         self._extractor = extractor
         self._intent_classifier = intent_classifier
         self._case_type_client = case_type_client
+        self._missing_info_extractor = missing_info_extractor
         self._completeness_repository = completeness_repository
         self._artifact_repository = artifact_repository
         self._artifact_generator = artifact_generator
@@ -272,7 +277,8 @@ class TurnCompletedHandler:
         if self._retry_processor is not None:
             self._retry_processor.run_once(tenant_id=context.tenant_id)
 
-        self._classify_case_type(context)
+        classification_result = self._classify_case_type(context)
+        self._extract_missing_info(context, intent=classification_result)
         pairs = self._extract_current_turn(context, raise_on_failure=False)
         self._persist_completeness(context, pairs)
         self._persist_requirement_artifact(context)
@@ -322,9 +328,17 @@ class TurnCompletedHandler:
             turns=turns,
         )
 
-    def _classify_case_type(self, context: TurnCompletedContext) -> None:
+    def _classify_case_type(self, context: TurnCompletedContext) -> str | None:
+        """Classify the case type and sync to control API.
+
+        Args:
+            context: Normalized event context.
+
+        Returns:
+            The classified intent label, or None if skipped.
+        """
         if self._intent_classifier is None or self._case_type_client is None:
-            return
+            return None
 
         raw_text = "\n".join(
             turn.content.strip()
@@ -336,7 +350,7 @@ class TurnCompletedHandler:
                 turn.content.strip() for turn in context.turns if turn.content.strip()
             )
         if not raw_text:
-            return
+            return None
 
         result = self._intent_classifier.classify(raw_text)
         try:
@@ -361,6 +375,53 @@ class TurnCompletedHandler:
                 intent=result.intent,
                 error=str(exc),
             )
+        return result.intent
+
+    def _extract_missing_info(
+        self,
+        context: TurnCompletedContext,
+        *,
+        intent: str | None,
+    ) -> MissingInfoResult | None:
+        """Run missing info extraction after intent classification.
+
+        Args:
+            context: Normalized event context.
+            intent: Classified intent label from the prior step.
+
+        Returns:
+            Extraction result, or None if skipped or failed.
+        """
+        if self._missing_info_extractor is None:
+            return None
+
+        raw_text = "\n".join(
+            turn.content.strip() for turn in context.turns if turn.content.strip()
+        )
+        if not raw_text:
+            return None
+
+        try:
+            result = self._missing_info_extractor.extract_missing(
+                raw_text, intent=intent
+            )
+            logger.info(
+                "missing_info_extracted",
+                case_id=context.session_id,
+                tenant_id=context.tenant_id,
+                missing_count=len(result.missing_topics),
+                confidence=result.confidence,
+                intent=intent,
+            )
+            return result
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "missing_info_extraction_failed",
+                case_id=context.session_id,
+                tenant_id=context.tenant_id,
+                error=str(exc),
+            )
+            return None
 
     def _extract_current_turn(
         self,
@@ -498,6 +559,12 @@ def run() -> None:
         ),
         intent_classifier=IntentClassifier(
             gateway_client=GatewayIntentClassifier(
+                base_url=config.llm_gateway_url,
+                model=config.intent_classifier_model,
+            )
+        ),
+        missing_info_extractor=MissingInfoExtractor(
+            gateway_client=GatewayMissingInfoExtractor(
                 base_url=config.llm_gateway_url,
                 model=config.intent_classifier_model,
             )
