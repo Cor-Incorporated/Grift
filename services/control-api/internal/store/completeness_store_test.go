@@ -19,7 +19,7 @@ func TestSQLCompletenessStore_GetByCaseID(t *testing.T) {
 		wantNil    bool
 		wantErr    bool
 		wantTopics []string
-		wantStatus string
+		wantStatus CompletenessStatus
 		wantScore  float64
 	}{
 		{
@@ -37,7 +37,7 @@ func TestSQLCompletenessStore_GetByCaseID(t *testing.T) {
 					)
 			},
 			wantTopics: []string{"budget", "timeline"},
-			wantStatus: "partial",
+			wantStatus: StatusPartial,
 			wantScore:  0.6,
 		},
 		{

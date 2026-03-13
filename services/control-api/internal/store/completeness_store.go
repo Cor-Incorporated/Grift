@@ -11,10 +11,20 @@ import (
 	"github.com/lib/pq"
 )
 
+// CompletenessStatus represents the collection state of a checklist item.
+// Valid values align with the OpenAPI enum: collected, partial, missing.
+type CompletenessStatus string
+
+const (
+	StatusCollected CompletenessStatus = "collected"
+	StatusPartial   CompletenessStatus = "partial"
+	StatusMissing   CompletenessStatus = "missing"
+)
+
 // CompletenessChecklistItem is the persisted per-topic status payload.
 type CompletenessChecklistItem struct {
-	Status     string  `json:"status"`
-	Confidence float64 `json:"confidence"`
+	Status     CompletenessStatus `json:"status"`
+	Confidence float64            `json:"confidence"`
 }
 
 // CompletenessObservation is the API-facing completeness snapshot.
@@ -49,7 +59,7 @@ func (s *SQLCompletenessStore) GetByCaseID(ctx context.Context, tenantID, caseID
 	const query = `
 		SELECT checklist, overall_completeness, suggested_next_topics
 		FROM completeness_tracking
-		WHERE tenant_id = $1 AND session_id = $2
+		WHERE tenant_id = $1 AND session_id = $2 AND source_domain = 'estimation'
 		ORDER BY updated_at DESC, created_at DESC
 		LIMIT 1
 	`

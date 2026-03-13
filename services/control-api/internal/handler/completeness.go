@@ -27,11 +27,6 @@ func RegisterCompletenessRoutes(mux *http.ServeMux, h *CompletenessHandler) {
 
 // GetByCaseID handles GET /v1/cases/{caseId}/observation/completeness.
 func (h *CompletenessHandler) GetByCaseID(w http.ResponseWriter, r *http.Request) {
-	if h.store == nil {
-		writeJSON(w, http.StatusServiceUnavailable, errorBody("completeness store not configured"))
-		return
-	}
-
 	tenantID, ok := parseTenantUUID(w, r)
 	if !ok {
 		return

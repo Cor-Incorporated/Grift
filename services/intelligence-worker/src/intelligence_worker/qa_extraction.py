@@ -180,7 +180,7 @@ class QAPairExtractor:
                 ),
                 turn_count=len(turns),
             )
-        except ValueError as exc:  # Unknown domain — no completeness signal available
+        except Exception as exc:  # noqa: BLE001 — build_tracking_snapshot / infer_collected_items may raise various errors
             logger.warning("build_system_prompt_skipped", error=str(exc))
             return None
         return build_extraction_prompt_feedback(snapshot)
