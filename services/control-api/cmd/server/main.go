@@ -14,6 +14,7 @@ import (
 
 	"cloud.google.com/go/pubsub/v2"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/conversation"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/estimateevent"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/github"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/handler"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/llmclient"
@@ -106,6 +107,19 @@ func main() {
 	marketEvidenceService := service.NewMarketEvidenceService(marketEvidenceStore, marketPublisher)
 	marketEvidenceHandler := handler.NewMarketEvidenceHandler(marketEvidenceService)
 	handler.RegisterMarketEvidenceRoutes(mux, marketEvidenceHandler)
+
+	// Estimate routes (P4-03)
+	var estimatePublisher *estimateevent.Publisher
+	if pubsubClient != nil {
+		estimatePublisher = estimateevent.NewPublisher(
+			conversation.NewPubSubPublisher(pubsubClient),
+			os.Getenv("ESTIMATE_PUBSUB_TOPIC"),
+		)
+	}
+	estimateStore := store.NewSQLEstimateStore(db)
+	estimateService := service.NewEstimateService(estimateStore, estimatePublisher)
+	estimateHandler := handler.NewEstimateHandler(estimateService)
+	handler.RegisterEstimateRoutes(mux, estimateHandler)
 
 	ragSearchStore := store.NewSQLChunkEmbeddingStore(db)
 	ragSearchHandler := handler.NewRAGSearchHandler(ragSearchStore, llm)
