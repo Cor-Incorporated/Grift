@@ -132,14 +132,14 @@ class TestMissingFieldDataclass:
 class TestMissingInfoResult:
     def test_default_values(self) -> None:
         result = MissingInfoResult()
-        assert result.missing_topics == []
-        assert result.follow_up_questions == []
+        assert result.missing_topics == ()
+        assert result.follow_up_questions == ()
         assert result.confidence == 0.0
 
     def test_frozen(self) -> None:
         result = MissingInfoResult(
-            missing_topics=["budget"],
-            follow_up_questions=["予算は？"],
+            missing_topics=("budget",),
+            follow_up_questions=("予算は？",),
             confidence=0.85,
         )
         with pytest.raises(AttributeError):
@@ -165,8 +165,8 @@ class TestRuleBasedMissingInfoExtractor:
             "ECサイトの要件: 予算500万円、納期は来月末、"
             "Reactフレームワークで、チーム5人体制"
         )
-        assert result.missing_topics == []
-        assert result.follow_up_questions == []
+        assert result.missing_topics == ()
+        assert result.follow_up_questions == ()
         assert result.confidence == 1.0
 
     def test_partial_text_returns_missing_only(self) -> None:
@@ -219,8 +219,8 @@ class TestGatewayMissingInfoExtractor:
             result = client.extract_missing("新規アプリを作りたい")
 
         assert result == MissingInfoResult(
-            missing_topics=["budget", "timeline"],
-            follow_up_questions=["予算は？", "納期は？"],
+            missing_topics=("budget", "timeline"),
+            follow_up_questions=("予算は？", "納期は？"),
             confidence=0.88,
         )
         request = urlopen.call_args.args[0]
@@ -279,7 +279,7 @@ class TestGatewayMissingInfoExtractor:
             )
             result = client.extract_missing("test")
 
-        assert result.missing_topics == ["scope"]
+        assert result.missing_topics == ("scope",)
         assert result.confidence == 0.7
 
 
@@ -292,14 +292,14 @@ class TestMissingInfoExtractorComposite:
     def test_uses_gateway_when_available(self) -> None:
         gateway = _GatewayStub(
             result=MissingInfoResult(
-                missing_topics=["budget"],
-                follow_up_questions=["予算は？"],
+                missing_topics=("budget",),
+                follow_up_questions=("予算は？",),
                 confidence=0.9,
             )
         )
         extractor = MissingInfoExtractor(gateway_client=gateway)
         result = extractor.extract_missing("新規アプリ", intent="new_project")
-        assert result.missing_topics == ["budget"]
+        assert result.missing_topics == ("budget",)
         assert gateway.calls == [("新規アプリ", "new_project")]
 
     def test_falls_back_when_gateway_raises(self) -> None:

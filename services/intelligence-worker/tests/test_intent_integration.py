@@ -138,8 +138,8 @@ class TestIntentAndMissingInfoPipeline:
         )
         missing_gateway = _StubMissingInfoGateway(
             MissingInfoResult(
-                missing_topics=["budget", "timeline"],
-                follow_up_questions=["予算は？", "納期は？"],
+                missing_topics=("budget", "timeline"),
+                follow_up_questions=("予算は？", "納期は？"),
                 confidence=0.87,
             )
         )
@@ -187,8 +187,8 @@ class TestIntentAndMissingInfoPipeline:
         )
         missing_gateway = _StubMissingInfoGateway(
             MissingInfoResult(
-                missing_topics=["timeline"],
-                follow_up_questions=["修正はいつまでに必要ですか？"],
+                missing_topics=("timeline",),
+                follow_up_questions=("修正はいつまでに必要ですか？",),
                 confidence=0.91,
             )
         )
@@ -213,8 +213,8 @@ class TestIntentAndMissingInfoPipeline:
         turns = _make_turns([("user", "何か作りたい")])
         missing_gateway = _StubMissingInfoGateway(
             MissingInfoResult(
-                missing_topics=["project_scope", "budget"],
-                follow_up_questions=["何を作りますか？", "予算は？"],
+                missing_topics=("project_scope", "budget"),
+                follow_up_questions=("何を作りますか？", "予算は？"),
                 confidence=0.7,
             )
         )

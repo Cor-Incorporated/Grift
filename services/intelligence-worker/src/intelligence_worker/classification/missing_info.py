@@ -13,7 +13,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +68,8 @@ class MissingInfoResult:
         confidence: Model confidence in the extraction (0.0-1.0).
     """
 
-    missing_topics: list[str] = field(default_factory=list)
-    follow_up_questions: list[str] = field(default_factory=list)
+    missing_topics: tuple[str, ...] = ()
+    follow_up_questions: tuple[str, ...] = ()
     confidence: float = 0.0
 
 
@@ -236,8 +236,8 @@ class RuleBasedMissingInfoExtractor:
         del intent  # unused in rule-based path
         fields = _extract_fields_rule_based(raw_text)
         return MissingInfoResult(
-            missing_topics=[f.field_name for f in fields],
-            follow_up_questions=[f.question for f in fields],
+            missing_topics=tuple(f.field_name for f in fields),
+            follow_up_questions=tuple(f.question for f in fields),
             confidence=0.4 if fields else 1.0,
         )
 
@@ -337,14 +337,20 @@ def _extract_fields_rule_based(raw_text: str) -> list[MissingField]:
 def _strip_markdown_fences(content: str) -> str:
     """Strip markdown code fences that LLMs frequently wrap around JSON."""
     text = content.strip()
+    stripped_opening = False
     if text.startswith("```"):
         first_newline = text.find("\n")
         if first_newline == -1:
             text = re.sub(r"^```\w*", "", text)
         else:
             text = text[first_newline + 1 :]
-    if text.endswith("```"):
-        text = text[:-3]
+        stripped_opening = True
+    if stripped_opening:
+        closing_pos = text.rfind("\n```")
+        if closing_pos != -1:
+            text = text[:closing_pos]
+        elif text.endswith("```"):
+            text = text[:-3]
     return text.strip()
 
 
@@ -369,8 +375,8 @@ def _parse_missing_info_json(content: str) -> MissingInfoResult:
     confidence = _clamp01(raw.get("confidence", 0.0))
 
     return MissingInfoResult(
-        missing_topics=missing_topics,
-        follow_up_questions=follow_up_questions,
+        missing_topics=tuple(missing_topics),
+        follow_up_questions=tuple(follow_up_questions),
         confidence=confidence,
     )
 

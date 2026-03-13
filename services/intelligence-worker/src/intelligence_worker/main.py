@@ -23,6 +23,9 @@ from intelligence_worker.classification import (
     MissingInfoExtractor,
     MissingInfoResult,
 )
+from intelligence_worker.classification.missing_info import (
+    DEFAULT_QWEN_MODEL as _MISSING_INFO_DEFAULT_MODEL,
+)
 from intelligence_worker.completeness_tracker import (
     CompletenessTrackingRepository,
     build_tracking_snapshot,
@@ -243,6 +246,32 @@ class CaseTypeSyncClient(Protocol):
     def patch_case_type(self, *, tenant_id: str, case_id: str, intent: str) -> str: ...
 
 
+def _build_raw_text(
+    turns: list[ConversationTurn], *, user_only: bool = False
+) -> str:
+    """Join turn contents into a single text block.
+
+    Args:
+        turns: Conversation turns to combine.
+        user_only: If True, include only user-role turns; falls back to
+            all turns when user-only yields an empty string.
+
+    Returns:
+        Combined text, or empty string when no content is available.
+    """
+    if user_only:
+        text = "\n".join(
+            turn.content.strip()
+            for turn in turns
+            if turn.role == "user" and turn.content.strip()
+        )
+        if text:
+            return text
+    return "\n".join(
+        turn.content.strip() for turn in turns if turn.content.strip()
+    )
+
+
 class TurnCompletedHandler:
     """Sync Pub/Sub callback for the QA pipeline."""
 
@@ -278,6 +307,7 @@ class TurnCompletedHandler:
             self._retry_processor.run_once(tenant_id=context.tenant_id)
 
         classification_result = self._classify_case_type(context)
+        # TODO: persist/publish missing_info_result once downstream consumer is ready
         self._extract_missing_info(context, intent=classification_result)
         pairs = self._extract_current_turn(context, raise_on_failure=False)
         self._persist_completeness(context, pairs)
@@ -340,15 +370,7 @@ class TurnCompletedHandler:
         if self._intent_classifier is None or self._case_type_client is None:
             return None
 
-        raw_text = "\n".join(
-            turn.content.strip()
-            for turn in context.turns
-            if turn.role == "user" and turn.content.strip()
-        )
-        if not raw_text:
-            raw_text = "\n".join(
-                turn.content.strip() for turn in context.turns if turn.content.strip()
-            )
+        raw_text = _build_raw_text(context.turns, user_only=True)
         if not raw_text:
             return None
 
@@ -395,9 +417,7 @@ class TurnCompletedHandler:
         if self._missing_info_extractor is None:
             return None
 
-        raw_text = "\n".join(
-            turn.content.strip() for turn in context.turns if turn.content.strip()
-        )
+        raw_text = _build_raw_text(context.turns)
         if not raw_text:
             return None
 
@@ -563,10 +583,12 @@ def run() -> None:
                 model=config.intent_classifier_model,
             )
         ),
+        # TODO: missing_info may need a separate config field if models diverge
+        #       from intent classification.
         missing_info_extractor=MissingInfoExtractor(
             gateway_client=GatewayMissingInfoExtractor(
                 base_url=config.llm_gateway_url,
-                model=config.intent_classifier_model,
+                model=config.intent_classifier_model or _MISSING_INFO_DEFAULT_MODEL,
             )
         ),
         case_type_client=ControlAPICaseTypeClient(
