@@ -94,12 +94,9 @@ spec:
             - name: shm
               mountPath: /dev/shm
       volumes:
-        # TODO: Replace emptyDir with a PVC or GCS-fuse backed volume before
-        # staging promotion. emptyDir causes ~18GB model re-download on every
-        # pod restart, increasing cold-start time and egress costs.
         - name: model-cache
-          emptyDir:
-            sizeLimit: 30Gi
+          persistentVolumeClaim:
+            claimName: vllm-model-cache
         - name: shm
           emptyDir:
             medium: Memory

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -150,6 +151,9 @@ func float32VectorLiteral(values []float32) (string, error) {
 	var builder strings.Builder
 	builder.WriteByte('[')
 	for i, value := range values {
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return "", fmt.Errorf("embedding contains non-finite value at index %d", i)
+		}
 		if i > 0 {
 			builder.WriteByte(',')
 		}
@@ -167,6 +171,9 @@ func float64VectorLiteral(values []float64) (string, error) {
 	var builder strings.Builder
 	builder.WriteByte('[')
 	for i, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return "", fmt.Errorf("embedding contains non-finite value at index %d", i)
+		}
 		if i > 0 {
 			builder.WriteByte(',')
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -211,6 +212,31 @@ func TestPGVectorLiteral(t *testing.T) {
 			name:      "float32 literal",
 			input:     []float32{0.4, 0.5},
 			wantValue: "[0.4,0.5]",
+		},
+		{
+			name:    "float64 NaN rejected",
+			input:   []float64{0.1, math.NaN(), 0.3},
+			wantErr: "non-finite value at index 1",
+		},
+		{
+			name:    "float64 +Inf rejected",
+			input:   []float64{math.Inf(1), 0.2},
+			wantErr: "non-finite value at index 0",
+		},
+		{
+			name:    "float64 -Inf rejected",
+			input:   []float64{0.1, math.Inf(-1)},
+			wantErr: "non-finite value at index 1",
+		},
+		{
+			name:    "float32 NaN rejected",
+			input:   []float32{float32(math.NaN()), 0.5},
+			wantErr: "non-finite value at index 0",
+		},
+		{
+			name:    "float32 Inf rejected",
+			input:   []float32{0.4, float32(math.Inf(1))},
+			wantErr: "non-finite value at index 1",
 		},
 		{
 			name:    "unsupported type",
