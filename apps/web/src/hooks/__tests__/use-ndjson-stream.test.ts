@@ -52,8 +52,8 @@ describe('useNDJSONStream', () => {
 
     expect(result.current.isStreaming).toBe(false)
     expect(result.current.error).toBeNull()
-    // streamingContent holds the accumulated content from the stream
-    expect(result.current.streamingContent).toBe('Hello world')
+    // streamingContent is cleared after stream completes (finally block)
+    expect(result.current.streamingContent).toBe('')
   })
 
   it('handles error chunks', async () => {
@@ -136,7 +136,8 @@ describe('useNDJSONStream', () => {
       await turnPromise!
     })
 
-    expect(result.current.streamingContent).toBe('buffered')
+    // streamingContent is cleared after stream completes (finally block)
+    expect(result.current.streamingContent).toBe('')
     expect(result.current.error).toBeNull()
   })
 })
