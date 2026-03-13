@@ -35,6 +35,7 @@ export interface NDJSONErrorChunk {
 export interface NDJSONDoneChunk {
   type: 'done'
   done: boolean
+  turn_id?: string
   event_type?: 'conversation.turn.completed'
   data_classification?: 'public' | 'internal' | 'confidential' | 'restricted'
 }
