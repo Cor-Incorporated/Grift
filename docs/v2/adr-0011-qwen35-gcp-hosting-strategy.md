@@ -103,14 +103,32 @@ Qwen3.5 を直接叩くのは禁止する。
 
 ### ルーティング
 
-1. Restricted データ
+1. Restricted データ（日本語会話・顧客資料）
    - GKE + vLLM 上の Qwen3.5 に送る
 2. 軽量分類
-   - `Qwen3.5-9B`
+   - `Qwen3.5-9B`（常駐、~5GB VRAM）
 3. 高精度な内部生成
-   - `Qwen3.5-35B-A3B`
-4. 外部検索や引用が必要
+   - `Qwen3.5-35B-A3B`（オンデマンド、~20GB Q4）
+4. Market Intelligence 検索結果の構造化
+   - `GLM-4.7-Flash`（オンデマンド、~16GB Q4）
+5. 外部検索や引用が必要
    - クラウド LLM を使う
+
+### マルチモデル時分割運用
+
+`Qwen3.5-35B-A3B` と `GLM-4.7-Flash` は同一 L4 GPU 上で時分割運用する。両モデルを同時にロードしない。
+
+- `llm-gateway` がリクエストの `task_type` に基づき使用モデルを決定する
+- モデル切り替え時はアイドル状態のモデルをアンロード → 新モデルをロード
+- Market Intelligence は Pub/Sub 非同期タスクのため、切り替えレイテンシ（数十秒）は許容範囲
+- 常駐する `Qwen3.5-9B` は別プロセスで軽量に動作し、切り替えの影響を受けない
+
+GLM-4.7-Flash の選定根拠（ADR-0001 参照）:
+
+- 30B-A3B MoE（アクティブ 3B）で Qwen と同一 GPU リソースで動作
+- エージェントタスク（tau2-Bench: 79.5）、Web 検索結果の構造化（BrowseComp: 42.8）で優位
+- MIT ライセンス
+- vLLM サポート済み（main ブランチ）
 
 ### PoC 順序
 
@@ -118,6 +136,7 @@ Qwen3.5 を直接叩くのは禁止する。
 2. `llm-gateway` にモデルルーティングを実装
 3. Deep Ingestion と Intake を 9B で接続
 4. `Qwen3.5-35B-A3B` は別途 benchmark 後に追加
+5. `GLM-4.7-Flash` を Phase 4 Market Intelligence に合わせて追加（P2-04 でベンチマーク）
 
 ## 理由
 
@@ -185,3 +204,5 @@ Cloud Run GPU は魅力的だが、1 GPU / instance であること、対応 GPU
   - https://cloud.google.com/vertex-ai/generative-ai/docs/open-models/deploy-model-garden
 - Google Cloud, GPU support for Cloud Run services
   - https://cloud.google.com/run/docs/configuring/services/gpu
+- Z.ai, GLM-4.7-Flash Hugging Face Model Card
+  - https://huggingface.co/zai-org/GLM-4.7-Flash
