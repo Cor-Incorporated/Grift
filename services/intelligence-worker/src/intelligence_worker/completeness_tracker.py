@@ -13,6 +13,7 @@ from psycopg2 import errors as psycopg_errors  # type: ignore[import-untyped]
 
 COMPLETENESS_THRESHOLD = 0.8
 PARTIAL_COMPLETENESS_CONFIDENCE = 0.75
+FOLLOW_UP_COMPLETENESS_THRESHOLD = 0.4
 
 logger = structlog.get_logger()
 
@@ -262,7 +263,7 @@ def build_extraction_prompt_feedback(
             "Most checklist items are already covered. Avoid repeating settled facts "
             "and only surface unresolved or weakly-supported topics."
         )
-    elif snapshot.overall_completeness >= 0.4:
+    elif snapshot.overall_completeness >= FOLLOW_UP_COMPLETENESS_THRESHOLD:
         stage = "follow_up"
         guidance = (
             "The conversation is partially complete. Prioritize unresolved checklist "

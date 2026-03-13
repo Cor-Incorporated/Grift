@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/store"
@@ -14,6 +14,9 @@ type CompletenessHandler struct {
 
 // NewCompletenessHandler creates a CompletenessHandler with the given store.
 func NewCompletenessHandler(s store.CompletenessStore) *CompletenessHandler {
+	if s == nil {
+		panic("completeness store must not be nil")
+	}
 	return &CompletenessHandler{store: s}
 }
 
@@ -40,7 +43,7 @@ func (h *CompletenessHandler) GetByCaseID(w http.ResponseWriter, r *http.Request
 
 	observation, err := h.store.GetByCaseID(r.Context(), tenantID, caseID)
 	if err != nil {
-		log.Printf("completeness: GetByCaseID failed (tenant=%s, case=%s): %v", tenantID, caseID, err)
+		slog.Error("completeness store error", "error", err, "tenant_id", tenantID.String(), "case_id", caseID.String())
 		writeJSON(w, http.StatusInternalServerError, errorBody("internal server error"))
 		return
 	}

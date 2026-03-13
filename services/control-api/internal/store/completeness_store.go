@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -41,6 +42,9 @@ func NewSQLCompletenessStore(db *sql.DB) *SQLCompletenessStore {
 }
 
 // GetByCaseID returns the latest completeness snapshot for a case.
+// Note: the caseID parameter corresponds to the "session_id" column in the
+// completeness_tracking table. The REST layer exposes {caseId} as a path
+// parameter, but the underlying DB schema uses session_id.
 func (s *SQLCompletenessStore) GetByCaseID(ctx context.Context, tenantID, caseID uuid.UUID) (*CompletenessObservation, error) {
 	const query = `
 		SELECT checklist, overall_completeness, suggested_next_topics
@@ -61,7 +65,7 @@ func (s *SQLCompletenessStore) GetByCaseID(ctx context.Context, tenantID, caseID
 		&observation.OverallCompleteness,
 		pq.Array(&topics),
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

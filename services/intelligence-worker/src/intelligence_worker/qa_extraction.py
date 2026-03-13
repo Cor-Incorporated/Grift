@@ -180,7 +180,7 @@ class QAPairExtractor:
                 ),
                 turn_count=len(turns),
             )
-        except ValueError as exc:
+        except ValueError as exc:  # Unknown domain — no completeness signal available
             logger.warning("build_system_prompt_skipped", error=str(exc))
             return None
         return build_extraction_prompt_feedback(snapshot)

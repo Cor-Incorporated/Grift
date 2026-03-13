@@ -30,7 +30,6 @@ func TestCompletenessHandlerGetByCaseID(t *testing.T) {
 		tenant     string
 		casePath   string
 		store      *mockCompletenessStore
-		nilStore   bool
 		wantStatus int
 		wantError  string
 	}{
@@ -57,14 +56,7 @@ func TestCompletenessHandlerGetByCaseID(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 			wantError:  "invalid case ID",
 		},
-		{
-			name:       "nil store",
-			tenant:     tenantID.String(),
-			casePath:   caseID.String(),
-			nilStore:   true,
-			wantStatus: http.StatusServiceUnavailable,
-			wantError:  "completeness store not configured",
-		},
+
 		{
 			name:     "not found",
 			tenant:   tenantID.String(),
@@ -117,14 +109,18 @@ func TestCompletenessHandlerGetByCaseID(t *testing.T) {
 		},
 	}
 
+	t.Run("nil store panics", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic for nil store")
+			}
+		}()
+		NewCompletenessHandler(nil)
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var h *CompletenessHandler
-			if tt.nilStore {
-				h = NewCompletenessHandler(nil)
-			} else {
-				h = NewCompletenessHandler(tt.store)
-			}
+			h := NewCompletenessHandler(tt.store)
 
 			mux := http.NewServeMux()
 			RegisterCompletenessRoutes(mux, h)
