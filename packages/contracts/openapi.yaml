@@ -495,6 +495,30 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /v1/cases/{caseId}/observation/completeness:
+    get:
+      operationId: getObservationCompleteness
+      tags: [conversations]
+      summary: Completeness feedback loop 状態
+      parameters:
+        - $ref: "#/components/parameters/tenantIdHeader"
+        - $ref: "#/components/parameters/caseId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObservationCompleteness"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   # ─── Source Documents (Intake Context) ───
   /v1/cases/{caseId}/source-documents:
     get:
@@ -2036,6 +2060,32 @@ components:
         created_at:
           type: string
           format: date-time
+    CompletenessChecklistItem:
+      type: object
+      required: [status, confidence]
+      properties:
+        status:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+    ObservationCompleteness:
+      type: object
+      required: [overall_completeness, checklist, suggested_next_topics]
+      properties:
+        overall_completeness:
+          type: number
+          minimum: 0
+          maximum: 1
+        checklist:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/CompletenessChecklistItem"
+        suggested_next_topics:
+          type: array
+          items:
+            type: string
 
     # ─── Source Document ───
     SourceDocument:

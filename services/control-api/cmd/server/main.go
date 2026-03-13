@@ -73,6 +73,8 @@ func main() {
 	caseService := service.NewCaseService(caseStore)
 	caseHandler := handler.NewCaseHandler(caseService)
 	handler.RegisterCaseRoutes(mux, caseHandler)
+	completenessHandler := handler.NewCompletenessHandler(store.NewSQLCompletenessStore(db))
+	handler.RegisterCompletenessRoutes(mux, completenessHandler)
 
 	tenantStore := store.NewSQLTenantStore(db)
 	tenantService := service.NewTenantService(tenantStore)
