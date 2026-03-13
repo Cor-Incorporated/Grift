@@ -41,7 +41,10 @@ func clientIP(r *http.Request) string {
 		// All entries are private — fall through to RemoteAddr.
 	}
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+		if ip := net.ParseIP(xri); ip != nil && !isPrivateIP(ip) {
+			return xri
+		}
+		// X-Real-IP is private or unparseable — fall through to RemoteAddr.
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -153,7 +156,9 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 				remaining := resetAt.Sub(now)
 				retryAfter := max(int(remaining.Seconds())+1, 1) // round up, minimum 1s
 				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
-				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
 				return
 			}
 

@@ -225,7 +225,6 @@ class RequirementArtifactRepository:
                         SELECT COALESCE(MAX(version), 0)
                         FROM requirement_artifacts
                         WHERE tenant_id = %s AND case_id = %s
-                        FOR UPDATE
                         """,
                     (tenant_id, case_id),
                 )

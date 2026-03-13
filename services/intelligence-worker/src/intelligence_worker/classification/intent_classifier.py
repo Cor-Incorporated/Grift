@@ -274,8 +274,19 @@ def normalize_case_type(intent: str) -> str:
     return "undetermined"
 
 
+def _strip_markdown_fences(content: str) -> str:
+    """Strip markdown code fences that LLMs frequently wrap around JSON."""
+    text = content.strip()
+    if text.startswith("```"):
+        first_newline = text.index("\n")
+        text = text[first_newline + 1 :]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
+
+
 def _parse_classification_json(content: str) -> ClassificationResult:
-    raw = json.loads(content)
+    raw = json.loads(_strip_markdown_fences(content))
     if not isinstance(raw, dict):
         raise ValueError("classification response must be a JSON object")
 
