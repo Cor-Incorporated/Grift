@@ -16,6 +16,7 @@ from intelligence_worker.classification.missing_info import (
     GatewayMissingInfoExtractor,
     MissingField,
     MissingInfoExtractor,
+    MissingInfoGateway,
     MissingInfoResult,
 )
 
@@ -27,6 +28,7 @@ __all__ = [
     "IntentClassifier",
     "MissingField",
     "MissingInfoExtractor",
+    "MissingInfoGateway",
     "MissingInfoResult",
     "RuleBasedIntentClassifier",
     "normalize_case_type",

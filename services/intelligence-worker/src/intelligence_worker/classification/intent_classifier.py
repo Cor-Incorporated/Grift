@@ -143,7 +143,9 @@ class GatewayIntentClassifier:
         try:
             response = urllib.request.urlopen(request, timeout=self.timeout_seconds)
         except urllib.error.URLError as exc:
-            logger.error("llm_gateway_classify_intent_failed", error=str(exc))
+            logger.error(
+                "llm_gateway_classify_intent_failed", extra={"error": str(exc)}
+            )
             raise
         try:
             body = json.loads(response.read().decode("utf-8"))

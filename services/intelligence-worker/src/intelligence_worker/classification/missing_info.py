@@ -14,7 +14,9 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+import warnings
 from dataclasses import dataclass
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -151,14 +153,6 @@ _FIELD_DETECTORS: list[tuple[str, re.Pattern[str], str, str]] = [
     ),
 ]
 
-_FIELD_DEFAULT_QUESTIONS: dict[str, str] = {
-    name: question for name, _, question, _ in _FIELD_DETECTORS
-}
-
-_FIELD_PRIORITIES: dict[str, str] = {
-    name: priority for name, _, _, priority in _FIELD_DETECTORS
-}
-
 
 @dataclass(frozen=True)
 class GatewayMissingInfoExtractor:
@@ -266,6 +260,14 @@ class RuleBasedMissingInfoExtractor:
         )
 
 
+class MissingInfoGateway(Protocol):
+    """Protocol for LLM-backed missing info extraction."""
+
+    def extract_missing(
+        self, raw_text: str, *, intent: str | None = None
+    ) -> MissingInfoResult: ...
+
+
 class MissingInfoExtractor:
     """Detect missing information fields in a request.
 
@@ -276,7 +278,7 @@ class MissingInfoExtractor:
     def __init__(
         self,
         *,
-        gateway_client: GatewayMissingInfoExtractor | None = None,
+        gateway_client: MissingInfoGateway | None = None,
         fallback: RuleBasedMissingInfoExtractor | None = None,
     ) -> None:
         self._gateway_client = gateway_client
@@ -287,6 +289,10 @@ class MissingInfoExtractor:
     ) -> list[MissingField]:
         """Identify missing fields in the given text.
 
+        .. deprecated::
+            Use :meth:`extract_missing` instead, which supports
+            LLM-backed extraction with rule-based fallback.
+
         Args:
             raw_text: Unstructured request text from the user.
             intent: Classified intent label; bug/fix intents skip
@@ -296,6 +302,12 @@ class MissingInfoExtractor:
             List of MissingField objects for fields not detected
             in the text, ordered by priority (high first).
         """
+        warnings.warn(
+            "MissingInfoExtractor.extract() is deprecated;"
+            " use extract_missing() instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return _extract_fields_rule_based(raw_text, intent=intent)
 
     def extract_missing(
@@ -410,6 +422,18 @@ def _parse_missing_info_json(content: str) -> MissingInfoResult:
     missing_topics = _coerce_string_list(raw.get("missing_topics"))
     follow_up_questions = _coerce_string_list(raw.get("follow_up_questions"))
     confidence = _clamp01(raw.get("confidence", 0.0))
+
+    if len(missing_topics) != len(follow_up_questions):
+        logger.warning(
+            "missing_info_length_mismatch",
+            extra={
+                "missing_topics_len": len(missing_topics),
+                "follow_up_questions_len": len(follow_up_questions),
+            },
+        )
+        min_len = min(len(missing_topics), len(follow_up_questions))
+        missing_topics = missing_topics[:min_len]
+        follow_up_questions = follow_up_questions[:min_len]
 
     return MissingInfoResult(
         missing_topics=tuple(missing_topics),
