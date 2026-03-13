@@ -246,9 +246,7 @@ class CaseTypeSyncClient(Protocol):
     def patch_case_type(self, *, tenant_id: str, case_id: str, intent: str) -> str: ...
 
 
-def _build_raw_text(
-    turns: list[ConversationTurn], *, user_only: bool = False
-) -> str:
+def _build_raw_text(turns: list[ConversationTurn], *, user_only: bool = False) -> str:
     """Join turn contents into a single text block.
 
     Args:
@@ -267,9 +265,7 @@ def _build_raw_text(
         )
         if text:
             return text
-    return "\n".join(
-        turn.content.strip() for turn in turns if turn.content.strip()
-    )
+    return "\n".join(turn.content.strip() for turn in turns if turn.content.strip())
 
 
 class TurnCompletedHandler:
