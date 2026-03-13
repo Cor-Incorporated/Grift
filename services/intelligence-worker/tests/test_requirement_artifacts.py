@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from psycopg2 import errors as psycopg_errors
+
+from intelligence_worker.citations import _resolve_offsets
 from intelligence_worker.qa_extraction import ConversationTurn
 from intelligence_worker.requirement_artifacts import (
     CompletenessUpdatedRequirementArtifactHandler,
@@ -171,6 +174,10 @@ def test_generator_tracks_only_existing_chunk_citations() -> None:
         assert 0 <= citation.offset_start <= citation.offset_end <= len(chunk.content)
 
 
+def test_resolve_offsets_returns_empty_range_when_hint_does_not_match() -> None:
+    assert _resolve_offsets("Shopify 継続利用", "納期未定") == (0, 0)
+
+
 def test_generator_falls_back_when_llm_fails() -> None:
     generator = RequirementArtifactGenerator(
         llm_client=_FakeLLM(response_text="{}", should_fail=True)
@@ -284,6 +291,39 @@ def test_repository_save_artifact_increments_version_and_persists_citations() ->
     )
 
 
+def test_repository_save_artifact_returns_none_on_duplicate_version() -> None:
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = (1,)
+    mock_cursor.execute.side_effect = [None, psycopg_errors.UniqueViolation()]
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+    mock_conn.__exit__ = MagicMock(return_value=False)
+
+    mock_conn_manager = MagicMock()
+    mock_conn_manager.get_connection.return_value.__enter__ = MagicMock(
+        return_value=mock_conn
+    )
+    mock_conn_manager.get_connection.return_value.__exit__ = MagicMock(
+        return_value=False
+    )
+
+    repo = RequirementArtifactRepository(mock_conn_manager)
+    version = repo.save_artifact(
+        tenant_id="t1",
+        case_id="c1",
+        draft=RequirementArtifactDraft(
+            markdown="# Requirement Artifact\n",
+            source_chunks=("11111111-1111-1111-1111-111111111111",),
+            citations=(),
+        ),
+        created_by_uid="worker",
+    )
+
+    assert version is None
+
+
 def test_service_generates_and_persists_artifact_from_turns_and_chunks() -> None:
     artifact_repository = _FakeArtifactRepository()
     artifact_generator = _FakeArtifactGenerator()
@@ -357,3 +397,62 @@ def test_completeness_trigger_skips_when_threshold_not_met() -> None:
     )
 
     assert artifact_repository.saved == []
+
+
+def test_completeness_trigger_skips_out_of_range_completeness() -> None:
+    artifact_repository = _FakeArtifactRepository(version=3)
+    handler = CompletenessUpdatedRequirementArtifactHandler(
+        service=RequirementArtifactService(
+            conversation_repository=_FakeConversationRepository(turns=_sample_turns()),
+            artifact_repository=artifact_repository,
+            artifact_generator=_FakeArtifactGenerator(),
+        )
+    )
+
+    with patch("intelligence_worker.requirement_artifacts.logger.warning") as warning:
+        handler(
+            {
+                "tenant_id": "t1",
+                "aggregate_id": "c1",
+                "source_domain": "estimation",
+                "payload": {
+                    "session_id": "c1",
+                    "overall_completeness": 1.2,
+                    "checklist": {},
+                    "suggested_next_topics": [],
+                },
+            }
+        )
+
+    assert artifact_repository.saved == []
+    warning.assert_called_once()
+    assert warning.call_args.args[0] == "requirement_artifact_invalid_completeness"
+
+
+def test_completeness_trigger_skips_duplicate_idempotency_key() -> None:
+    artifact_repository = _FakeArtifactRepository(version=3)
+    handler = CompletenessUpdatedRequirementArtifactHandler(
+        service=RequirementArtifactService(
+            conversation_repository=_FakeConversationRepository(turns=_sample_turns()),
+            artifact_repository=artifact_repository,
+            artifact_generator=_FakeArtifactGenerator(),
+        )
+    )
+    payload = {
+        "tenant_id": "t1",
+        "aggregate_id": "c1",
+        "event_id": "evt-1",
+        "idempotency_key": "c1:6:completeness",
+        "source_domain": "estimation",
+        "payload": {
+            "session_id": "c1",
+            "overall_completeness": 0.8,
+            "checklist": {},
+            "suggested_next_topics": [],
+        },
+    }
+
+    handler(payload)
+    handler(payload)
+
+    assert len(artifact_repository.saved) == 1

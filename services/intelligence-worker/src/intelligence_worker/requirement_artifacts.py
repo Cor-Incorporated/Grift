@@ -3,46 +3,30 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import asdict, dataclass
 from string import Template
+from threading import Lock
 from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
 from psycopg2 import errors as psycopg_errors  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field
 
+from intelligence_worker.citations import (
+    RequirementArtifactCitation,
+    SourceContextChunk,
+    _merge_citations,
+    _rank_source_chunks,
+    _render_cited_bullets,
+    _render_cited_text,
+    _select_citations,
+)
 from intelligence_worker.completeness_tracker import COMPLETENESS_THRESHOLD
 
 if TYPE_CHECKING:
     from intelligence_worker.qa_extraction import ConversationTurn
 
 logger = structlog.get_logger()
-
-_TOKEN_PATTERN = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+_-]*|[一-龯ぁ-んァ-ンー]{2,}")
-
-
-@dataclass(frozen=True)
-class SourceContextChunk:
-    """Chunk retrieved from embedded case-related source documents."""
-
-    chunk_id: str
-    content: str
-    source_document_id: str | None = None
-    chunk_index: int | None = None
-    content_sha256: str | None = None
-
-
-@dataclass(frozen=True)
-class RequirementArtifactCitation:
-    """ADR-0008-compatible citation metadata for one referenced chunk."""
-
-    chunk_id: str
-    source_id: str
-    chunk_index: int
-    offset_start: int
-    offset_end: int
-    content_sha256: str
 
 
 @dataclass(frozen=True)
@@ -306,6 +290,13 @@ class RequirementArtifactRepository:
                 )
                 row = cur.fetchone()
                 return int(row[0]) if row else None
+        except psycopg_errors.UniqueViolation:
+            logger.info(
+                "requirement_artifact_duplicate_version_skipped",
+                tenant_id=tenant_id,
+                case_id=case_id,
+            )
+            return None
         except psycopg_errors.UndefinedTable:
             logger.warning("requirement_artifacts_table_missing_skip_persist")
             return None
@@ -368,6 +359,29 @@ class CompletenessUpdatedRequirementArtifactHandler:
     ) -> None:
         self._service = service
         self._threshold = threshold
+        self._idempotency_lock = Lock()
+        self._processed_idempotency_keys: set[str] = set()
+        self._inflight_idempotency_keys: set[str] = set()
+
+    def _begin_generation(self, idempotency_key: str) -> bool:
+        if not idempotency_key:
+            return True
+        with self._idempotency_lock:
+            if (
+                idempotency_key in self._processed_idempotency_keys
+                or idempotency_key in self._inflight_idempotency_keys
+            ):
+                return False
+            self._inflight_idempotency_keys.add(idempotency_key)
+            return True
+
+    def _finish_generation(self, idempotency_key: str, *, persisted: bool) -> None:
+        if not idempotency_key:
+            return
+        with self._idempotency_lock:
+            self._inflight_idempotency_keys.discard(idempotency_key)
+            if persisted:
+                self._processed_idempotency_keys.add(idempotency_key)
 
     def __call__(self, payload: dict[str, object]) -> None:
         tenant_id = str(payload.get("tenant_id") or "")
@@ -380,7 +394,20 @@ class CompletenessUpdatedRequirementArtifactHandler:
         case_id = str(
             event_payload.get("session_id") or payload.get("aggregate_id") or ""
         )
-        completeness = _coerce_float(event_payload.get("overall_completeness"))
+        raw_completeness = event_payload.get("overall_completeness")
+        completeness = _coerce_float(
+            raw_completeness,
+            min_value=0.0,
+            max_value=1.0,
+        )
+        if raw_completeness is not None and completeness is None:
+            logger.warning(
+                "requirement_artifact_invalid_completeness",
+                tenant_id=tenant_id,
+                case_id=case_id,
+                completeness=raw_completeness,
+            )
+            return
         if not tenant_id or not case_id or completeness is None:
             logger.warning(
                 "requirement_artifact_missing_ids",
@@ -405,11 +432,25 @@ class CompletenessUpdatedRequirementArtifactHandler:
             )
             return
 
-        version = self._service.generate_for_case(
-            tenant_id=tenant_id,
-            case_id=case_id,
-            created_by_uid="intelligence-worker",
-        )
+        idempotency_key = _artifact_idempotency_key(payload, case_id=case_id)
+        if not self._begin_generation(idempotency_key):
+            logger.info(
+                "requirement_artifact_duplicate_event_skipped",
+                tenant_id=tenant_id,
+                case_id=case_id,
+                idempotency_key=idempotency_key,
+            )
+            return
+
+        version: int | None = None
+        try:
+            version = self._service.generate_for_case(
+                tenant_id=tenant_id,
+                case_id=case_id,
+                created_by_uid="intelligence-worker",
+            )
+        finally:
+            self._finish_generation(idempotency_key, persisted=version is not None)
         if version is None:
             return
         logger.info(
@@ -456,113 +497,6 @@ def _build_section_texts(outline: RequirementArtifactOutline) -> list[str]:
     ]
 
 
-def _select_citations(
-    *,
-    text: str,
-    source_chunks: list[SourceContextChunk],
-    limit: int = 2,
-) -> tuple[RequirementArtifactCitation, ...]:
-    usable_chunks = [
-        chunk
-        for chunk in source_chunks
-        if chunk.source_document_id
-        and chunk.chunk_index is not None
-        and chunk.content_sha256
-    ]
-    if not usable_chunks:
-        return ()
-
-    scored = [
-        (_lexical_score(text, chunk.content), index, chunk)
-        for index, chunk in enumerate(usable_chunks)
-    ]
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    positive = [chunk for score, _, chunk in scored if score > 0][:limit]
-    selected = positive or [chunk for _, _, chunk in scored[: min(limit, len(scored))]]
-
-    return tuple(_chunk_to_citation(chunk=chunk, hint=text) for chunk in selected)
-
-
-def _chunk_to_citation(
-    *,
-    chunk: SourceContextChunk,
-    hint: str,
-) -> RequirementArtifactCitation:
-    offset_start, offset_end = _resolve_offsets(chunk.content, hint)
-    return RequirementArtifactCitation(
-        chunk_id=chunk.chunk_id,
-        source_id=chunk.source_document_id or "",
-        chunk_index=chunk.chunk_index or 0,
-        offset_start=offset_start,
-        offset_end=offset_end,
-        content_sha256=chunk.content_sha256 or "",
-    )
-
-
-def _resolve_offsets(content: str, hint: str) -> tuple[int, int]:
-    if not content:
-        return 0, 0
-
-    hint_tokens = _tokenize(hint)
-    lower_content = content.lower()
-    for token in hint_tokens:
-        if len(token) < 2:
-            continue
-        start = lower_content.find(token.lower())
-        if start >= 0:
-            return start, start + len(token)
-    return 0, len(content)
-
-
-def _merge_citations(
-    citation_sets: Any,
-) -> list[RequirementArtifactCitation]:
-    merged: list[RequirementArtifactCitation] = []
-    seen: set[tuple[str, int, int]] = set()
-    for citations in citation_sets:
-        for citation in citations:
-            key = (citation.chunk_id, citation.offset_start, citation.offset_end)
-            if key in seen:
-                continue
-            seen.add(key)
-            merged.append(citation)
-    return merged
-
-
-def _rank_source_chunks(
-    source_chunks: list[SourceContextChunk],
-    *,
-    query_text: str,
-    limit: int,
-) -> list[SourceContextChunk]:
-    if not source_chunks:
-        return []
-    if not query_text.strip():
-        return source_chunks[:limit]
-
-    scored = [
-        (_lexical_score(query_text, chunk.content), index, chunk)
-        for index, chunk in enumerate(source_chunks)
-    ]
-    if all(score <= 0 for score, _, _ in scored):
-        return source_chunks[:limit]
-
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    return [chunk for _, _, chunk in scored[:limit]]
-
-
-def _lexical_score(left: str, right: str) -> int:
-    left_tokens = set(_tokenize(left))
-    right_tokens = set(_tokenize(right))
-    if not left_tokens or not right_tokens:
-        return 0
-    return len(left_tokens & right_tokens)
-
-
-def _tokenize(text: str) -> tuple[str, ...]:
-    return tuple(token.lower() for token in _TOKEN_PATTERN.findall(text))
-
-
 def _build_query_text(turns: list[ConversationTurn]) -> str:
     user_text = "\n".join(
         turn.content.strip()
@@ -574,15 +508,27 @@ def _build_query_text(turns: list[ConversationTurn]) -> str:
     return "\n".join(turn.content.strip() for turn in turns if turn.content.strip())
 
 
-def _coerce_float(value: object) -> float | None:
+def _coerce_float(
+    value: object,
+    *,
+    min_value: float | None = None,
+    max_value: float | None = None,
+) -> float | None:
+    parsed: float | None = None
     if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
+        parsed = float(value)
+    elif isinstance(value, str):
         try:
-            return float(value)
+            parsed = float(value)
         except ValueError:
             return None
-    return None
+    if parsed is None:
+        return None
+    if min_value is not None and parsed < min_value:
+        return None
+    if max_value is not None and parsed > max_value:
+        return None
+    return parsed
 
 
 def _render_turns(turns: list[ConversationTurn]) -> str:
@@ -687,27 +633,19 @@ def _render_markdown(
     return "\n".join(sections).strip() + "\n"
 
 
-def _render_cited_bullets(
-    items: list[str],
-    citation_map: dict[str, tuple[RequirementArtifactCitation, ...]],
-) -> list[str]:
-    return _render_bullets(
-        [_render_cited_text(item, citation_map) for item in items]
-        or ["No explicit requirement captured."]
-    )
-
-
-def _render_cited_text(
-    text: str,
-    citation_map: dict[str, tuple[RequirementArtifactCitation, ...]],
-) -> str:
-    citations = citation_map.get(text, ())
-    markers = " ".join(f"[chunk:{citation.chunk_id}]" for citation in citations)
-    return f"{text} {markers}".strip()
-
-
 def _render_bullets(items: list[str]) -> list[str]:
     return [f"- {item}" for item in items]
+
+
+def _artifact_idempotency_key(payload: dict[str, object], *, case_id: str) -> str:
+    raw_key = payload.get("idempotency_key") or payload.get("event_id")
+    if raw_key:
+        return str(raw_key)
+
+    aggregate_version = payload.get("aggregate_version")
+    if aggregate_version is not None:
+        return f"{case_id}:{aggregate_version}:requirement-artifact"
+    return ""
 
 
 class ConnectionManager(Protocol):

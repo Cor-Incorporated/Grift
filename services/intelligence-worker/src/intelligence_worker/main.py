@@ -663,6 +663,12 @@ def run() -> None:
         project_id=config.pubsub_project_id,
         subscription_id=config.pubsub_subscription,
         handlers={
+            # Both event types currently share one subscription because
+            # observation.completeness.updated is re-published onto the same
+            # Pub/Sub stream that also carries conversation.turn.completed.
+            # That self-trigger pattern is intentional for now, but we should
+            # consider splitting subscriptions if routing or replay semantics
+            # become harder to reason about.
             "conversation.turn.completed": handler,
             "observation.completeness.updated": completeness_handler,
         },

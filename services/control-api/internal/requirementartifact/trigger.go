@@ -123,7 +123,7 @@ func (t *PubSubTrigger) Trigger(ctx context.Context, tenantID, caseID uuid.UUID)
 			SessionID:           caseID.String(),
 			Checklist:           observation.Checklist,
 			OverallCompleteness: observation.OverallCompleteness,
-			SuggestedNextTopics: observation.SuggestedNextTopics,
+			SuggestedNextTopics: append([]string(nil), observation.SuggestedNextTopics...),
 		},
 	}
 

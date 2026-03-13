@@ -120,3 +120,31 @@ func TestPubSubTrigger_TriggerReturnsNotFoundWithoutObservation(t *testing.T) {
 		t.Fatalf("Trigger() error = %v, want ErrCompletenessObservationNotFound", err)
 	}
 }
+
+func TestPubSubTrigger_TriggerReturnsCopiedSuggestedNextTopics(t *testing.T) {
+	tenantID := uuid.New()
+	caseID := uuid.New()
+	observation := &store.CompletenessObservation{
+		OverallCompleteness: 0.9,
+		SuggestedNextTopics: []string{"timeline", "budget"},
+		TurnCount:           3,
+	}
+	trigger := NewPubSubTrigger(
+		&fakeCompletenessStore{observation: observation},
+		&fakePublisher{},
+		"requirement-artifacts",
+	)
+
+	result, err := trigger.Trigger(context.Background(), tenantID, caseID)
+	if err != nil {
+		t.Fatalf("Trigger() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("Trigger() result = nil")
+	}
+
+	observation.SuggestedNextTopics[0] = "changed-after-trigger"
+	if got, want := result.SuggestedNextTopics[0], "timeline"; got != want {
+		t.Fatalf("SuggestedNextTopics[0] = %q, want %q", got, want)
+	}
+}
