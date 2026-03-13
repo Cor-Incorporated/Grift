@@ -21,7 +21,7 @@ function RiskFlags({ flags }: { flags: string[] }) {
     <div className="space-y-2">
       <p className="text-sm font-medium text-slate-700">Risk flags</p>
       <ul className="space-y-1">
-        {flags.map((flag, index) => (
+        {flags.map((flag) => (
           <li
             key={flag}
             className="text-sm text-amber-700"

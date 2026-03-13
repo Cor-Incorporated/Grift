@@ -210,7 +210,7 @@ export function ThreeWayProposalView({ proposal }: ThreeWayProposalViewProps) {
                 Competitive advantages
               </p>
               <ul className="space-y-1">
-                {ourProposal.competitive_advantages.map((advantage, index) => (
+                {ourProposal.competitive_advantages.map((advantage) => (
                   <li
                     key={advantage}
                     className="text-sm text-slate-600"
