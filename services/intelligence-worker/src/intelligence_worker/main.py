@@ -18,7 +18,13 @@ from psycopg2 import errors as psycopg_errors
 from intelligence_worker.classification import (
     ControlAPICaseTypeClient,
     GatewayIntentClassifier,
+    GatewayMissingInfoExtractor,
     IntentClassifier,
+    MissingInfoExtractor,
+    MissingInfoResult,
+)
+from intelligence_worker.classification.missing_info import (
+    DEFAULT_QWEN_MODEL as _MISSING_INFO_DEFAULT_MODEL,
 )
 from intelligence_worker.completeness_tracker import (
     CompletenessTrackingRepository,
@@ -240,6 +246,28 @@ class CaseTypeSyncClient(Protocol):
     def patch_case_type(self, *, tenant_id: str, case_id: str, intent: str) -> str: ...
 
 
+def _build_raw_text(turns: list[ConversationTurn], *, user_only: bool = False) -> str:
+    """Join turn contents into a single text block.
+
+    Args:
+        turns: Conversation turns to combine.
+        user_only: If True, include only user-role turns; falls back to
+            all turns when user-only yields an empty string.
+
+    Returns:
+        Combined text, or empty string when no content is available.
+    """
+    if user_only:
+        text = "\n".join(
+            turn.content.strip()
+            for turn in turns
+            if turn.role == "user" and turn.content.strip()
+        )
+        if text:
+            return text
+    return "\n".join(turn.content.strip() for turn in turns if turn.content.strip())
+
+
 class TurnCompletedHandler:
     """Sync Pub/Sub callback for the QA pipeline."""
 
@@ -250,6 +278,7 @@ class TurnCompletedHandler:
         extractor: QAPairExtractor,
         intent_classifier: IntentClassifier | None = None,
         case_type_client: CaseTypeSyncClient | None = None,
+        missing_info_extractor: MissingInfoExtractor | None = None,
         completeness_repository: CompletenessTrackingRepository | None = None,
         artifact_repository: RequirementArtifactRepository | None = None,
         artifact_generator: RequirementArtifactGenerator | None = None,
@@ -259,6 +288,7 @@ class TurnCompletedHandler:
         self._extractor = extractor
         self._intent_classifier = intent_classifier
         self._case_type_client = case_type_client
+        self._missing_info_extractor = missing_info_extractor
         self._completeness_repository = completeness_repository
         self._artifact_repository = artifact_repository
         self._artifact_generator = artifact_generator
@@ -272,7 +302,10 @@ class TurnCompletedHandler:
         if self._retry_processor is not None:
             self._retry_processor.run_once(tenant_id=context.tenant_id)
 
-        self._classify_case_type(context)
+        classification_result = self._classify_case_type(context)
+        # TODO: persist/publish missing_info_result once downstream consumer is ready
+        # TODO: add missing_info_extraction_enabled config flag to gate this step
+        self._extract_missing_info(context, intent=classification_result)
         pairs = self._extract_current_turn(context, raise_on_failure=False)
         self._persist_completeness(context, pairs)
         self._persist_requirement_artifact(context)
@@ -322,45 +355,115 @@ class TurnCompletedHandler:
             turns=turns,
         )
 
-    def _classify_case_type(self, context: TurnCompletedContext) -> None:
-        if self._intent_classifier is None or self._case_type_client is None:
-            return
+    def _classify_case_type(self, context: TurnCompletedContext) -> str | None:
+        """Classify the intent and sync case type to control API.
 
-        raw_text = "\n".join(
-            turn.content.strip()
-            for turn in context.turns
-            if turn.role == "user" and turn.content.strip()
-        )
+        Args:
+            context: Normalized event context.
+
+        Returns:
+            The classified intent label, or None if classification skipped.
+        """
+        intent = self._classify_intent(context)
+        if intent is not None:
+            self._sync_case_type(context, intent=intent)
+        return intent
+
+    def _classify_intent(self, context: TurnCompletedContext) -> str | None:
+        """Run intent classification on conversation turns.
+
+        Args:
+            context: Normalized event context.
+
+        Returns:
+            The classified intent label, or None if classifier is unavailable.
+        """
+        if self._intent_classifier is None:
+            return None
+
+        raw_text = _build_raw_text(context.turns, user_only=True)
         if not raw_text:
-            raw_text = "\n".join(
-                turn.content.strip() for turn in context.turns if turn.content.strip()
-            )
-        if not raw_text:
-            return
+            return None
 
         result = self._intent_classifier.classify(raw_text)
+        return result.intent
+
+    def _sync_case_type(self, context: TurnCompletedContext, *, intent: str) -> None:
+        """Sync classified intent to control API as case type.
+
+        Args:
+            context: Normalized event context.
+            intent: Classified intent label to sync.
+        """
+        if self._case_type_client is None:
+            return
+
         try:
             patched_type = self._case_type_client.patch_case_type(
                 tenant_id=context.tenant_id,
                 case_id=context.session_id,
-                intent=result.intent,
+                intent=intent,
             )
             logger.info(
                 "case_type_synced",
                 case_id=context.session_id,
                 tenant_id=context.tenant_id,
-                intent=result.intent,
+                intent=intent,
                 case_type=patched_type,
-                confidence=result.confidence,
+                confidence="n/a",
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "case_type_sync_failed",
                 case_id=context.session_id,
                 tenant_id=context.tenant_id,
-                intent=result.intent,
+                intent=intent,
                 error=str(exc),
             )
+
+    def _extract_missing_info(
+        self,
+        context: TurnCompletedContext,
+        *,
+        intent: str | None,
+    ) -> MissingInfoResult | None:
+        """Run missing info extraction after intent classification.
+
+        Args:
+            context: Normalized event context.
+            intent: Classified intent label from the prior step.
+
+        Returns:
+            Extraction result, or None if skipped or failed.
+        """
+        if self._missing_info_extractor is None:
+            return None
+
+        raw_text = _build_raw_text(context.turns)
+        if not raw_text:
+            return None
+
+        try:
+            result = self._missing_info_extractor.extract_missing(
+                raw_text, intent=intent
+            )
+            logger.info(
+                "missing_info_extracted",
+                case_id=context.session_id,
+                tenant_id=context.tenant_id,
+                missing_count=len(result.missing_topics),
+                confidence=result.confidence,
+                intent=intent,
+            )
+            return result
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "missing_info_extraction_failed",
+                case_id=context.session_id,
+                tenant_id=context.tenant_id,
+                error=str(exc),
+            )
+            return None
 
     def _extract_current_turn(
         self,
@@ -500,6 +603,18 @@ def run() -> None:
             gateway_client=GatewayIntentClassifier(
                 base_url=config.llm_gateway_url,
                 model=config.intent_classifier_model,
+            )
+        ),
+        # TODO: missing_info may need a separate config field if models diverge
+        #       from intent classification.
+        missing_info_extractor=MissingInfoExtractor(
+            gateway_client=(
+                GatewayMissingInfoExtractor(
+                    base_url=config.llm_gateway_url,
+                    model=config.intent_classifier_model or _MISSING_INFO_DEFAULT_MODEL,
+                )
+                if config.llm_gateway_url
+                else None
             )
         ),
         case_type_client=ControlAPICaseTypeClient(

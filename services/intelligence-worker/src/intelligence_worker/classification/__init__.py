@@ -13,17 +13,23 @@ from intelligence_worker.classification.intent_classifier import (
     normalize_case_type,
 )
 from intelligence_worker.classification.missing_info import (
+    GatewayMissingInfoExtractor,
     MissingField,
     MissingInfoExtractor,
+    MissingInfoGateway,
+    MissingInfoResult,
 )
 
 __all__ = [
     "ControlAPICaseTypeClient",
     "ClassificationResult",
     "GatewayIntentClassifier",
+    "GatewayMissingInfoExtractor",
     "IntentClassifier",
     "MissingField",
     "MissingInfoExtractor",
+    "MissingInfoGateway",
+    "MissingInfoResult",
     "RuleBasedIntentClassifier",
     "normalize_case_type",
 ]
