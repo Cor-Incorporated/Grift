@@ -302,7 +302,15 @@ func TestRAGSearchHandlerSearchHTTPResponses(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := newRAGSearchHTTPHandler(tt.storeMock, tt.embedder)
+			var storeImpl store.ChunkEmbeddingStore
+			if tt.storeMock != nil {
+				storeImpl = tt.storeMock
+			}
+			var embedderImpl ragQueryEmbedder
+			if tt.embedder != nil {
+				embedderImpl = tt.embedder
+			}
+			handler := newRAGSearchHTTPHandler(storeImpl, embedderImpl)
 
 			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			if tt.tenantHeader != "" {
