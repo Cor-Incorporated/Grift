@@ -10,7 +10,7 @@ import structlog
 
 if typing.TYPE_CHECKING:
     from collections.abc import Generator
-from psycopg2.pool import SimpleConnectionPool
+from psycopg2.pool import SimpleConnectionPool  # type: ignore[import-untyped]
 
 logger = structlog.get_logger()
 

@@ -17,6 +17,7 @@ import (
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/github"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/handler"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/llmclient"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/marketevent"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
 	artifacttrigger "github.com/Cor-Incorporated/Grift/services/control-api/internal/requirementartifact"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/service"
@@ -93,6 +94,18 @@ func main() {
 	conversationService := service.NewConversationService(conversationStore, caseStore, publisher, llm)
 	conversationHandler := handler.NewConversationHandler(conversationService)
 	handler.RegisterConversationRoutes(mux, conversationHandler)
+
+	var marketPublisher *marketevent.Publisher
+	if pubsubClient != nil {
+		marketPublisher = marketevent.NewPublisher(
+			conversation.NewPubSubPublisher(pubsubClient),
+			os.Getenv("MARKET_PUBSUB_TOPIC"),
+		)
+	}
+	marketEvidenceStore := store.NewSQLMarketEvidenceStore(db)
+	marketEvidenceService := service.NewMarketEvidenceService(marketEvidenceStore, marketPublisher)
+	marketEvidenceHandler := handler.NewMarketEvidenceHandler(marketEvidenceService)
+	handler.RegisterMarketEvidenceRoutes(mux, marketEvidenceHandler)
 
 	ragSearchStore := store.NewSQLChunkEmbeddingStore(db)
 	ragSearchHandler := handler.NewRAGSearchHandler(ragSearchStore, llm)

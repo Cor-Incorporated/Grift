@@ -41,6 +41,7 @@ from intelligence_worker.dead_letter_events import (
     DeadLetterRetryLoop,
     DeadLetterRetryProcessor,
 )
+from intelligence_worker.market.runtime import start_market_subscriber
 from intelligence_worker.observation_events import CompletenessUpdatedPublisher
 from intelligence_worker.qa_extraction import (
     ConversationTurn,
@@ -673,20 +674,29 @@ def run() -> None:
             "observation.completeness.updated": completeness_handler,
         },
     )
-
-    future = subscriber.start()
+    futures = [subscriber.start()]
     logger.info(
         "subscriber_started",
         project_id=config.pubsub_project_id,
         subscription=config.pubsub_subscription,
     )
+    market_runtime = start_market_subscriber(
+        config=config,
+        subscriber_client=subscriber_client,
+        conn_manager=conn_manager,
+    )
+    if market_runtime is not None:
+        futures.append(market_runtime.future)
 
     try:
         _shutdown_event.wait()
     finally:
-        future.cancel()
+        for future in futures:
+            future.cancel()
         retry_thread.join(timeout=1)
         subscriber_client.close()
+        if market_runtime is not None:
+            market_runtime.close()
         publisher_client.close()
         conn_manager.close_all()
 

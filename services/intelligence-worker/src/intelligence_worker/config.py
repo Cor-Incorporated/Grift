@@ -27,6 +27,13 @@ class Config:
     llm_gateway_url: str
     control_api_url: str
     control_api_token: str | None
+    market_pubsub_subscription: str
+    grok_api_key: str | None
+    brave_api_key: str | None
+    perplexity_api_key: str | None
+    gemini_api_key: str | None
+    market_provider_timeout_seconds: float
+    market_provider_max_retries: int
     structured_output_model: str
     intent_classifier_model: str
     dead_letter_max_retries: int
@@ -52,10 +59,26 @@ def load_config() -> Config:
     pubsub_subscription = os.environ.get(
         "PUBSUB_SUBSCRIPTION", "conversation-turn-completed-sub"
     )
+    market_pubsub_subscription = os.environ.get(
+        "MARKET_PUBSUB_SUBSCRIPTION",
+        "market-research-requested-sub",
+    )
     llm_gateway_url = os.environ.get("LLM_GATEWAY_URL", "http://localhost:8081")
     pubsub_topic = os.environ.get("PUBSUB_TOPIC", "conversation-turns")
     control_api_url = os.environ.get("CONTROL_API_URL", "http://localhost:8080")
     control_api_token = os.environ.get("CONTROL_API_TOKEN")
+    grok_api_key = os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY")
+    brave_api_key = os.environ.get("BRAVE_API_KEY") or os.environ.get(
+        "BRAVE_SEARCH_API_KEY"
+    )
+    perplexity_api_key = os.environ.get("PERPLEXITY_API_KEY")
+    gemini_api_key = os.environ.get("GEMINI_API_KEY")
+    market_provider_timeout_seconds = float(
+        os.environ.get("MARKET_PROVIDER_TIMEOUT_SECONDS", "30")
+    )
+    market_provider_max_retries = int(
+        os.environ.get("MARKET_PROVIDER_MAX_RETRIES", "2")
+    )
     structured_output_model = os.environ.get(
         "STRUCTURED_OUTPUT_MODEL",
         "qwen3.5-7b",
@@ -90,6 +113,13 @@ def load_config() -> Config:
         llm_gateway_url=llm_gateway_url,
         control_api_url=control_api_url,
         control_api_token=control_api_token,
+        market_pubsub_subscription=market_pubsub_subscription,
+        grok_api_key=grok_api_key,
+        brave_api_key=brave_api_key,
+        perplexity_api_key=perplexity_api_key,
+        gemini_api_key=gemini_api_key,
+        market_provider_timeout_seconds=market_provider_timeout_seconds,
+        market_provider_max_retries=market_provider_max_retries,
         structured_output_model=structured_output_model,
         intent_classifier_model=intent_classifier_model,
         dead_letter_max_retries=dead_letter_max_retries,

@@ -57,6 +57,16 @@ func parseCaseUUID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	return value, true
 }
 
+// parseEvidenceUUID extracts and validates the evidence UUID from the request path.
+func parseEvidenceUUID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	value, err := uuid.Parse(r.PathValue("evidenceId"))
+	if err != nil {
+		writeJSONError(w, "invalid evidence ID", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return value, true
+}
+
 // parsePagination extracts limit and offset query parameters with defaults.
 func parsePagination(r *http.Request) (int, int) {
 	limit := 20

@@ -18,7 +18,10 @@ v2 の Go control plane。
 - `LLM_GATEWAY_URL`: `llm-gateway` の base URL。未指定時は `http://localhost:8081`。
 - `PUBSUB_PROJECT_ID`: `conversation.turn.completed` を Pub/Sub に発行する GCP project。未指定時は publish をスキップ。
 - `PUBSUB_TOPIC`: Pub/Sub topic 名。未指定時は `conversation-turns`。
+- `MARKET_PUBSUB_TOPIC`: `market.research.requested` を publish する topic 名。未指定時は `market-research`。
 - `AUTH_DISABLED=true`: local 開発用の auth bypass。tenant middleware と DB wiring は有効のまま。
+
+`POST /v1/market-evidence` は `job_id` を返す。この値は後続の `GET /v1/market-evidence/{evidenceId}` で参照する `aggregated_evidences.id` と同一で、worker 側が同じ ID で結果を書き戻す。
 
 ## Mock event publisher
 
