@@ -13,8 +13,6 @@ class Config:
     Attributes:
         pubsub_project_id: GCP project ID for Pub/Sub.
         pubsub_subscription: Pub/Sub subscription to consume from.
-        pubsub_completeness_subscription: Pub/Sub subscription for
-            observation.completeness.updated.
         database_url: PostgreSQL connection string.
         llm_gateway_url: llm-gateway base URL.
         extractor_plugins: Enabled extractor plugins.
@@ -24,7 +22,6 @@ class Config:
 
     pubsub_project_id: str
     pubsub_subscription: str
-    pubsub_completeness_subscription: str
     pubsub_topic: str
     database_url: str
     llm_gateway_url: str
@@ -54,10 +51,6 @@ def load_config() -> Config:
     }
     pubsub_subscription = os.environ.get(
         "PUBSUB_SUBSCRIPTION", "conversation-turn-completed-sub"
-    )
-    pubsub_completeness_subscription = os.environ.get(
-        "PUBSUB_COMPLETENESS_SUBSCRIPTION",
-        "observation-completeness-updated-sub",
     )
     llm_gateway_url = os.environ.get("LLM_GATEWAY_URL", "http://localhost:8081")
     pubsub_topic = os.environ.get("PUBSUB_TOPIC", "conversation-turns")
@@ -92,7 +85,6 @@ def load_config() -> Config:
     return Config(
         pubsub_project_id=env_vars["PUBSUB_PROJECT_ID"],  # type: ignore[arg-type]
         pubsub_subscription=pubsub_subscription,
-        pubsub_completeness_subscription=pubsub_completeness_subscription,
         pubsub_topic=pubsub_topic,
         database_url=env_vars["DATABASE_URL"],  # type: ignore[arg-type]
         llm_gateway_url=llm_gateway_url,

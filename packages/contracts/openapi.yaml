@@ -2167,20 +2167,8 @@ components:
     RequirementArtifactCitation:
       type: object
       required:
-        [
-          footnote_id,
-          chunk_id,
-          source_id,
-          chunk_index,
-          offset_start,
-          offset_end,
-          content_sha256,
-          section,
-        ]
+        [chunk_id, source_id, chunk_index, offset_start, offset_end, content_sha256]
       properties:
-        footnote_id:
-          type: string
-          minLength: 1
         chunk_id:
           type: string
           format: uuid
@@ -2197,9 +2185,6 @@ components:
           type: integer
           minimum: 0
         content_sha256:
-          type: string
-          minLength: 1
-        section:
           type: string
           minLength: 1
 

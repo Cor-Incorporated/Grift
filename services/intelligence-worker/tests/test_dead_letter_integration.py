@@ -836,7 +836,6 @@ def test_run_cancels_subscription_and_closes_resources_on_shutdown() -> None:
         control_api_token="token",
         pubsub_project_id="project-1",
         pubsub_subscription="conversation-turn-completed",
-        pubsub_completeness_subscription="observation-completeness-updated",
         pubsub_topic="observation-events",
     )
     conn_manager = MagicMock()

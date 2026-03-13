@@ -20,7 +20,6 @@ v2 の Python intelligence plane。
 - `DATABASE_URL`: PostgreSQL 接続文字列。
 - `PUBSUB_PROJECT_ID`: subscribe 対象の GCP project。
 - `PUBSUB_SUBSCRIPTION`: subscription 名。未指定時は `conversation-turn-completed-sub`。
-- `PUBSUB_COMPLETENESS_SUBSCRIPTION`: `observation.completeness.updated` を受ける subscription 名。未指定時は `observation-completeness-updated-sub`。
 - `PUBSUB_TOPIC`: completeness 更新イベント publish 先 topic 名。未指定時は `conversation-turns`。
 - `LLM_GATEWAY_URL`: structured extraction を委譲する `llm-gateway` の base URL。
 - `CONTROL_API_URL`: `cases.type` 同期先の `control-api` base URL。未指定時は `http://localhost:8080`。

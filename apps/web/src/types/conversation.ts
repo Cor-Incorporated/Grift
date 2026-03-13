@@ -71,6 +71,14 @@ export interface RequirementArtifact {
   version: number
   markdown: string
   source_chunks?: string[]
+  citations?: Array<{
+    chunk_id: string
+    source_id: string
+    chunk_index: number
+    offset_start: number
+    offset_end: number
+    content_sha256: string
+  }>
   status: 'draft' | 'finalized'
   created_by_uid?: string
   created_at?: string

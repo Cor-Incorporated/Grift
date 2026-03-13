@@ -24,10 +24,6 @@ class TestLoadConfig:
 
         assert cfg.pubsub_project_id == "my-project"
         assert cfg.pubsub_subscription == "conversation-turn-completed-sub"
-        assert (
-            cfg.pubsub_completeness_subscription
-            == "observation-completeness-updated-sub"
-        )
         assert cfg.pubsub_topic == "conversation-turns"
         assert cfg.database_url == "postgresql://localhost/db"
         assert cfg.llm_gateway_url == "http://localhost:8081"
@@ -51,7 +47,6 @@ class TestLoadConfig:
         cfg = Config(
             pubsub_project_id="p",
             pubsub_subscription="s",
-            pubsub_completeness_subscription="c",
             pubsub_topic="conversation-turns",
             database_url="d",
             llm_gateway_url="http://localhost:8081",
@@ -72,7 +67,6 @@ class TestLoadConfig:
             "DATABASE_URL": "postgresql://localhost/db",
             "EXTRACTOR_PLUGINS": "estimation, custom_plugin",
             "PUBSUB_SUBSCRIPTION": "custom-sub",
-            "PUBSUB_COMPLETENESS_SUBSCRIPTION": "custom-completeness-sub",
             "PUBSUB_TOPIC": "observation-events",
             "LLM_GATEWAY_URL": "http://gateway:8081",
             "CONTROL_API_URL": "http://control-api:8080",
@@ -86,7 +80,6 @@ class TestLoadConfig:
 
         assert cfg.extractor_plugins == ("estimation", "custom_plugin")
         assert cfg.pubsub_subscription == "custom-sub"
-        assert cfg.pubsub_completeness_subscription == "custom-completeness-sub"
         assert cfg.pubsub_topic == "observation-events"
         assert cfg.llm_gateway_url == "http://gateway:8081"
         assert cfg.control_api_url == "http://control-api:8080"
