@@ -19,6 +19,7 @@ from intelligence_worker.estimates.models import (
     MarketBenchmark,
     OurProposal,
     OurTrackRecord,
+    Range,
     SimilarProject,
     ThreeWayProposal,
 )
@@ -238,14 +239,18 @@ def _build_baseline_proposal(
     market_benchmark: MarketBenchmark,
 ) -> OurProposal:
     proposed_hours = _round1(
-        estimate.your_estimated_hours
-        or _apply_calibration(track_record.median_hours, estimate.calibration_ratio)
-        or _range_midpoint(market_benchmark.consensus_hours)
+        _first_number(
+            estimate.your_estimated_hours,
+            _apply_calibration(track_record.median_hours, estimate.calibration_ratio),
+            _range_midpoint(market_benchmark.consensus_hours),
+        )
     )
     proposed_rate = _round1(
-        estimate.your_hourly_rate
-        or estimate.market_hourly_rate
-        or _range_midpoint(market_benchmark.consensus_rate)
+        _first_number(
+            estimate.your_hourly_rate,
+            estimate.market_hourly_rate,
+            _range_midpoint(market_benchmark.consensus_rate),
+        )
     )
 
     proposed_total = None
@@ -253,11 +258,13 @@ def _build_baseline_proposal(
         proposed_total = _round1(proposed_hours * proposed_rate)
 
     market_total = _round1(
-        estimate.total_market_cost
-        or _market_total_from_ranges(
-            market_benchmark=market_benchmark,
-            hours=estimate.market_estimated_hours,
-            rate=estimate.market_hourly_rate,
+        _first_number(
+            estimate.total_market_cost,
+            _market_total_from_ranges(
+                market_benchmark=market_benchmark,
+                hours=estimate.market_estimated_hours,
+                rate=estimate.market_hourly_rate,
+            ),
         )
     )
     savings = _savings_percent(market_total=market_total, proposed_total=proposed_total)
@@ -295,8 +302,10 @@ def _similarity_score(estimate: EstimateSnapshot, project: HistoricalProject) ->
         == _normalize_text(project.business_line)
         else 0.0
     )
-    score = (text_ratio * 0.6) + case_type_bonus + business_line_bonus
-    return min(1.0, round(score, 3))
+    return min(
+        1.0,
+        round((text_ratio * 0.6) + case_type_bonus + business_line_bonus, 3),
+    )
 
 
 def _normalize_text(value: str) -> str:
@@ -312,14 +321,10 @@ def _apply_calibration(hours: float | None, ratio: float | None) -> float | None
     return hours * ratio
 
 
-def _range_midpoint(value: object) -> float | None:
-    if not hasattr(value, "min") or not hasattr(value, "max"):
+def _range_midpoint(value: Range) -> float | None:
+    if value.min is None or value.max is None:
         return None
-    minimum = value.min
-    maximum = value.max
-    if minimum is None or maximum is None:
-        return None
-    return (float(minimum) + float(maximum)) / 2.0
+    return (float(value.min) + float(value.max)) / 2.0
 
 
 def _market_total_from_ranges(
@@ -328,8 +333,14 @@ def _market_total_from_ranges(
     hours: float | None,
     rate: float | None,
 ) -> float | None:
-    benchmark_hours = hours or _range_midpoint(market_benchmark.consensus_hours)
-    benchmark_rate = rate or _range_midpoint(market_benchmark.consensus_rate)
+    benchmark_hours = _first_number(
+        hours,
+        _range_midpoint(market_benchmark.consensus_hours),
+    )
+    benchmark_rate = _first_number(
+        rate,
+        _range_midpoint(market_benchmark.consensus_rate),
+    )
     if benchmark_hours is None or benchmark_rate is None:
         return None
     return benchmark_hours * benchmark_rate
@@ -355,11 +366,15 @@ def _build_calibration_note(
     market_benchmark: MarketBenchmark,
 ) -> str:
     if estimate.calibration_ratio is not None:
-        ratio = estimate.calibration_ratio
-        return f"過去実績に基づく補正係数 {ratio:.2f} を反映しました。"
+        return (
+            "過去実績に基づく補正係数 "
+            f"{estimate.calibration_ratio:.2f} を反映しました。"
+        )
     if track_record.median_hours is not None:
-        hours = track_record.median_hours
-        return f"類似案件の実績中央値 {hours:.1f} 時間を基準に調整しました。"
+        return (
+            "類似案件の実績中央値 "
+            f"{track_record.median_hours:.1f} 時間を基準に調整しました。"
+        )
     if not market_benchmark.consensus_hours.is_empty:
         return "市場相場の工数帯と現在の見積を比較して提案を調整しました。"
     return "現在の見積値をベースに提案を構成しました。"
@@ -391,18 +406,21 @@ def _parse_generated_proposal(content: str, *, default: OurProposal) -> OurPropo
 
     calibration_note = proposal.get("calibration_note")
     return OurProposal(
-        proposed_hours=(
-            _coerce_number(proposal.get("proposed_hours")) or default.proposed_hours
+        proposed_hours=_first_number(
+            _coerce_number(proposal.get("proposed_hours")),
+            default.proposed_hours,
         ),
-        proposed_rate=(
-            _coerce_number(proposal.get("proposed_rate")) or default.proposed_rate
+        proposed_rate=_first_number(
+            _coerce_number(proposal.get("proposed_rate")),
+            default.proposed_rate,
         ),
-        proposed_total=(
-            _coerce_number(proposal.get("proposed_total")) or default.proposed_total
+        proposed_total=_first_number(
+            _coerce_number(proposal.get("proposed_total")),
+            default.proposed_total,
         ),
-        savings_vs_market_percent=(
-            _coerce_number(proposal.get("savings_vs_market_percent"))
-            or default.savings_vs_market_percent
+        savings_vs_market_percent=_first_number(
+            _coerce_number(proposal.get("savings_vs_market_percent")),
+            default.savings_vs_market_percent,
         ),
         competitive_advantages=_coerce_advantages(
             proposal.get("competitive_advantages"),
@@ -445,3 +463,10 @@ def _coerce_advantages(value: object, *, default: list[str]) -> list[str]:
         return default
     items = [item.strip() for item in value if isinstance(item, str) and item.strip()]
     return items[:4] or default
+
+
+def _first_number(*values: float | None) -> float | None:
+    for value in values:
+        if value is not None:
+            return value
+    return None

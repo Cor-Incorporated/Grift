@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from psycopg2.extras import Json  # type: ignore[import-untyped]
 
-from intelligence_worker.market.models import (
+from intelligence_worker.estimates.models import (
     Citation,
     ConfidenceLevel,
     Range,
@@ -17,10 +17,7 @@ from intelligence_worker.market.models import (
 
 if TYPE_CHECKING:
     from intelligence_worker.db import RLSConnectionManager
-    from intelligence_worker.estimates.models import (
-        EstimateQuery,
-        ThreeWayProposal,
-    )
+    from intelligence_worker.estimates.models import EstimateQuery, ThreeWayProposal
 
 
 @dataclass(frozen=True)
@@ -138,8 +135,8 @@ class EstimateRepository:
             estimate_row = cur.fetchone()
             if estimate_row is None:
                 raise LookupError(
-                    f"estimate {query.estimate_id} not found"
-                    f" for tenant {query.tenant_id}"
+                    "estimate "
+                    f"{query.estimate_id} not found for tenant {query.tenant_id}"
                 )
 
             estimate = EstimateSnapshot(
@@ -302,6 +299,7 @@ class EstimateRepository:
 
 def serialize_proposal(proposal: ThreeWayProposal) -> str:
     """Utility for tests."""
+
     return json.dumps(proposal.to_dict(), ensure_ascii=False)
 
 
@@ -329,13 +327,13 @@ def _parse_citations(value: object) -> list[Citation]:
 
 def _coerce_confidence(value: object) -> ConfidenceLevel:
     if value in {"high", "medium", "low"}:
-        return value
+        return cast("ConfidenceLevel", value)
     return "low"
 
 
 def _coerce_source_authority(value: object) -> SourceAuthority:
     if value in {"official", "industry", "community", "unknown"}:
-        return value
+        return cast("SourceAuthority", value)
     return "unknown"
 
 

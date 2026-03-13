@@ -7,13 +7,13 @@ from intelligence_worker.estimates.models import (
     MarketBenchmark,
     OurProposal,
     OurTrackRecord,
+    Range,
     ThreeWayProposal,
 )
 from intelligence_worker.estimates.repository import (
     EstimateRepository,
     serialize_proposal,
 )
-from intelligence_worker.market.models import Range
 
 
 def test_estimate_repository_loads_context_with_market_evidence() -> None:

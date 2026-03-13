@@ -3,7 +3,12 @@ from __future__ import annotations
 import urllib.error
 from dataclasses import dataclass, field
 
-from intelligence_worker.estimates.models import EstimateQuery, OurProposal
+from intelligence_worker.estimates.models import (
+    Citation,
+    EstimateQuery,
+    OurProposal,
+    Range,
+)
 from intelligence_worker.estimates.orchestrator import EstimateOrchestrator
 from intelligence_worker.estimates.repository import (
     EstimateGenerationContext,
@@ -11,7 +16,6 @@ from intelligence_worker.estimates.repository import (
     HistoricalProject,
     MarketEvidenceSnapshot,
 )
-from intelligence_worker.market.models import Citation, Range
 
 
 def _query() -> EstimateQuery:
@@ -128,13 +132,17 @@ def test_generate_builds_three_way_proposal_and_persists() -> None:
     proposal = orchestrator.generate(_query())
 
     assert len(repository.saved) == 1
-    first_project = proposal.our_track_record.similar_projects[0]
-    assert first_project.name == "Analytics dashboard revamp"
+    assert (
+        proposal.our_track_record.similar_projects[0].name
+        == "Analytics dashboard revamp"
+    )
     assert proposal.our_track_record.median_hours == 180.0
     assert proposal.market_benchmark.provider_count == 3
     assert proposal.our_proposal.proposed_total == 2100000.0
-    first_adv = proposal.our_proposal.competitive_advantages[0]
-    assert first_adv == "類似案件の実績に基づく提案です"
+    assert (
+        proposal.our_proposal.competitive_advantages[0]
+        == "類似案件の実績に基づく提案です"
+    )
 
 
 def test_generate_falls_back_to_baseline_when_gateway_fails() -> None:
