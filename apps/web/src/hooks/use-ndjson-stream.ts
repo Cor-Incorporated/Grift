@@ -69,6 +69,7 @@ export function useNDJSONStream(): UseNDJSONStreamReturn {
         setError(message)
         return null
       } finally {
+        setStreamingContent('')
         setIsStreaming(false)
         abortControllerRef.current = null
       }

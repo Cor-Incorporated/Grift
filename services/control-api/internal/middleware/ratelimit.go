@@ -78,21 +78,22 @@ func trimSpace(s string) string {
 	return s
 }
 
+// privateRanges is initialized once at package load to avoid
+// rebuilding the CIDR slice on every isPrivateIP call.
+var privateRanges = []*net.IPNet{
+	parseCIDR("10.0.0.0/8"),
+	parseCIDR("172.16.0.0/12"),
+	parseCIDR("192.168.0.0/16"),
+	parseCIDR("127.0.0.0/8"),
+	parseCIDR("::1/128"),
+	parseCIDR("fc00::/7"),
+	parseCIDR("fe80::/10"),
+}
+
 // isPrivateIP reports whether ip is in a private / loopback / link-local range.
 func isPrivateIP(ip net.IP) bool {
-	privateRanges := []struct {
-		network *net.IPNet
-	}{
-		{parseCIDR("10.0.0.0/8")},
-		{parseCIDR("172.16.0.0/12")},
-		{parseCIDR("192.168.0.0/16")},
-		{parseCIDR("127.0.0.0/8")},
-		{parseCIDR("::1/128")},
-		{parseCIDR("fc00::/7")},
-		{parseCIDR("fe80::/10")},
-	}
-	for _, r := range privateRanges {
-		if r.network.Contains(ip) {
+	for _, network := range privateRanges {
+		if network.Contains(ip) {
 			return true
 		}
 	}

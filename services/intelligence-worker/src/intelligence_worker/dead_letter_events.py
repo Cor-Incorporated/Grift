@@ -177,6 +177,10 @@ class DeadLetterEventStore:
     ) -> list[DeadLetterEvent]:
         current_time = now or datetime.now(tz=UTC)
         try:
+            # When tenant_id is None we pass "" to get_connection(); the
+            # connection manager must treat empty-string as a system-role
+            # connection (i.e. skip SET app.tenant_id) so the query can
+            # scan across all tenants.
             with (
                 self._conn_manager.get_connection(tenant_id or "") as conn,
                 conn,
