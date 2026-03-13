@@ -23,14 +23,15 @@ func TestSQLChunkEmbeddingStore_SearchSimilarChunks(t *testing.T) {
 	secondMetadata, _ := json.Marshal(map[string]any{"source_document_id": secondSourceDocumentID.String(), "token_count": float64(21)})
 
 	tests := []struct {
-		name           string
-		queryEmbedding any
-		caseID         *uuid.UUID
-		topK           int
-		mock           func(sqlmock.Sqlmock)
-		wantCount      int
-		wantContents   []string
-		wantErr        string
+		name               string
+		queryEmbedding     any
+		caseID             *uuid.UUID
+		topK               int
+		mock               func(sqlmock.Sqlmock)
+		wantCount          int
+		wantContents       []string
+		wantErr            string
+		wantDetailedAssert bool
 	}{
 		{
 			name:           "happy path with case filter",
@@ -50,6 +51,7 @@ func TestSQLChunkEmbeddingStore_SearchSimilarChunks(t *testing.T) {
 			wantContents: []string{
 				"matched content",
 			},
+			wantDetailedAssert: true,
 		},
 		{
 			name:           "nil case filter uses null arg and float32 embedding",
@@ -162,7 +164,7 @@ func TestSQLChunkEmbeddingStore_SearchSimilarChunks(t *testing.T) {
 						}
 					}
 				}
-				if tt.name == "happy path with case filter" {
+				if tt.wantDetailedAssert {
 					if results[0].SimilarityScore != 0.98 {
 						t.Fatalf("SimilarityScore = %v, want 0.98", results[0].SimilarityScore)
 					}

@@ -420,8 +420,12 @@ func TestRAGSearchHandlerSearchTenantIsolation(t *testing.T) {
 		},
 	}
 
-	for i, tt := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Snapshot counts before this subtest to assert delta, not cumulative state
+			embedCountBefore := embedder.callCount
+			storeCountBefore := len(storeMock.calls)
+
 			req := httptest.NewRequest(http.MethodGet, "/v1/cases/"+caseID.String()+"/search?q=policy", nil)
 			req.Header.Set("X-Tenant-ID", tt.tenantHeader)
 
@@ -440,15 +444,16 @@ func TestRAGSearchHandlerSearchTenantIsolation(t *testing.T) {
 				t.Fatalf("content = %q, want %q", body.Data[0].Content, tt.wantContent)
 			}
 
-			// Assert tenant isolation per subtest using deterministic call index
-			if embedder.callCount != i+1 {
-				t.Fatalf("embedder calls = %d, want %d", embedder.callCount, i+1)
+			// Assert exactly one embed and one store call per subtest (delta-based)
+			if embedder.callCount-embedCountBefore != 1 {
+				t.Fatalf("embedder calls delta = %d, want 1", embedder.callCount-embedCountBefore)
 			}
-			if len(storeMock.calls) != i+1 {
-				t.Fatalf("store calls = %d, want %d", len(storeMock.calls), i+1)
+			if len(storeMock.calls)-storeCountBefore != 1 {
+				t.Fatalf("store calls delta = %d, want 1", len(storeMock.calls)-storeCountBefore)
 			}
-			if storeMock.calls[i].tenantID != tt.wantTenantID {
-				t.Fatalf("tenantID = %v, want %v", storeMock.calls[i].tenantID, tt.wantTenantID)
+			lastCall := storeMock.calls[len(storeMock.calls)-1]
+			if lastCall.tenantID != tt.wantTenantID {
+				t.Fatalf("tenantID = %v, want %v", lastCall.tenantID, tt.wantTenantID)
 			}
 		})
 	}
