@@ -174,9 +174,9 @@ func (s *SQLEstimateStore) UpdateThreeWayProposal(ctx context.Context, tenantID,
 	exec := s.executor(ctx)
 
 	result, err := exec.ExecContext(ctx,
-		`UPDATE estimates SET three_way_proposal = $3, updated_at = NOW()
-		WHERE tenant_id = $1 AND id = $2`,
-		tenantID, estimateID, proposal,
+		`UPDATE estimates SET three_way_proposal = $1, updated_at = NOW()
+		WHERE tenant_id = $2 AND id = $3`,
+		proposal, tenantID, estimateID,
 	)
 	if err != nil {
 		return fmt.Errorf("update three_way_proposal: %w", err)

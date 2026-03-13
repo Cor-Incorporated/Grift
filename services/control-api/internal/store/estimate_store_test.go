@@ -264,7 +264,7 @@ func TestSQLEstimateStoreUpdateThreeWayProposal(t *testing.T) {
 	defer db.Close()
 
 	mock.ExpectExec(`UPDATE estimates SET three_way_proposal`).
-		WithArgs(tenantID, estimateID, proposal).
+		WithArgs(proposal, tenantID, estimateID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	store := NewSQLEstimateStore(db)
@@ -289,7 +289,7 @@ func TestSQLEstimateStoreUpdateThreeWayProposalNotFound(t *testing.T) {
 	defer db.Close()
 
 	mock.ExpectExec(`UPDATE estimates SET three_way_proposal`).
-		WithArgs(tenantID, estimateID, proposal).
+		WithArgs(proposal, tenantID, estimateID).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	store := NewSQLEstimateStore(db)

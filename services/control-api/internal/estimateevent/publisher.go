@@ -123,7 +123,7 @@ func (p *Publisher) PublishEstimateCompleted(ctx context.Context, input Estimate
 		TenantID:       input.TenantID.String(),
 		AggregateType:  defaultAggregateType,
 		AggregateID:    input.EstimateID.String(),
-		IdempotencyKey: eventID.String(),
+		IdempotencyKey: input.EstimateID.String(),
 		OccurredAt:     p.now().UTC().Format(time.RFC3339),
 		Producer:       defaultProducerName,
 		SourceDomain:   defaultSourceDomain,

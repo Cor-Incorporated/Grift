@@ -31,6 +31,8 @@ CREATE TABLE estimates (
 CREATE INDEX idx_estimates_case ON estimates(tenant_id, case_id);
 
 ALTER TABLE estimates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE estimates FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON estimates
-    USING (tenant_id = current_setting('app.tenant_id')::uuid);
+    USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
