@@ -350,8 +350,11 @@ class _GatewayStub:
 
 def _urlopen_response(payload: dict[str, object]) -> object:
     class _Response:
-        def read(self) -> bytes:
-            return json.dumps(payload).encode("utf-8")
+        def read(self, amt: int | None = None) -> bytes:
+            data = json.dumps(payload).encode("utf-8")
+            if amt is not None:
+                return data[:amt]
+            return data
 
         def __enter__(self) -> _Response:
             return self

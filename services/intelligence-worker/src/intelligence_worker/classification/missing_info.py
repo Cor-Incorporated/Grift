@@ -204,12 +204,8 @@ class GatewayMissingInfoExtractor:
         except urllib.error.URLError as exc:
             logger.error("llm_gateway_missing_info_failed", error=str(exc))
             raise
-        try:
-            body = json.loads(response.read().decode("utf-8"))
-        finally:
-            close_fn = getattr(response, "close", None)
-            if callable(close_fn):
-                close_fn()
+        with response:
+            body = json.loads(response.read(1_048_576).decode("utf-8"))
 
         content = body.get("choices", [{}])[0].get("message", {}).get("content")
         if not isinstance(content, str) or not content.strip():
@@ -388,9 +384,8 @@ def _coerce_string_list(value: object) -> list[str]:
 
 def _clamp01(value: object) -> float:
     """Clamp a numeric value to [0.0, 1.0]."""
-    numeric = float(value)  # type: ignore[arg-type]
-    if numeric < 0:
+    try:
+        numeric = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
         return 0.0
-    if numeric > 1:
-        return 1.0
-    return numeric
+    return max(0.0, min(1.0, numeric))
