@@ -55,6 +55,10 @@ module "networking" {
   public_subnet_cidr    = "10.10.1.0/24"
   private_subnet_cidr   = "10.10.2.0/24"
   private_services_cidr = "10.10.128.0/20"
+
+  # GKE secondary ranges (must not overlap with primary or private_services)
+  gke_pods_cidr     = "10.10.16.0/20"
+  gke_services_cidr = "10.10.32.0/24"
 }
 
 # -----------------------------------------------------

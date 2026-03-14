@@ -62,3 +62,32 @@ output "llm_gateway_sa_email" {
   description = "LLM Gateway service account email"
   value       = module.iam.llm_gateway_service_account_email
 }
+
+# -----------------------------------------------------
+# GKE GPU
+# -----------------------------------------------------
+output "gke_gpu_cluster_name" {
+  description = "GKE GPU cluster name"
+  value       = module.gke_gpu.cluster_name
+}
+
+output "gke_gpu_cluster_endpoint" {
+  description = "GKE GPU cluster master endpoint"
+  value       = module.gke_gpu.cluster_endpoint
+  sensitive   = true
+}
+
+output "gke_gpu_node_pool_name" {
+  description = "GKE GPU node pool name"
+  value       = module.gke_gpu.node_pool_name
+}
+
+output "gke_gpu_node_sa_email" {
+  description = "GKE GPU node service account email"
+  value       = module.gke_gpu.gpu_node_service_account_email
+}
+
+output "vllm_workload_identity_sa" {
+  description = "vLLM Workload Identity service account email"
+  value       = module.gke_gpu.vllm_service_account_email
+}

@@ -55,6 +55,10 @@ module "networking" {
   public_subnet_cidr    = "10.20.1.0/24"
   private_subnet_cidr   = "10.20.2.0/24"
   private_services_cidr = "10.20.128.0/20"
+
+  # GKE secondary ranges (must not overlap with primary or private_services)
+  gke_pods_cidr     = "10.20.16.0/20"
+  gke_services_cidr = "10.20.32.0/24"
 }
 
 # -----------------------------------------------------
@@ -194,4 +198,39 @@ module "scheduler" {
   schedule              = "0 2 * * *" # 2 AM JST daily
   target_uri            = "https://bd-staging-crawler-${var.region}.a.run.app"
   service_account_email = module.iam.control_api_service_account_email
+}
+
+# -----------------------------------------------------
+# GKE GPU (vLLM Qwen3.5 Inference — production-like)
+# Staging mirrors prod topology for pre-release validation.
+# -----------------------------------------------------
+module "gke_gpu" {
+  source = "../../modules/gke-gpu"
+
+  project_id  = var.project_id
+  region      = var.region
+  environment = "staging"
+
+  network_id        = module.networking.network_id
+  private_subnet_id = module.networking.private_subnet_id
+
+  # Staging: L4 GPU with Spot instances, same topology as prod
+  gpu_machine_type      = "g2-standard-8"
+  gpu_accelerator_type  = "nvidia-l4"
+  gpu_accelerator_count = 1
+  max_node_count        = 1
+  min_node_count        = 0
+  enable_spot           = true
+  disk_size_gb          = 100
+
+  # Staging: VPC-internal only
+  master_authorized_cidr_blocks = [
+    { cidr_block = "10.0.0.0/8", display_name = "internal-vpc" },
+  ]
+
+  # Night/weekend shutdown for cost optimization
+  enable_night_shutdown = true
+  scheduler_timezone    = "Asia/Tokyo"
+
+  model_cache_bucket = ""
 }
