@@ -48,6 +48,18 @@ variable "private_services_cidr" {
   default     = "10.0.128.0/20"
 }
 
+variable "gke_pods_cidr" {
+  description = "Secondary IP range for GKE pod IPs (must not overlap with primary or private_services ranges)"
+  type        = string
+  default     = "10.0.16.0/20"
+}
+
+variable "gke_services_cidr" {
+  description = "Secondary IP range for GKE service IPs (must not overlap with primary or pods range)"
+  type        = string
+  default     = "10.0.32.0/24"
+}
+
 variable "labels" {
   description = "Additional labels to apply to resources"
   type        = map(string)

@@ -22,6 +22,8 @@ resource "google_compute_subnetwork" "public" {
 
 # -----------------------------------------------------
 # Private Subnet (Cloud SQL, GKE, Cloud Run)
+# Secondary IP ranges are required by the GKE cluster
+# (ip_allocation_policy references these by name).
 # -----------------------------------------------------
 resource "google_compute_subnetwork" "private" {
   project                  = var.project_id
@@ -30,6 +32,16 @@ resource "google_compute_subnetwork" "private" {
   network                  = google_compute_network.vpc.id
   ip_cidr_range            = var.private_subnet_cidr
   private_ip_google_access = true
+
+  secondary_ip_range {
+    range_name    = "bd-${var.environment}-gke-pods"
+    ip_cidr_range = var.gke_pods_cidr
+  }
+
+  secondary_ip_range {
+    range_name    = "bd-${var.environment}-gke-services"
+    ip_cidr_range = var.gke_services_cidr
+  }
 }
 
 # -----------------------------------------------------
