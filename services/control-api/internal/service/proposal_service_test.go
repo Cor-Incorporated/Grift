@@ -14,15 +14,15 @@ import (
 )
 
 type mockProposalStore struct {
-	createFn                 func(ctx context.Context, tenantID uuid.UUID, proposal *domain.ProposalSession) (*domain.ProposalSession, error)
-	listFn                   func(ctx context.Context, tenantID, caseID uuid.UUID, limit, offset int) ([]domain.ProposalSession, int, error)
-	getByIDFn                func(ctx context.Context, tenantID, proposalID uuid.UUID) (*domain.ProposalSession, error)
-	updateStatusFn           func(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error
-	createApprovalDecisionFn func(ctx context.Context, tenantID uuid.UUID, decision *domain.ApprovalDecision) (*domain.ApprovalDecision, error)
-	listApprovalDecisionsFn  func(ctx context.Context, tenantID, proposalID uuid.UUID) ([]domain.ApprovalDecision, error)
-	getCaseFn                func(ctx context.Context, tenantID, caseID uuid.UUID) (*domain.Case, error)
-	getMarketEvidenceFn      func(ctx context.Context, tenantID, evidenceID uuid.UUID) (*domain.AggregatedEvidence, error)
-	countActiveCasesFn       func(ctx context.Context, tenantID, excludeCaseID uuid.UUID) (int, error)
+	createFn                   func(ctx context.Context, tenantID uuid.UUID, proposal *domain.ProposalSession) (*domain.ProposalSession, error)
+	listFn                     func(ctx context.Context, tenantID, caseID uuid.UUID, limit, offset int) ([]domain.ProposalSession, int, error)
+	getByIDFn                  func(ctx context.Context, tenantID, proposalID uuid.UUID) (*domain.ProposalSession, error)
+	updateStatusIfNotDecidedFn func(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error
+	createApprovalDecisionFn   func(ctx context.Context, tenantID uuid.UUID, decision *domain.ApprovalDecision) (*domain.ApprovalDecision, error)
+	listApprovalDecisionsFn    func(ctx context.Context, tenantID, proposalID uuid.UUID) ([]domain.ApprovalDecision, error)
+	getCaseFn                  func(ctx context.Context, tenantID, caseID uuid.UUID) (*domain.Case, error)
+	getMarketEvidenceFn        func(ctx context.Context, tenantID, evidenceID uuid.UUID) (*domain.AggregatedEvidence, error)
+	countActiveCasesFn         func(ctx context.Context, tenantID, excludeCaseID uuid.UUID) (int, error)
 }
 
 func (m *mockProposalStore) Create(ctx context.Context, tenantID uuid.UUID, proposal *domain.ProposalSession) (*domain.ProposalSession, error) {
@@ -49,9 +49,9 @@ func (m *mockProposalStore) GetByID(ctx context.Context, tenantID, proposalID uu
 	return nil, nil
 }
 
-func (m *mockProposalStore) UpdateStatus(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error {
-	if m.updateStatusFn != nil {
-		return m.updateStatusFn(ctx, tenantID, proposalID, status, decidedAt)
+func (m *mockProposalStore) UpdateStatusIfNotDecided(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error {
+	if m.updateStatusIfNotDecidedFn != nil {
+		return m.updateStatusIfNotDecidedFn(ctx, tenantID, proposalID, status, decidedAt)
 	}
 	return nil
 }
@@ -172,13 +172,15 @@ func TestProposalServiceCreateProposal(t *testing.T) {
 
 func TestProposalServiceDecideProposal(t *testing.T) {
 	tenantID := uuid.New()
+	caseID := uuid.New()
+	otherCaseID := uuid.New()
 	proposalID := uuid.New()
 
 	tests := []struct {
 		name     string
 		run      func(*ProposalService) (*domain.ApprovalDecision, error)
 		store    *mockProposalStore
-		wantErr  bool
+		wantErr  error
 		wantType domain.Decision
 		wantUID  string
 	}{
@@ -186,11 +188,11 @@ func TestProposalServiceDecideProposal(t *testing.T) {
 			name: "approve success",
 			store: &mockProposalStore{
 				getByIDFn: func(context.Context, uuid.UUID, uuid.UUID) (*domain.ProposalSession, error) {
-					return &domain.ProposalSession{ID: proposalID, Status: domain.ProposalStatusDraft}, nil
+					return &domain.ProposalSession{ID: proposalID, CaseID: caseID, Status: domain.ProposalStatusDraft}, nil
 				},
 			},
 			run: func(svc *ProposalService) (*domain.ApprovalDecision, error) {
-				return svc.ApproveProposal(context.Background(), tenantID, proposalID, "", "", "approved")
+				return svc.ApproveProposal(context.Background(), tenantID, caseID, proposalID, "", "", "approved")
 			},
 			wantType: domain.DecisionApproved,
 			wantUID:  systemDecisionUID,
@@ -199,25 +201,40 @@ func TestProposalServiceDecideProposal(t *testing.T) {
 			name: "reject requires reason",
 			store: &mockProposalStore{
 				getByIDFn: func(context.Context, uuid.UUID, uuid.UUID) (*domain.ProposalSession, error) {
-					return &domain.ProposalSession{ID: proposalID, Status: domain.ProposalStatusDraft}, nil
+					return &domain.ProposalSession{ID: proposalID, CaseID: caseID, Status: domain.ProposalStatusDraft}, nil
 				},
 			},
 			run: func(svc *ProposalService) (*domain.ApprovalDecision, error) {
-				return svc.RejectProposal(context.Background(), tenantID, proposalID, "uid-1", "", "")
+				return svc.RejectProposal(context.Background(), tenantID, caseID, proposalID, "uid-1", "", "")
 			},
-			wantErr: true,
+			wantErr: ErrReasonRequired,
 		},
 		{
 			name: "already decided",
 			store: &mockProposalStore{
 				getByIDFn: func(context.Context, uuid.UUID, uuid.UUID) (*domain.ProposalSession, error) {
-					return &domain.ProposalSession{ID: proposalID, Status: domain.ProposalStatusApproved}, nil
+					return &domain.ProposalSession{ID: proposalID, CaseID: caseID, Status: domain.ProposalStatusDraft}, nil
+				},
+				updateStatusIfNotDecidedFn: func(context.Context, uuid.UUID, uuid.UUID, domain.ProposalStatus, *time.Time) error {
+					return store.ErrAlreadyDecided
 				},
 			},
 			run: func(svc *ProposalService) (*domain.ApprovalDecision, error) {
-				return svc.ApproveProposal(context.Background(), tenantID, proposalID, "uid-1", "", "approved")
+				return svc.ApproveProposal(context.Background(), tenantID, caseID, proposalID, "uid-1", "", "approved")
 			},
-			wantErr: true,
+			wantErr: ErrAlreadyDecided,
+		},
+		{
+			name: "case mismatch returns not found",
+			store: &mockProposalStore{
+				getByIDFn: func(context.Context, uuid.UUID, uuid.UUID) (*domain.ProposalSession, error) {
+					return &domain.ProposalSession{ID: proposalID, CaseID: otherCaseID, Status: domain.ProposalStatusDraft}, nil
+				},
+			},
+			run: func(svc *ProposalService) (*domain.ApprovalDecision, error) {
+				return svc.ApproveProposal(context.Background(), tenantID, caseID, proposalID, "uid-1", "", "approved")
+			},
+			wantErr: ErrNotFound,
 		},
 	}
 
@@ -225,10 +242,10 @@ func TestProposalServiceDecideProposal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := NewProposalService(tt.store, &mockEstimateStoreForProposal{})
 			got, err := tt.run(svc)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("decision call error = %v, wantErr %v", err, tt.wantErr)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("decision call error = %v, want %v", err, tt.wantErr)
 			}
-			if !tt.wantErr {
+			if err == nil {
 				if got.Decision != tt.wantType {
 					t.Fatalf("decision type = %q, want %q", got.Decision, tt.wantType)
 				}
@@ -303,6 +320,44 @@ func TestProposalServiceEvaluateGoNoGo(t *testing.T) {
 			wantWeight:   0.35,
 		},
 		{
+			name:     "contradictions force no go even with high confidence",
+			caseType: domain.CaseTypeNewProject,
+			estimate: domain.Estimate{
+				ID:                   uuid.New(),
+				TotalYourCost:        800000,
+				TotalMarketCost:      floatPtr(1000000),
+				AggregatedEvidenceID: &evidenceID,
+			},
+			evidence: &domain.AggregatedEvidence{
+				OverallConfidence: "high",
+				Contradictions: []domain.Contradiction{{
+					ProviderA:   "provider-a",
+					ProviderB:   "provider-b",
+					Field:       "pricing",
+					Description: "pricing mismatch",
+				}},
+			},
+			activeCases:  1,
+			wantDecision: domain.GoNoGoDecisionNoGo,
+			wantAxis:     goNoGoAxisProfitability,
+			wantWeight:   0.35,
+		},
+		{
+			name:     "high confidence over budget is go with conditions",
+			caseType: domain.CaseTypeNewProject,
+			estimate: domain.Estimate{
+				ID:                   uuid.New(),
+				TotalYourCost:        1200000,
+				TotalMarketCost:      floatPtr(1000000),
+				AggregatedEvidenceID: &evidenceID,
+			},
+			evidence:     &domain.AggregatedEvidence{OverallConfidence: "high"},
+			activeCases:  1,
+			wantDecision: domain.GoNoGoDecisionGoWithConditions,
+			wantAxis:     goNoGoAxisProfitability,
+			wantWeight:   0.35,
+		},
+		{
 			name:     "bug fix redistributes profitability weight",
 			caseType: domain.CaseTypeFixRequest,
 			estimate: domain.Estimate{
@@ -354,6 +409,29 @@ func TestProposalServiceEvaluateGoNoGo(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProposalServiceEvaluateGoNoGoInvalidThreeWayProposal(t *testing.T) {
+	tenantID := uuid.New()
+	caseID := uuid.New()
+
+	svc := NewProposalService(&mockProposalStore{
+		getCaseFn: func(context.Context, uuid.UUID, uuid.UUID) (*domain.Case, error) {
+			return &domain.Case{ID: caseID, Type: domain.CaseTypeNewProject}, nil
+		},
+	}, &mockEstimateStoreForProposal{
+		listByCaseFn: func(context.Context, uuid.UUID, uuid.UUID, int, int) ([]domain.Estimate, int, error) {
+			return []domain.Estimate{{
+				ID:               uuid.New(),
+				ThreeWayProposal: json.RawMessage(`{"market_benchmark":`),
+			}}, 1, nil
+		},
+	})
+
+	_, err := svc.EvaluateGoNoGo(context.Background(), tenantID, caseID)
+	if err == nil {
+		t.Fatal("EvaluateGoNoGo() error = nil, want decode error")
 	}
 }
 

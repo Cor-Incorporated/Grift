@@ -28,6 +28,11 @@ var defaultGoNoGoWeights = map[string]float64{
 	goNoGoAxisTechnicalRisk:      0.20,
 }
 
+var (
+	ErrAlreadyDecided = errors.New("proposal already decided")
+	ErrReasonRequired = errors.New("reason is required for rejection")
+)
+
 // ProposalService handles proposal CRUD and go/no-go evaluation.
 type ProposalService struct {
 	store         store.ProposalStore
@@ -84,16 +89,16 @@ func (s *ProposalService) ListProposals(ctx context.Context, tenantID, caseID uu
 }
 
 // ApproveProposal records an approval decision and updates the proposal status.
-func (s *ProposalService) ApproveProposal(ctx context.Context, tenantID, proposalID uuid.UUID, uid, role, comment string) (*domain.ApprovalDecision, error) {
-	return s.decideProposal(ctx, tenantID, proposalID, uid, role, comment, domain.DecisionApproved, domain.ProposalStatusApproved)
+func (s *ProposalService) ApproveProposal(ctx context.Context, tenantID, caseID, proposalID uuid.UUID, uid, role, comment string) (*domain.ApprovalDecision, error) {
+	return s.decideProposal(ctx, tenantID, caseID, proposalID, uid, role, comment, domain.DecisionApproved, domain.ProposalStatusApproved)
 }
 
 // RejectProposal records a rejection decision and updates the proposal status.
-func (s *ProposalService) RejectProposal(ctx context.Context, tenantID, proposalID uuid.UUID, uid, role, comment string) (*domain.ApprovalDecision, error) {
+func (s *ProposalService) RejectProposal(ctx context.Context, tenantID, caseID, proposalID uuid.UUID, uid, role, comment string) (*domain.ApprovalDecision, error) {
 	if strings.TrimSpace(comment) == "" {
-		return nil, fmt.Errorf("reason is required")
+		return nil, ErrReasonRequired
 	}
-	return s.decideProposal(ctx, tenantID, proposalID, uid, role, comment, domain.DecisionRejected, domain.ProposalStatusRejected)
+	return s.decideProposal(ctx, tenantID, caseID, proposalID, uid, role, comment, domain.DecisionRejected, domain.ProposalStatusRejected)
 }
 
 // EvaluateGoNoGo computes the case-level go/no-go result using the latest estimate.
@@ -122,7 +127,10 @@ func (s *ProposalService) EvaluateGoNoGo(ctx context.Context, tenantID, caseID u
 	}
 	estimate := estimates[0]
 
-	proposalData := decodeThreeWayProposal(estimate.ThreeWayProposal)
+	proposalData, err := decodeThreeWayProposal(estimate.ThreeWayProposal)
+	if err != nil {
+		return nil, err
+	}
 
 	var evidence *domain.AggregatedEvidence
 	if estimate.AggregatedEvidenceID != nil {
@@ -172,13 +180,16 @@ func (s *ProposalService) EvaluateGoNoGo(ctx context.Context, tenantID, caseID u
 
 func (s *ProposalService) decideProposal(
 	ctx context.Context,
-	tenantID, proposalID uuid.UUID,
+	tenantID, caseID, proposalID uuid.UUID,
 	uid, role, comment string,
 	decisionType domain.Decision,
 	status domain.ProposalStatus,
 ) (*domain.ApprovalDecision, error) {
 	if tenantID == uuid.Nil {
 		return nil, fmt.Errorf("tenant_id is required")
+	}
+	if caseID == uuid.Nil {
+		return nil, fmt.Errorf("case_id is required")
 	}
 	if proposalID == uuid.Nil {
 		return nil, fmt.Errorf("proposal_id is required")
@@ -191,12 +202,15 @@ func (s *ProposalService) decideProposal(
 	if proposal == nil {
 		return nil, ErrNotFound
 	}
-	if proposal.Status == domain.ProposalStatusApproved || proposal.Status == domain.ProposalStatusRejected {
-		return nil, fmt.Errorf("proposal already decided")
+	if proposal.CaseID != caseID {
+		return nil, ErrNotFound
 	}
 
 	decidedAt := time.Now().UTC()
-	if err := s.store.UpdateStatus(ctx, tenantID, proposalID, status, &decidedAt); err != nil {
+	if err := s.store.UpdateStatusIfNotDecided(ctx, tenantID, proposalID, status, &decidedAt); err != nil {
+		if errors.Is(err, store.ErrAlreadyDecided) {
+			return nil, ErrAlreadyDecided
+		}
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, ErrNotFound
 		}
@@ -411,11 +425,13 @@ type proposalPayload struct {
 	} `json:"our_proposal"`
 }
 
-func decodeThreeWayProposal(raw json.RawMessage) proposalPayload {
+func decodeThreeWayProposal(raw json.RawMessage) (proposalPayload, error) {
 	var payload proposalPayload
 	if len(raw) == 0 {
-		return payload
+		return payload, nil
 	}
-	_ = json.Unmarshal(raw, &payload)
-	return payload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return payload, fmt.Errorf("decode three_way_proposal: %w", err)
+	}
+	return payload, nil
 }

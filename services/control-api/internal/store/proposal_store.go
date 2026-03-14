@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,12 +19,15 @@ var activeCaseStatuses = []string{
 	string(domain.CaseStatusProposed),
 }
 
+// ErrAlreadyDecided is returned when a proposal status transition targets a decided proposal.
+var ErrAlreadyDecided = errors.New("proposal already decided")
+
 // ProposalStore defines the persistence operations used by the proposal workflow.
 type ProposalStore interface {
 	Create(ctx context.Context, tenantID uuid.UUID, proposal *domain.ProposalSession) (*domain.ProposalSession, error)
 	List(ctx context.Context, tenantID, caseID uuid.UUID, limit, offset int) ([]domain.ProposalSession, int, error)
 	GetByID(ctx context.Context, tenantID, proposalID uuid.UUID) (*domain.ProposalSession, error)
-	UpdateStatus(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error
+	UpdateStatusIfNotDecided(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error
 	CreateApprovalDecision(ctx context.Context, tenantID uuid.UUID, decision *domain.ApprovalDecision) (*domain.ApprovalDecision, error)
 	ListApprovalDecisions(ctx context.Context, tenantID, proposalID uuid.UUID) ([]domain.ApprovalDecision, error)
 	GetCase(ctx context.Context, tenantID, caseID uuid.UUID) (*domain.Case, error)
@@ -134,28 +138,29 @@ func (s *SQLProposalStore) GetByID(ctx context.Context, tenantID, proposalID uui
 	return record, nil
 }
 
-// UpdateStatus updates the status and decision timestamp of a proposal session.
-func (s *SQLProposalStore) UpdateStatus(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error {
+// UpdateStatusIfNotDecided updates the status for a proposal that has not already been decided.
+func (s *SQLProposalStore) UpdateStatusIfNotDecided(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error {
 	result, err := executorFromContext(ctx, s.db).ExecContext(
 		ctx,
 		`UPDATE proposal_sessions
 		SET status = $1, decided_at = $2, updated_at = NOW()
-		WHERE tenant_id = $3 AND id = $4`,
+		WHERE tenant_id = $3 AND id = $4
+			AND status NOT IN ('approved', 'rejected')`,
 		status,
 		decidedAt,
 		tenantID,
 		proposalID,
 	)
 	if err != nil {
-		return fmt.Errorf("update proposal status: %w", err)
+		return fmt.Errorf("update proposal status if not decided: %w", err)
 	}
 
 	n, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("update proposal status rows affected: %w", err)
+		return fmt.Errorf("update proposal status if not decided rows affected: %w", err)
 	}
 	if n == 0 {
-		return ErrNotFound
+		return ErrAlreadyDecided
 	}
 	return nil
 }

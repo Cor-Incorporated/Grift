@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/service"
@@ -96,7 +95,8 @@ func (h *ProposalHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, ok := parseCaseUUID(w, r); !ok {
+	caseID, ok := parseCaseUUID(w, r)
+	if !ok {
 		return
 	}
 	proposalID, ok := parseProposalUUID(w, r)
@@ -113,6 +113,7 @@ func (h *ProposalHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	decision, err := h.svc.ApproveProposal(
 		r.Context(),
 		tenantID,
+		caseID,
 		proposalID,
 		middleware.UserIDFromContext(r.Context()),
 		"",
@@ -132,7 +133,8 @@ func (h *ProposalHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, ok := parseCaseUUID(w, r); !ok {
+	caseID, ok := parseCaseUUID(w, r)
+	if !ok {
 		return
 	}
 	proposalID, ok := parseProposalUUID(w, r)
@@ -149,6 +151,7 @@ func (h *ProposalHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	decision, err := h.svc.RejectProposal(
 		r.Context(),
 		tenantID,
+		caseID,
 		proposalID,
 		middleware.UserIDFromContext(r.Context()),
 		"",
@@ -205,8 +208,7 @@ func writeProposalError(w http.ResponseWriter, err error, notFoundMessage string
 }
 
 func isProposalBadRequest(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "required") || strings.Contains(msg, "already decided")
+	return errors.Is(err, service.ErrAlreadyDecided) || errors.Is(err, service.ErrReasonRequired)
 }
 
 type createProposalRequest struct {

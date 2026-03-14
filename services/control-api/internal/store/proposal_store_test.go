@@ -230,7 +230,7 @@ func TestSQLProposalStoreList(t *testing.T) {
 	}
 }
 
-func TestSQLProposalStoreUpdateStatus(t *testing.T) {
+func TestSQLProposalStoreUpdateStatusIfNotDecided(t *testing.T) {
 	tenantID := uuid.New()
 	proposalID := uuid.New()
 	decidedAt := time.Now().UTC().Truncate(time.Second)
@@ -249,13 +249,13 @@ func TestSQLProposalStoreUpdateStatus(t *testing.T) {
 			},
 		},
 		{
-			name: "not found",
+			name: "already decided",
 			setup: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`UPDATE proposal_sessions`).
 					WithArgs(domain.ProposalStatusApproved, &decidedAt, tenantID, proposalID).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			},
-			wantErr: ErrNotFound,
+			wantErr: ErrAlreadyDecided,
 		},
 	}
 
@@ -270,9 +270,9 @@ func TestSQLProposalStoreUpdateStatus(t *testing.T) {
 			tt.setup(mock)
 
 			store := NewSQLProposalStore(db)
-			err = store.UpdateStatus(context.Background(), tenantID, proposalID, domain.ProposalStatusApproved, &decidedAt)
+			err = store.UpdateStatusIfNotDecided(context.Background(), tenantID, proposalID, domain.ProposalStatusApproved, &decidedAt)
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("UpdateStatus() error = %v, want %v", err, tt.wantErr)
+				t.Fatalf("UpdateStatusIfNotDecided() error = %v, want %v", err, tt.wantErr)
 			}
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Fatalf("ExpectationsWereMet() error = %v", err)

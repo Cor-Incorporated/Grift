@@ -16,14 +16,14 @@ import (
 )
 
 type fakeProposalStore struct {
-	createFn                 func(ctx context.Context, tenantID uuid.UUID, proposal *domain.ProposalSession) (*domain.ProposalSession, error)
-	listFn                   func(ctx context.Context, tenantID, caseID uuid.UUID, limit, offset int) ([]domain.ProposalSession, int, error)
-	getByIDFn                func(ctx context.Context, tenantID, proposalID uuid.UUID) (*domain.ProposalSession, error)
-	updateStatusFn           func(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error
-	createApprovalDecisionFn func(ctx context.Context, tenantID uuid.UUID, decision *domain.ApprovalDecision) (*domain.ApprovalDecision, error)
-	getCaseFn                func(ctx context.Context, tenantID, caseID uuid.UUID) (*domain.Case, error)
-	getMarketEvidenceFn      func(ctx context.Context, tenantID, evidenceID uuid.UUID) (*domain.AggregatedEvidence, error)
-	countActiveCasesFn       func(ctx context.Context, tenantID, excludeCaseID uuid.UUID) (int, error)
+	createFn                   func(ctx context.Context, tenantID uuid.UUID, proposal *domain.ProposalSession) (*domain.ProposalSession, error)
+	listFn                     func(ctx context.Context, tenantID, caseID uuid.UUID, limit, offset int) ([]domain.ProposalSession, int, error)
+	getByIDFn                  func(ctx context.Context, tenantID, proposalID uuid.UUID) (*domain.ProposalSession, error)
+	updateStatusIfNotDecidedFn func(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error
+	createApprovalDecisionFn   func(ctx context.Context, tenantID uuid.UUID, decision *domain.ApprovalDecision) (*domain.ApprovalDecision, error)
+	getCaseFn                  func(ctx context.Context, tenantID, caseID uuid.UUID) (*domain.Case, error)
+	getMarketEvidenceFn        func(ctx context.Context, tenantID, evidenceID uuid.UUID) (*domain.AggregatedEvidence, error)
+	countActiveCasesFn         func(ctx context.Context, tenantID, excludeCaseID uuid.UUID) (int, error)
 }
 
 func (f *fakeProposalStore) Create(ctx context.Context, tenantID uuid.UUID, proposal *domain.ProposalSession) (*domain.ProposalSession, error) {
@@ -50,9 +50,9 @@ func (f *fakeProposalStore) GetByID(ctx context.Context, tenantID, proposalID uu
 	return nil, nil
 }
 
-func (f *fakeProposalStore) UpdateStatus(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error {
-	if f.updateStatusFn != nil {
-		return f.updateStatusFn(ctx, tenantID, proposalID, status, decidedAt)
+func (f *fakeProposalStore) UpdateStatusIfNotDecided(ctx context.Context, tenantID, proposalID uuid.UUID, status domain.ProposalStatus, decidedAt *time.Time) error {
+	if f.updateStatusIfNotDecidedFn != nil {
+		return f.updateStatusIfNotDecidedFn(ctx, tenantID, proposalID, status, decidedAt)
 	}
 	return nil
 }
@@ -198,7 +198,7 @@ func TestProposalHandlerApproveReject(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := service.NewProposalService(&fakeProposalStore{
 				getByIDFn: func(context.Context, uuid.UUID, uuid.UUID) (*domain.ProposalSession, error) {
-					return &domain.ProposalSession{ID: proposalID, Status: domain.ProposalStatusDraft}, nil
+					return &domain.ProposalSession{ID: proposalID, CaseID: caseID, Status: domain.ProposalStatusDraft}, nil
 				},
 			}, &fakeEstimateStoreForProposalHandler{})
 			handler := NewProposalHandler(svc)
@@ -224,6 +224,32 @@ func TestProposalHandlerApproveReject(t *testing.T) {
 				t.Fatalf("decision = %v, want %q", body["data"]["decision"], tt.wantDecision)
 			}
 		})
+	}
+}
+
+func TestProposalHandlerApproveCaseOwnershipMismatch(t *testing.T) {
+	tenantID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	caseID := uuid.New()
+	proposalID := uuid.New()
+
+	svc := service.NewProposalService(&fakeProposalStore{
+		getByIDFn: func(context.Context, uuid.UUID, uuid.UUID) (*domain.ProposalSession, error) {
+			return &domain.ProposalSession{ID: proposalID, CaseID: uuid.New(), Status: domain.ProposalStatusDraft}, nil
+		},
+	}, &fakeEstimateStoreForProposalHandler{})
+	handler := NewProposalHandler(svc)
+
+	mux := http.NewServeMux()
+	RegisterProposalRoutes(mux, handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/cases/"+caseID.String()+"/proposals/"+proposalID.String()+"/approve", bytes.NewBufferString(`{"comment":"approved"}`))
+	req.Header.Set("X-Tenant-ID", tenantID.String())
+	rec := httptest.NewRecorder()
+
+	middleware.Tenant(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
 
