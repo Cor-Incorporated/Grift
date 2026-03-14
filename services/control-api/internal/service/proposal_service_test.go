@@ -373,6 +373,21 @@ func TestProposalServiceEvaluateGoNoGo(t *testing.T) {
 			wantAxis:     goNoGoAxisProfitability,
 			wantWeight:   0,
 		},
+		{
+			name:     "bug report over budget still gets go (budget exempt)",
+			caseType: domain.CaseTypeBugReport,
+			estimate: domain.Estimate{
+				ID:                   uuid.New(),
+				TotalYourCost:        1500000,
+				TotalMarketCost:      floatPtr(1000000),
+				AggregatedEvidenceID: &evidenceID,
+			},
+			evidence:     &domain.AggregatedEvidence{OverallConfidence: "high"},
+			activeCases:  1,
+			wantDecision: domain.GoNoGoDecisionGo,
+			wantAxis:     goNoGoAxisProfitability,
+			wantWeight:   0,
+		},
 	}
 
 	for _, tt := range tests {

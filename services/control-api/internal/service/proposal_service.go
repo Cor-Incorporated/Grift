@@ -157,11 +157,14 @@ func (s *ProposalService) EvaluateGoNoGo(ctx context.Context, tenantID, caseID u
 	}
 	weights := goNoGoWeights(caseRecord.Type)
 
+	// Bug/fix cases skip the budget gate — profitability weight is already 0.
+	budgetExempt := caseRecord.Type == domain.CaseTypeBugReport || caseRecord.Type == domain.CaseTypeFixRequest
+
 	decision := domain.GoNoGoDecisionNoGo
 	switch {
 	case contradictions > 0 || confidence == "low":
 		decision = domain.GoNoGoDecisionNoGo
-	case confidence == "high" && withinBudget:
+	case confidence == "high" && (withinBudget || budgetExempt):
 		decision = domain.GoNoGoDecisionGo
 	case confidence == "medium", confidence == "high" && !withinBudget:
 		decision = domain.GoNoGoDecisionGoWithConditions
