@@ -39,14 +39,4 @@ resource "google_cloud_scheduler_job" "crawl" {
     }))
   }
 
-  labels = merge(local.labels, var.labels)
-}
-
-locals {
-  labels = {
-    app         = "benevolentdirector"
-    environment = var.environment
-    component   = "scheduler"
-    managed_by  = "terraform"
-  }
 }

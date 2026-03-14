@@ -1,4 +1,18 @@
 # -----------------------------------------------------
+# Project data (needed for Pub/Sub service agent email)
+# -----------------------------------------------------
+data "google_project" "project" {
+  project_id = var.project_id
+}
+
+locals {
+  # Pub/Sub service agent must have publisher on DLQ topics and subscriber on
+  # main subscriptions for dead_letter_policy forwarding to work.
+  # See: https://cloud.google.com/pubsub/docs/handling-failures#dead_letter_topic_iam
+  pubsub_service_agent = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
+# -----------------------------------------------------
 # Dead Letter Topics (one per main topic)
 # -----------------------------------------------------
 resource "google_pubsub_topic" "dead_letter" {
@@ -72,6 +86,32 @@ resource "google_monitoring_alert_policy" "dead_letter_non_empty" {
   notification_channels = var.notification_channel_ids
 
   user_labels = local.labels
+}
+
+# -----------------------------------------------------
+# Pub/Sub Service Agent IAM — DLQ forwarding
+# Without these bindings, dead_letter_policy silently drops messages
+# instead of forwarding them to the DLQ topic.
+# -----------------------------------------------------
+
+# Allow Pub/Sub agent to publish failed messages to DLQ topics
+resource "google_pubsub_topic_iam_member" "pubsub_agent_dlq_publisher" {
+  for_each = toset(var.topic_names)
+
+  project = var.project_id
+  topic   = google_pubsub_topic.dead_letter[each.key].id
+  role    = "roles/pubsub.publisher"
+  member  = local.pubsub_service_agent
+}
+
+# Allow Pub/Sub agent to pull from main subscriptions for forwarding
+resource "google_pubsub_subscription_iam_member" "pubsub_agent_subscriber" {
+  for_each = toset(var.topic_names)
+
+  project      = var.project_id
+  subscription = google_pubsub_subscription.main[each.key].id
+  role         = "roles/pubsub.subscriber"
+  member       = local.pubsub_service_agent
 }
 
 # -----------------------------------------------------
