@@ -17,6 +17,7 @@ import (
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/estimateevent"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/github"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/handler"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/handoffevent"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/llmclient"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/marketevent"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
@@ -125,6 +126,19 @@ func main() {
 	proposalService := service.NewProposalService(proposalStore, estimateStore)
 	proposalHandler := handler.NewProposalHandler(proposalService)
 	handler.RegisterProposalRoutes(mux, proposalHandler)
+
+	handoffStore := store.NewSQLHandoffStore(db)
+	var handoffPublisher *handoffevent.Publisher
+	if pubsubClient != nil {
+		handoffPublisher = handoffevent.NewPublisher(
+			conversation.NewPubSubPublisher(pubsubClient),
+			os.Getenv("HANDOFF_PUBSUB_TOPIC"),
+		)
+	}
+	// TODO: Wire LinearClient when intelligence-worker triggers Linear sync via HandoffInitiated.
+	handoffService := service.NewHandoffService(handoffStore, estimateStore, handoffPublisher)
+	handoffHandler := handler.NewHandoffHandler(handoffService)
+	handler.RegisterHandoffRoutes(mux, handoffHandler)
 
 	ragSearchStore := store.NewSQLChunkEmbeddingStore(db)
 	ragSearchHandler := handler.NewRAGSearchHandler(ragSearchStore, llm)
