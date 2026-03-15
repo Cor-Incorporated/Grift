@@ -52,7 +52,7 @@ func (h *TenantHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 // ListTenants handles GET /v1/tenants.
 // Requires system_admin role (x-required-roles per OpenAPI spec).
 func (h *TenantHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
-	if role := extractUserRole(r); role != "admin" {
+	if role := extractUserRole(r); role != "system_admin" {
 		writeJSONError(w, "forbidden: system_admin role required", http.StatusForbidden)
 		return
 	}
@@ -77,6 +77,10 @@ func (h *TenantHandler) UpdateTenantSettings(w http.ResponseWriter, r *http.Requ
 	}
 
 	userID := middleware.UserIDFromContext(r.Context())
+	if userID == "" {
+		writeJSONError(w, "unauthorized: missing user identity", http.StatusUnauthorized)
+		return
+	}
 	isAdmin, err := h.svc.IsTenantAdmin(r.Context(), tenantID, userID)
 	if err != nil {
 		writeJSONError(w, "failed to verify permissions", http.StatusInternalServerError)

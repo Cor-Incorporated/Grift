@@ -89,7 +89,7 @@ func Auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), userIDKey, "dev-user")
 		ctx = context.WithValue(ctx, userEmailKey, "dev@localhost")
-		ctx = context.WithValue(ctx, userRoleKey, "admin")
+		ctx = context.WithValue(ctx, userRoleKey, "system_admin")
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
