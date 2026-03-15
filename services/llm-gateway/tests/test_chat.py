@@ -13,6 +13,8 @@ from llm_gateway.main import create_app
 if TYPE_CHECKING:
     from pathlib import Path
 
+TENANT_ID = "00000000-0000-0000-0000-000000000000"
+
 
 def _base_payload() -> dict[str, object]:
     return {
@@ -37,7 +39,10 @@ def test_chat_completion_stream_returns_ndjson_chunks() -> None:
 
     response = client.post(
         "/v1/chat/completions",
-        headers={"X-Data-Classification": "internal"},
+        headers={
+            "X-Data-Classification": "internal",
+            "X-Tenant-ID": TENANT_ID,
+        },
         json={
             "model": "stub",
             "messages": [{"role": "user", "content": "hello"}],

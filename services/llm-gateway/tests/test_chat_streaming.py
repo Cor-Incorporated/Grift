@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
     import pytest
 
+TENANT_ID = "00000000-0000-0000-0000-000000000000"
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -97,7 +99,10 @@ def test_chat_streaming_returns_ndjson_content_and_done(
                     "messages": [{"role": "user", "content": "hello"}],
                     "stream": True,
                 },
-                headers={"X-Data-Classification": "internal"},
+                headers={
+                    "X-Data-Classification": "internal",
+                    "X-Tenant-ID": TENANT_ID,
+                },
             )
 
         assert response.status_code == 200

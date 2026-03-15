@@ -30,4 +30,11 @@ v2 の LLM anti-corruption layer。
 設定は `packages/config/llm-gateway-fallback-chain.stub.json` で管理し、
 `LLM_GATEWAY_FALLBACK_CHAIN_CONFIG` で差し替え可能。
 
+テナント分類ポリシーは `packages/config/tenant-data-classification-policy.stub.yaml`
+で管理し、`CLASSIFICATION_POLICY_PATH` で差し替え可能。
+
+- `X-Tenant-ID` ヘッダーがあればテナント別 allowed levels を適用
+- `confidential` は送信前に PII redaction を適用
+- 判定結果は `llm_gateway.audit` に structured JSON で監査ログ出力
+
 メトリクスは `GET /metrics/fallbacks` で取得できる。
