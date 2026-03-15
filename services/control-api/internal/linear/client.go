@@ -53,6 +53,9 @@ func (c *Client) CreateProject(ctx context.Context, teamID, name string) (*Linea
 	if err := c.mutate(ctx, projectCreateMutation, variables, &data); err != nil {
 		return nil, err
 	}
+	if !data.ProjectCreate.Success {
+		return nil, fmt.Errorf("Linear projectCreate returned success=false")
+	}
 	return &data.ProjectCreate.Project, nil
 }
 
@@ -80,6 +83,9 @@ func (c *Client) CreateCycle(ctx context.Context, teamID, name, startsAt, endsAt
 	if err := c.mutate(ctx, cycleCreateMutation, variables, &data); err != nil {
 		return nil, err
 	}
+	if !data.CycleCreate.Success {
+		return nil, fmt.Errorf("Linear cycleCreate returned success=false")
+	}
 	return &data.CycleCreate.Cycle, nil
 }
 
@@ -105,6 +111,9 @@ func (c *Client) CreateIssue(ctx context.Context, teamID, projectID, title, desc
 	}
 	if err := c.mutate(ctx, issueCreateMutation, variables, &data); err != nil {
 		return nil, err
+	}
+	if !data.IssueCreate.Success {
+		return nil, fmt.Errorf("Linear issueCreate returned success=false")
 	}
 	return &data.IssueCreate.Issue, nil
 }

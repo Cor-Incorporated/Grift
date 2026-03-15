@@ -86,7 +86,7 @@ func (h *HandoffHandler) GetHandoffStatus(w http.ResponseWriter, r *http.Request
 func writeHandoffCreateError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrNotFound):
-		writeJSONError(w, "estimate not found", http.StatusBadRequest)
+		writeJSONError(w, "estimate not found", http.StatusNotFound)
 	case errors.Is(err, service.ErrIdempotencyConflict):
 		writeJSONError(w, err.Error(), http.StatusConflict)
 	default:
