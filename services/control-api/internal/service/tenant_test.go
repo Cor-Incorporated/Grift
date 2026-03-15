@@ -19,7 +19,8 @@ type mockTenantStore struct {
 	getByIDFn        func(ctx context.Context, tenantID uuid.UUID) (*domain.Tenant, error)
 	updateSettingsFn func(ctx context.Context, tenantID uuid.UUID, analyticsOptIn, trainingOptIn *bool, settings json.RawMessage) (*domain.Tenant, error)
 	addMemberFn      func(ctx context.Context, m *domain.TenantMember) (*domain.TenantMember, error)
-	listMembersFn    func(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]domain.TenantMember, int, error)
+	listMembersFn              func(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]domain.TenantMember, int, error)
+	getMemberByFirebaseUIDFn   func(ctx context.Context, tenantID uuid.UUID, firebaseUID string) (*domain.TenantMember, error)
 }
 
 var _ store.TenantStore = (*mockTenantStore)(nil)
@@ -75,6 +76,13 @@ func (m *mockTenantStore) ListMembers(ctx context.Context, tenantID uuid.UUID, l
 		return m.listMembersFn(ctx, tenantID, limit, offset)
 	}
 	return nil, 0, nil
+}
+
+func (m *mockTenantStore) GetMemberByFirebaseUID(ctx context.Context, tenantID uuid.UUID, firebaseUID string) (*domain.TenantMember, error) {
+	if m.getMemberByFirebaseUIDFn != nil {
+		return m.getMemberByFirebaseUIDFn(ctx, tenantID, firebaseUID)
+	}
+	return nil, nil
 }
 
 func TestTenantService_Create(t *testing.T) {

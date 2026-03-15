@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/domain"
+	"github.com/Cor-Incorporated/Grift/services/control-api/internal/middleware"
 	"github.com/Cor-Incorporated/Grift/services/control-api/internal/service"
 	"github.com/google/uuid"
 )
@@ -49,7 +50,13 @@ func (h *TenantHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListTenants handles GET /v1/tenants.
+// Requires system_admin role (x-required-roles per OpenAPI spec).
 func (h *TenantHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
+	if role := extractUserRole(r); role != "admin" {
+		writeJSONError(w, "forbidden: system_admin role required", http.StatusForbidden)
+		return
+	}
+
 	limit, offset := parsePagination(r)
 
 	records, total, err := h.svc.List(r.Context(), limit, offset)
@@ -62,9 +69,21 @@ func (h *TenantHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateTenantSettings handles PATCH /v1/tenants/{tenantId}/settings.
+// Requires tenant_admin role (x-required-roles per OpenAPI spec).
 func (h *TenantHandler) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := parseTenantPathUUID(w, r)
 	if !ok {
+		return
+	}
+
+	userID := middleware.UserIDFromContext(r.Context())
+	isAdmin, err := h.svc.IsTenantAdmin(r.Context(), tenantID, userID)
+	if err != nil {
+		writeJSONError(w, "failed to verify permissions", http.StatusInternalServerError)
+		return
+	}
+	if !isAdmin {
+		writeJSONError(w, "forbidden: tenant_admin role required", http.StatusForbidden)
 		return
 	}
 

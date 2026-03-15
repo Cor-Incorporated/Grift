@@ -135,6 +135,19 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID uuid.UUID, in Ad
 	return result, nil
 }
 
+// IsTenantAdmin checks if the user (by Firebase UID) has admin-level access
+// to the specified tenant. Returns true for owner or admin roles.
+func (s *TenantService) IsTenantAdmin(ctx context.Context, tenantID uuid.UUID, firebaseUID string) (bool, error) {
+	member, err := s.store.GetMemberByFirebaseUID(ctx, tenantID, firebaseUID)
+	if err != nil {
+		return false, fmt.Errorf("checking tenant admin: %w", err)
+	}
+	if member == nil {
+		return false, nil
+	}
+	return member.Role == domain.MemberRoleOwner || member.Role == domain.MemberRoleAdmin, nil
+}
+
 // ListMembers returns members for a tenant with pagination.
 func (s *TenantService) ListMembers(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]domain.TenantMember, int, error) {
 	members, total, err := s.store.ListMembers(ctx, tenantID, limit, offset)

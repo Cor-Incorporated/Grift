@@ -82,10 +82,14 @@ func AuthWithVerifier(verifier TokenVerifier) Middleware {
 	}
 }
 
-// Auth is a stub authentication middleware that passes all requests through.
+// Auth is a stub authentication middleware for local development (AUTH_DISABLED=true).
+// It sets default admin credentials so RBAC checks pass in dev mode.
 // Use AuthWithVerifier for production Firebase token verification.
 func Auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), userIDKey, "dev-user")
+		ctx = context.WithValue(ctx, userEmailKey, "dev@localhost")
+		ctx = context.WithValue(ctx, userRoleKey, "admin")
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

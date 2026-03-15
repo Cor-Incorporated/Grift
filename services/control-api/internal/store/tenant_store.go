@@ -25,6 +25,9 @@ type TenantStore interface {
 	AddMember(ctx context.Context, m *domain.TenantMember) (*domain.TenantMember, error)
 	// ListMembers returns members for a tenant with pagination.
 	ListMembers(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]domain.TenantMember, int, error)
+	// GetMemberByFirebaseUID returns the active member for a tenant by Firebase UID.
+	// Returns nil if no active membership exists.
+	GetMemberByFirebaseUID(ctx context.Context, tenantID uuid.UUID, firebaseUID string) (*domain.TenantMember, error)
 }
 
 // SQLTenantStore implements TenantStore using a SQL database.
@@ -210,6 +213,27 @@ func (s *SQLTenantStore) ListMembers(ctx context.Context, tenantID uuid.UUID, li
 	}
 
 	return records, total, nil
+}
+
+// GetMemberByFirebaseUID returns the active member for a tenant by Firebase UID.
+func (s *SQLTenantStore) GetMemberByFirebaseUID(ctx context.Context, tenantID uuid.UUID, firebaseUID string) (*domain.TenantMember, error) {
+	exec := s.executor(ctx)
+
+	row := exec.QueryRowContext(ctx,
+		`SELECT id, tenant_id, firebase_uid, email, display_name, role, active, created_at, updated_at
+		FROM tenant_members WHERE tenant_id = $1 AND firebase_uid = $2 AND active = true`,
+		tenantID, firebaseUID,
+	)
+
+	record, err := scanTenantMember(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get member by firebase uid: %w", err)
+	}
+
+	return record, nil
 }
 
 // scanTenant scans a tenant row into a domain.Tenant.

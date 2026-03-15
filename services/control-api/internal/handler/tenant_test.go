@@ -38,6 +38,9 @@ type mockTenantStore struct {
 	listMembersResult []domain.TenantMember
 	listMembersTotal  int
 	listMembersErr    error
+
+	getMemberByFirebaseUIDResult *domain.TenantMember
+	getMemberByFirebaseUIDErr    error
 }
 
 var _ store.TenantStore = (*mockTenantStore)(nil)
@@ -89,6 +92,10 @@ func (m *mockTenantStore) AddMember(_ context.Context, mb *domain.TenantMember) 
 
 func (m *mockTenantStore) ListMembers(_ context.Context, _ uuid.UUID, _, _ int) ([]domain.TenantMember, int, error) {
 	return m.listMembersResult, m.listMembersTotal, m.listMembersErr
+}
+
+func (m *mockTenantStore) GetMemberByFirebaseUID(_ context.Context, _ uuid.UUID, _ string) (*domain.TenantMember, error) {
+	return m.getMemberByFirebaseUIDResult, m.getMemberByFirebaseUIDErr
 }
 
 func newTestTenantHandler(s store.TenantStore) *TenantHandler {
@@ -186,7 +193,8 @@ func TestTenantHandlerListTenants(t *testing.T) {
 	req.Header.Set("X-Tenant-ID", tenantID)
 	rec := httptest.NewRecorder()
 
-	middleware.Tenant(mux).ServeHTTP(rec, req)
+	// Use Auth stub (sets role=admin) + Tenant middleware
+	middleware.Chain(middleware.Auth, middleware.Tenant)(mux).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -207,6 +215,24 @@ func TestTenantHandlerListTenants(t *testing.T) {
 	}
 }
 
+func TestTenantHandlerListTenants_Forbidden(t *testing.T) {
+	h := newTestTenantHandler(&mockTenantStore{})
+	mux := http.NewServeMux()
+	RegisterTenantRoutes(mux, h)
+
+	tenantID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	req := httptest.NewRequest(http.MethodGet, "/v1/tenants", nil)
+	req.Header.Set("X-Tenant-ID", tenantID)
+	rec := httptest.NewRecorder()
+
+	// No auth middleware — role is empty, should be forbidden.
+	middleware.Tenant(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
 func TestTenantHandlerListTenants_StoreError(t *testing.T) {
 	h := newTestTenantHandler(&mockTenantStore{listErr: fmt.Errorf("db connection lost")})
 	mux := http.NewServeMux()
@@ -217,7 +243,7 @@ func TestTenantHandlerListTenants_StoreError(t *testing.T) {
 	req.Header.Set("X-Tenant-ID", tenantID)
 	rec := httptest.NewRecorder()
 
-	middleware.Tenant(mux).ServeHTTP(rec, req)
+	middleware.Chain(middleware.Auth, middleware.Tenant)(mux).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
@@ -248,6 +274,15 @@ func TestTenantHandlerUpdateSettings(t *testing.T) {
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		},
+		getMemberByFirebaseUIDResult: &domain.TenantMember{
+			ID:          uuid.New(),
+			TenantID:    tenantID,
+			FirebaseUID: "dev-user",
+			Role:        domain.MemberRoleAdmin,
+			Active:      true,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
 	}
 
 	h := newTestTenantHandler(s)
@@ -259,18 +294,29 @@ func TestTenantHandlerUpdateSettings(t *testing.T) {
 	req.Header.Set("X-Tenant-ID", tenantID.String())
 	rec := httptest.NewRecorder()
 
-	middleware.Tenant(mux).ServeHTTP(rec, req)
+	// Auth stub sets user_id=dev-user; mock returns admin member for that UID.
+	middleware.Chain(middleware.Auth, middleware.Tenant)(mux).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
 
-func TestTenantHandlerUpdateSettings_NotFound(t *testing.T) {
+func TestTenantHandlerUpdateSettings_Forbidden(t *testing.T) {
 	tenantID := uuid.New()
+	now := time.Now()
 
+	// Member exists but with viewer role — not admin.
 	s := &mockTenantStore{
-		getByIDResult: nil,
+		getMemberByFirebaseUIDResult: &domain.TenantMember{
+			ID:          uuid.New(),
+			TenantID:    tenantID,
+			FirebaseUID: "dev-user",
+			Role:        domain.MemberRoleViewer,
+			Active:      true,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
 	}
 
 	h := newTestTenantHandler(s)
@@ -282,7 +328,40 @@ func TestTenantHandlerUpdateSettings_NotFound(t *testing.T) {
 	req.Header.Set("X-Tenant-ID", tenantID.String())
 	rec := httptest.NewRecorder()
 
-	middleware.Tenant(mux).ServeHTTP(rec, req)
+	middleware.Chain(middleware.Auth, middleware.Tenant)(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestTenantHandlerUpdateSettings_NotFound(t *testing.T) {
+	tenantID := uuid.New()
+	now := time.Now()
+
+	s := &mockTenantStore{
+		getByIDResult: nil,
+		getMemberByFirebaseUIDResult: &domain.TenantMember{
+			ID:          uuid.New(),
+			TenantID:    tenantID,
+			FirebaseUID: "dev-user",
+			Role:        domain.MemberRoleOwner,
+			Active:      true,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+
+	h := newTestTenantHandler(s)
+	mux := http.NewServeMux()
+	RegisterTenantRoutes(mux, h)
+
+	req := httptest.NewRequest(http.MethodPatch, "/v1/tenants/"+tenantID.String()+"/settings",
+		bytes.NewBufferString(`{"analytics_opt_in":true}`))
+	req.Header.Set("X-Tenant-ID", tenantID.String())
+	rec := httptest.NewRecorder()
+
+	middleware.Chain(middleware.Auth, middleware.Tenant)(mux).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
